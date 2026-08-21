@@ -3,8 +3,10 @@ import { createMainWindow } from './window'
 import { AppStore } from './store'
 import { registerIpc } from './ipc'
 import { cancelAllChats } from './llm'
+import { getPlatformAdapter } from './platform'
 
 let mainWindow: BrowserWindow | null = null
+const platform = getPlatformAdapter()
 const userDataDir = process.env['DEEPDESK_USER_DATA_DIR']
 if (userDataDir) app.setPath('userData', userDataDir)
 const store = new AppStore()
@@ -21,6 +23,7 @@ if (!gotLock) {
   })
 
   void app.whenReady().then(async () => {
+    platform.installApplicationMenu()
     await store.init()
     registerIpc(store, () => mainWindow)
     mainWindow = createMainWindow()
@@ -51,7 +54,7 @@ if (!gotLock) {
   })
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    if (platform.shouldQuitWhenAllWindowsClose()) app.quit()
   })
 
   let isQuitting = false

@@ -527,6 +527,7 @@ input, textarea { user-select: text; }
 /* ===== 阅读节奏：内容优先，控件退后 ===== */
 .titlebar, .sidebar { background: var(--sidebar-surface); }
 .titlebar { height: var(--titlebar-h); border-bottom: none; padding-left: 16px; }
+.titlebar.platform-macos { padding-left: 78px; }
 .titlebar-tools { height: 100%; }
 .titlebar-tool-btn { color: var(--text-muted); }
 .titlebar-title { display: none; }

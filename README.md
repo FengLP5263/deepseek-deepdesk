@@ -12,7 +12,7 @@
 - **丝滑流式对话**：SSE 流式输出、50ms 节流渲染、打字光标、思考过程（reasoning_content）折叠展示
 - **完整的 Markdown 渲染**：表格 / 代码块高亮 / 一键复制 / 外部链接安全打开
 - **会话管理**：本地持久化历史、搜索、删除、自动标题、重新生成、编辑重发
-- **编码 Agent**：像 Codex / Claude Code 一样，能读写编辑文件、执行 PowerShell 命令、递归搜索代码，逐步自主完成任务，命令默认需批准
+- **编码 Agent**：像 Codex / Claude Code 一样，能读写编辑文件、执行 Windows PowerShell 或 macOS zsh 命令、递归搜索代码，逐步自主完成任务，命令默认需批准
 - **安全架构**：contextIsolation + 无 nodeIntegration，网络请求全部在主进程执行
 
 ## 🚀 快速开始
@@ -30,8 +30,7 @@ pnpm build
 
 # 4. 打包安装包
 pnpm package:win   # Windows NSIS 安装包
-pnpm package:mac   # macOS DMG
-pnpm package:linux # Linux AppImage
+pnpm package:mac   # macOS Apple Silicon DMG
 ```
 
 ## 📖 使用说明
@@ -84,8 +83,9 @@ deepseek-desktop/
 │   │   ├── api.ts              # preload 桥接的类型契约
 │   │   └── llm/                # OpenAI 兼容流式客户端 + 内置提供商
 │   ├── main/                   # Electron 主进程
+│   │   ├── platform/           # Windows/macOS 窗口、Shell 与菜单适配
 │   │   ├── index.ts            # 生命周期 / 单实例 / 冒烟测试
-│   │   ├── window.ts           # 无边框窗口
+│   │   ├── window.ts           # 双平台窗口创建与安全导航
 │   │   ├── store.ts            # 本地 JSON 原子持久化
 │   │   ├── llm.ts              # 流式对话调度（SSE → IPC 推送）
 │   │   └── ipc.ts              # IPC 处理器
@@ -119,7 +119,7 @@ DeepDesk 当前处于 `0.x` 预稳定阶段。欢迎通过 Pull Request 参与�
 
 ## ❓ FAQ
 
-- **API Key 存在哪里？** 本地磁盘 `%APPDATA%/deepseek-desktop/deepdesk.json`，不会上传到任何第三方。
+- **API Key 存在哪里？** Windows 位于应用的 `%APPDATA%` 用户数据目录，macOS 位于 `~/Library/Application Support/DeepDesk/deepdesk.json`，不会上传到任何第三方。
 - **为什么网络请求放在主进程？** 避免渲染进程 CORS 限制与 XSS 面，符合 Electron 安全最佳实践。
 - **支持非 OpenAI 协议的服务吗？** v1 面向 OpenAI 兼容协议（覆盖 DeepSeek / 智谱 / Kimi / 通义 / Ollama / vLLM 等绝大多数服务）；Anthropic 协议适配器已在路线图中。
 

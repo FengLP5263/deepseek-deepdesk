@@ -32,9 +32,8 @@ Update files in this order:
 ## Release candidate
 
 1. `pnpm flow -- check --include-build --include-smoke --include-e2e`
-2. `pnpm flow -- package --target win`
-3. Verify `release/DeepDesk Setup <version>.exe`
-4. macOS release requires a macOS machine: `pnpm flow -- package --target mac`
+2. Run `pnpm flow -- package --target win` on Windows or `pnpm flow -- package --target mac` on Apple Silicon macOS.
+3. Verify the Windows `.exe` or macOS `.dmg` under `release/`.
 
 ## CI and E2E
 

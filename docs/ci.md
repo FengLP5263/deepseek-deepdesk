@@ -6,7 +6,7 @@ CI 负责把本地工程化脚本放到远端执行，确保 PR 和发版不依�
 
 | 文件 | 触发 | 作用 |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | push / PR / 手动 | typecheck、lint、test、build、Windows smoke、Windows E2E |
+| `.github/workflows/ci.yml` | push / PR / 手动 | Windows/macOS 的 typecheck、lint、test、build、smoke 与 E2E |
 | `.github/workflows/release.yml` | 手动 | 按平台打包并上传 artifact |
 
 ## 设计原则
@@ -15,7 +15,8 @@ CI 负责把本地工程化脚本放到远端执行，确保 PR 和发版不依�
 - 不使用真实 API Key。
 - 不调用真实模型或飞书。
 - macOS 包在 macOS runner 打。
-- Windows smoke 在 Windows runner 跑。
+- Windows 和 macOS 分别在对应 runner 跑 smoke 与 E2E。
+- 当前 CI 不运行 Linux job。
 
 ## 本地等价命令
 
@@ -29,6 +30,7 @@ pnpm flow -- ci --include-build
 
 ```sh
 pnpm flow -- release --target win
+pnpm flow -- release --target mac
 ```
 
 ## PR 合并门禁

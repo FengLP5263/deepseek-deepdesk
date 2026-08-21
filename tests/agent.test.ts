@@ -22,6 +22,7 @@ import type { AppSettings, ProviderConfig } from '../src/shared/types'
 
 const provider: ProviderConfig = { id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }
 const baseSettings: AppSettings = { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }
+const outputCommand = (text: string): string => process.platform === 'win32' ? 'Write-Output ' + text : "printf '%s\\n' " + text
 
 function makeWin() {
   const events: AgentEvent[] = []
@@ -80,7 +81,7 @@ describe('startAgent', () => {
   })
 
   it('full 模式：命令直接执行，无需批准', async () => {
-    mocks.responses.push({ content: null, toolCalls: [{ id: 'c3', name: 'run_command', args: { command: 'Write-Output auto-run-ok' } }] })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'c3', name: 'run_command', args: { command: outputCommand('auto-run-ok') } }] })
     mocks.responses.push({ content: '完成', toolCalls: [] })
     const { events, win } = makeWin()
     const fullSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'full' }
@@ -93,7 +94,7 @@ describe('startAgent', () => {
   })
 
   it('auto 模式：只读命令自动批准', async () => {
-    mocks.responses.push({ content: null, toolCalls: [{ id: 'c6', name: 'run_command', args: { command: 'Write-Output readonly-ok' } }] })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'c6', name: 'run_command', args: { command: outputCommand('readonly-ok') } }] })
     mocks.responses.push({ content: '完成', toolCalls: [] })
     const { events, win } = makeWin()
     const autoSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'auto' }

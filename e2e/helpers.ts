@@ -109,8 +109,19 @@ export async function expectAppShell(page: Page): Promise<void> {
 }
 
 export async function openSettings(page: Page): Promise<void> {
-  await page.getByTitle('设置 (Ctrl+,)').click()
+  await page.getByRole('button', { name: '设置' }).click()
   await expect(page.locator('.settings-title', { hasText: '常规' })).toBeVisible()
+}
+
+export async function getDesktopPlatform(page: Page): Promise<'windows' | 'macos'> {
+  return page.evaluate(() => (window as unknown as { api: { platform: { id: 'windows' | 'macos' } } }).api.platform.id)
+}
+
+export async function pressAppShortcut(page: Page, key: string): Promise<void> {
+  const modifier = await getDesktopPlatform(page) === 'macos' ? 'Meta' : 'Control'
+  await page.keyboard.down(modifier)
+  await page.keyboard.press(key)
+  await page.keyboard.up(modifier)
 }
 
 export async function goBackToChat(page: Page): Promise<void> {

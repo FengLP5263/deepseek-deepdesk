@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFileSync } from 'node:child_process'
 import { Resvg } from '@resvg/resvg-js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -18,4 +19,10 @@ function icon(size) {
 
 mkdirSync(join(root, 'build'), { recursive: true })
 writeFileSync(join(root, 'build', 'icon.png'), icon(512))
-console.log('icon.png written')
+
+if (process.platform === 'darwin') {
+  execFileSync('sips', ['-s', 'format', 'icns', join(root, 'build', 'icon.png'), '--out', join(root, 'build', 'icon.icns')])
+  console.log('icon.png and icon.icns written')
+} else {
+  console.log('icon.png written; icon.icns generation requires macOS')
+}

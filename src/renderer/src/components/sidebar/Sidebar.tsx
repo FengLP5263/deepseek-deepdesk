@@ -31,6 +31,7 @@ export default function Sidebar({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameText, setRenameText] = useState('')
   const [tasksOpen, setTasksOpen] = useState(true)
+  const settingsShortcut = window.api.platform.id === 'macos' ? '⌘,' : 'Ctrl+,'
 
   const commitRename = (id: string): void => {
     const t = renameText.trim()
@@ -101,7 +102,7 @@ export default function Sidebar({
                 <span className='account-name'>个人账户</span>
               </span>
             </div>
-            <button className='icon-btn' title='设置 (Ctrl+,)' onClick={() => onOpenSettings('general')}><Settings size={15} /></button>
+            <button className='icon-btn' title={'设置 (' + settingsShortcut + ')'} aria-label='设置' onClick={() => onOpenSettings('general')}><Settings size={15} /></button>
           </div>
         </>
       )}

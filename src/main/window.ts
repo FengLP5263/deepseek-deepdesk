@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { IPC } from '../shared/ipc-channels'
+import { getPlatformAdapter } from './platform'
 
 function getDevelopmentWindowIcon(): string | undefined {
   if (app.isPackaged) return undefined
@@ -11,16 +12,17 @@ function getDevelopmentWindowIcon(): string | undefined {
 }
 
 export function createMainWindow(): BrowserWindow {
+  const platform = getPlatformAdapter()
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 960,
     minHeight: 620,
     show: false,
-    frame: false,
     backgroundColor: '#0e0e0e',
     title: 'DeepDesk',
     icon: getDevelopmentWindowIcon(),
+    ...platform.windowOptions,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,

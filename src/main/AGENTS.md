@@ -12,6 +12,7 @@
 - `agent.ts`：Agent 工具循环、权限判断。
 - `agent-tools.ts`：Agent 工具 schema。
 - `tools.ts`：工具执行实现。
+- `platform/`：Windows/macOS 窗口、Shell、菜单和生命周期差异；其余主进程代码不得写死平台行为。
 
 ## 安全规则
 

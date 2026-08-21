@@ -1,7 +1,9 @@
 import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload } from './types'
 import type { AgentEvent, AgentRunRequest, AgentSession } from './agent-types'
+import type { PlatformInfo } from './platform'
 
 export interface DeepDeskApi {
+  platform: Readonly<PlatformInfo>
   settings: {
     get: () => Promise<AppSettings>
     set: (patch: Partial<AppSettings>) => Promise<AppSettings>

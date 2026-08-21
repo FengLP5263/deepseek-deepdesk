@@ -21,6 +21,7 @@ beforeEach(async () => {
   chunkCb = null
   // 用真实 AppStore 的方法作为 window.api.agent 的实现，走真实持久化链路
   const api = {
+    platform: { id: 'macos', shellName: 'zsh', nativeWindowControls: true },
     settings: {
       get: async () => store.getSnapshot().settings,
       set: async (patch: Record<string, unknown>) => store.updateSettings(patch as never)

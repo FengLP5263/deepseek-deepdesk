@@ -1,7 +1,7 @@
-import { exec } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { AgentToolCall, AgentToolResult } from '../shared/agent-types'
+import { getPlatformAdapter } from './platform'
 
 const MAX_OUTPUT = 20000
 
@@ -19,23 +19,10 @@ export function resolveInWorkdir(workdir: string, p: string): string {
   return r.abs
 }
 
-function psQuote(s: string): string {
-  const q = String.fromCharCode(39)
-  return q + s.replace(/'/g, q + q) + q
-}
-
 function runLarkCli(args: string): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise(resolve => {
-    exec(args, {
-      shell: 'powershell.exe',
-      timeout: 120000,
-      maxBuffer: 4 * 1024 * 1024,
-      windowsHide: true,
-      env: { ...process.env, LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' }
-    }, (err, stdout, stderr) => {
-      const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0
-      resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), code })
-    })
+  return getPlatformAdapter().executeCommand(args, process.cwd(), {
+    LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1',
+    LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1'
   })
 }
 
@@ -58,15 +45,6 @@ function truncate(s: string): string {
   return s.slice(0, MAX_OUTPUT) + '\n...（输出过长已截断）'
 }
 
-function execShell(command: string, cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise(resolve => {
-    exec(command, { cwd, shell: 'powershell.exe', timeout: 120000, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
-      const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0
-      resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), code })
-    })
-  })
-}
-
 export async function executeTool(call: AgentToolCall, workdir: string, allowOutside = false): Promise<AgentToolResult> {
   const resolve = (p: string): string => {
     const r = resolvePath(workdir, p)
@@ -79,7 +57,7 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       const command = String(a.command ?? '')
       if (!command.trim()) return { ok: false, content: '命令为空', summary: '命令为空' }
       const cwd = a.cwd ? resolve(String(a.cwd)) : workdir
-      const r = await execShell(command, cwd)
+      const r = await getPlatformAdapter().executeCommand(command, cwd)
       const content = (r.stdout ? truncate(r.stdout) + '\n' : '') + (r.stderr ? '[stderr]\n' + truncate(r.stderr) + '\n' : '') + '[exit code: ' + r.code + ']'
       return { ok: r.code === 0, content, summary: command }
     }
@@ -145,7 +123,8 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
     case 'search_feishu_user': {
       const name = String(a.name ?? '').trim()
       if (!name) return { ok: false, content: '缺少 name 参数', summary: '缺少姓名' }
-      const cmd = 'lark-cli contact +search-user --query ' + psQuote(name) + ' --exclude-external-users --as user'
+      const quote = getPlatformAdapter().quoteArgument
+      const cmd = 'lark-cli contact +search-user --query ' + quote(name) + ' --exclude-external-users --as user'
       const r = await runLarkCli(cmd)
       try {
         const j = JSON.parse(r.stdout.trim()) as { data?: { users?: Array<{ open_id?: string; localized_name?: string; department?: string }> } }
@@ -161,7 +140,8 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       const user_id = String(a.user_id ?? '').trim()
       const text = String(a.text ?? '')
       if (!user_id || !text) return { ok: false, content: '缺少 user_id 或 text 参数', summary: '缺少参数' }
-      const cmd = 'lark-cli im +messages-send --user-id ' + psQuote(user_id) + ' --text ' + psQuote(text) + ' --as user'
+      const quote = getPlatformAdapter().quoteArgument
+      const cmd = 'lark-cli im +messages-send --user-id ' + quote(user_id) + ' --text ' + quote(text) + ' --as user'
       const r = await runLarkCli(cmd)
       try {
         const j = JSON.parse(r.stdout.trim()) as { ok?: boolean; data?: { message_id?: string }; error?: { message?: string } }
@@ -178,7 +158,11 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
 
 export function isDangerousCommand(command: string): boolean {
   const c = command.toLowerCase()
-  const patterns = ['rm -rf', 'rd /s /q', 'del /f /s /q', 'format ', 'shutdown', 'restart-computer', 'stop-computer', 'remove-item -recurse -force', 'drop table', 'deltree', 'diskpart']
+  const patterns = [
+    'rm -rf', 'rm -fr', 'rm --recursive', 'mkfs', 'diskutil erase', 'diskutil apfs delete', 'dd if=',
+    'rd /s /q', 'del /f /s /q', 'format ', 'shutdown', 'reboot', 'poweroff', 'restart-computer',
+    'stop-computer', 'remove-item -recurse -force', 'drop table', 'deltree', 'diskpart'
+  ]
   return patterns.some(p => c.includes(p))
 }
 
@@ -190,7 +174,8 @@ export function isReadOnlyCommand(command: string): boolean {
   const keywords = [
     'get-', 'select-', 'where-', 'measure-', 'test-path', 'resolve-path', 'sort-', 'group-', 'compare-',
     'git status', 'git log', 'git diff', 'git show', 'git branch', 'git remote', 'git ls-files', 'git tag', 'git rev-parse', 'git fetch', 'git --version',
-    'dir ', 'ls ', 'gci ', 'cat ', 'type ', 'more ', 'echo ', 'write-output', 'pwd', 'get-location', 'whoami', 'where ', 'which ',
+    'dir ', 'ls ', 'gci ', 'cat ', 'type ', 'more ', 'echo ', 'printf ', 'write-output', 'pwd', 'get-location', 'whoami', 'where ', 'which ',
+    'rg ', 'find ', 'head ', 'tail ', 'wc ', 'stat ', 'uname', 'sw_vers', 'ps ', 'lsof ',
     'node --version', 'node -v', 'npm --version', 'npm -v', 'python --version', 'git -v'
   ]
   return keywords.some(k => c.startsWith(k))

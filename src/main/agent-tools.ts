@@ -1,9 +1,14 @@
-export const AGENT_TOOLS: Array<Record<string, unknown>> = [
+import type { PlatformInfo } from '../shared/platform'
+import { getPlatformAdapter } from './platform'
+
+export function createAgentTools(platform: PlatformInfo): Array<Record<string, unknown>> {
+  const shell = platform.shellName === 'powershell' ? 'PowerShell' : 'zsh'
+  return [
   {
     type: 'function',
     function: {
       name: 'run_command',
-      description: '在用户电脑上执行一条 PowerShell 命令，返回标准输出、错误与退出码。优先用只读命令了解现状。',
+      description: '在用户电脑上执行一条 ' + shell + ' 命令，返回标准输出、错误与退出码。优先用只读命令了解现状。',
       parameters: {
         type: 'object',
         properties: {
@@ -116,4 +121,7 @@ export const AGENT_TOOLS: Array<Record<string, unknown>> = [
       }
     }
   }
-]
+  ]
+}
+
+export const AGENT_TOOLS = createAgentTools(getPlatformAdapter().info)

@@ -18,7 +18,7 @@ jobs:
       matrix:
         os:
           - windows-latest
-          - ubuntu-latest
+          - macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,8 +41,14 @@ jobs:
         run: pnpm flow -- ci --include-build
 
   smoke:
-    name: Electron smoke (Windows)
-    runs-on: windows-latest
+    name: Electron smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,8 +71,14 @@ jobs:
         run: pnpm flow -- test --kind smoke
 
   e2e:
-    name: E2E (Windows)
-    runs-on: windows-latest
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4

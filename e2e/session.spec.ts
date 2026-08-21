@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { basename } from 'node:path'
-import { closeDeepDesk, expectAppShell, expectComposerReady, goBackToChat, isMainWindowMaximized, launchDeepDesk, openSettings } from './helpers'
+import { closeDeepDesk, expectAppShell, expectComposerReady, getDesktopPlatform, goBackToChat, isMainWindowMaximized, launchDeepDesk, openSettings, pressAppShortcut } from './helpers'
 
 test('runs local acceptance flow in one Electron window', async () => {
   test.setTimeout(90000)
@@ -14,12 +14,14 @@ test('runs local acceptance flow in one Electron window', async () => {
     })
 
     await test.step('verify titlebar drag markers and settings navigation', async () => {
+      const platform = await getDesktopPlatform(page)
       await expect(page.locator('.titlebar')).toHaveClass(/drag/)
-      await expect(page.locator('.titlebar-title')).toHaveClass(/no-drag/)
-      await expect(page.locator('.win-controls')).toHaveClass(/no-drag/)
+      await expect(page.locator('.titlebar-title')).toHaveCount(0)
+      if (platform === 'macos') await expect(page.locator('.win-controls')).toHaveCount(0)
+      else await expect(page.locator('.win-controls')).toHaveClass(/no-drag/)
 
       await openSettings(page)
-      await expect(page.locator('.titlebar-title', { hasText: 'DeepDesk · 设置' })).toBeVisible()
+      await expect(page.locator('.settings-title', { hasText: '常规' })).toBeVisible()
       await goBackToChat(page)
     })
 
@@ -36,22 +38,18 @@ test('runs local acceptance flow in one Electron window', async () => {
 
     await test.step('verify shortcuts and sidebar account footer', async () => {
       await page.locator('.app-shell').click()
-      await page.keyboard.down('Control')
-      await page.keyboard.press(',')
-      await page.keyboard.up('Control')
+      await pressAppShortcut(page, ',')
       await expect(page.locator('.settings-title', { hasText: '常规' })).toBeVisible()
 
       await page.keyboard.press('Escape')
-      await expect(page.locator('.titlebar-title', { hasText: 'DeepDesk · 对话' })).toBeVisible()
+      await expect(page.locator('.titlebar-title')).toHaveCount(0)
 
       await expect(page.locator('.account-chip')).toContainText('个人账户')
-      await page.getByTitle('设置 (Ctrl+,)').click()
+      await page.getByRole('button', { name: '设置' }).click()
       await expect(page.locator('.settings-title', { hasText: '常规' })).toBeVisible()
 
-      await page.keyboard.down('Control')
-      await page.keyboard.press(',')
-      await page.keyboard.up('Control')
-      await expect(page.locator('.titlebar-title', { hasText: 'DeepDesk · 对话' })).toBeVisible()
+      await pressAppShortcut(page, ',')
+      await expect(page.locator('.titlebar-title')).toHaveCount(0)
     })
 
     await test.step('cycle composer permission mode', async () => {
@@ -148,6 +146,10 @@ test('runs local acceptance flow in one Electron window', async () => {
     })
 
     await test.step('toggle maximize window control', async () => {
+      if (await getDesktopPlatform(page) === 'macos') {
+        await expect(page.getByRole('button', { name: '最大化' })).toHaveCount(0)
+        return
+      }
       const maximize = page.getByRole('button', { name: '最大化' })
       const initiallyMaximized = await isMainWindowMaximized(app)
 

@@ -3,8 +3,10 @@ import { IPC } from '../shared/ipc-channels'
 import type { DeepDeskApi } from '../shared/api'
 import type { AgentEvent, AgentRunRequest, AgentSession } from '../shared/agent-types'
 import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult } from '../shared/types'
+import { platformInfoFromNode } from '../shared/platform'
 
 const api: DeepDeskApi = {
+  platform: platformInfoFromNode(process.platform),
   settings: {
     get: () => ipcRenderer.invoke(IPC.SettingsGet) as Promise<AppSettings>,
     set: (patch: Partial<AppSettings>) => ipcRenderer.invoke(IPC.SettingsSet, patch) as Promise<AppSettings>

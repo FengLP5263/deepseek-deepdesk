@@ -36,7 +36,8 @@ Common commands:
 - Electron smoke: `pnpm flow -- test --kind smoke`
 - Seed UI review mock session: `pnpm flow -- seed-ui-session`
 - Windows package: `pnpm flow -- package --target win`
-- Release candidate: `pnpm flow -- release --target win`
+- macOS arm64 package: `pnpm flow -- package --target mac`
+- Release candidate: `pnpm flow -- release --target <win-or-mac>`
 
 ## Validation rules
 
@@ -46,11 +47,13 @@ Common commands:
 - Feature or bugfix change: update SemVer in both `package.json` and `src/shared/app-meta.ts`. Before the first stable public release, keep the major version at `0` (`feat` -> minor, `fix` -> patch, breaking -> minor with explicit release notes). Only the first stable public release may become `1.0.0`.
 - Release candidate: run `pnpm flow -- release --target <platform>`.
 - macOS packages must be built on macOS.
+- DeepDesk currently supports Windows x64 and macOS arm64; Linux is out of scope.
 - Playwright Electron E2E is installed; run isolated mode for CI and session mode for local visual acceptance.
 
 ## Architecture guardrails
 
 - Renderer must not perform direct network requests.
+- Platform differences belong in `src/main/platform`; do not duplicate the application or hardcode a shell in business logic.
 - IPC changes follow: channel constant -> API type -> preload bridge -> main handler -> renderer caller.
 - Agent tool changes follow: tool schema -> executor branch -> permission evaluation -> tests.
 - Shared code belongs in `src/shared`; do not import Electron across layers.

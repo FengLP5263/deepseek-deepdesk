@@ -45,7 +45,9 @@ pnpm lint         # oxlint
 pnpm build        # electron-vite 构建
 pnpm smoke        # 构建 + Electron 冒烟测试
 pnpm package:win  # 打 Windows NSIS 安装包
+pnpm package:mac  # 打 macOS Apple Silicon DMG
 pnpm release:win  # 完整门禁 + Windows 打包
+pnpm release:mac  # 完整门禁 + macOS 打包
 ```
 
 优先使用统一入口：`pnpm flow -- <command> [options]`。详见 `docs/engineering.md`。
@@ -55,6 +57,7 @@ pnpm release:win  # 完整门禁 + Windows 打包
 - **网络请求一律在主进程**（src/main）执行；渲染层只通过 preload 暴露的 `window.api` 走 IPC，禁止渲染层直接 fetch。
 - 新增 IPC 的固定步骤：`ipc-channels.ts` 加通道常量 → `api.ts` 加类型 → `preload` 暴露 → `main/ipc.ts` 注册 handler。
 - 新增 Agent 工具：`agent-tools.ts` 加 schema → `tools.ts` 加 `executeTool` 分支 → `agent.ts` 的 `evaluatePermission` 决定是否需批准。
+- Windows/macOS 差异统一放在 `src/main/platform`；业务代码禁止直接写死 PowerShell、zsh 或平台窗口行为。
 - 共享代码放 `src/shared`，不要跨层直接 import Electron。
 
 ## 安全约束（改动前必读）

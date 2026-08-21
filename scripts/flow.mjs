@@ -25,9 +25,9 @@ Commands:
   seed-ui-session [--user-data-dir <dir>]
                                  Seed a persisted UI review mock session named UI会话
   build                          Run production build
-  package --target win|mac|linux|all
+  package --target win|mac|all
                                  Build platform package with electron-builder
-  release --target win|mac|linux
+  release --target win|mac
                                  Run full quality gate, then package target
   clean --out --release --temp [--dry-run]
                                  Remove selected generated artifacts
@@ -41,7 +41,9 @@ Examples:
   pnpm flow -- seed-ui-session
   pnpm flow -- test --kind smoke
   pnpm flow -- package --target win
+  pnpm flow -- package --target mac
   pnpm flow -- release --target win
+  pnpm flow -- release --target mac
 `
 
 function parseArgs(argv) {
@@ -49,6 +51,7 @@ function parseArgs(argv) {
   const positional = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
+    if (arg === '--') continue
     if (!arg.startsWith('--')) {
       positional.push(arg)
       continue
@@ -181,7 +184,7 @@ async function e2e(flags) {
 }
 
 function packageSteps(target) {
-  const allowed = ['win', 'mac', 'linux']
+  const allowed = ['win', 'mac']
   const targets = target === 'all' ? allowed : [target]
   for (const item of targets) {
     if (!allowed.includes(item)) throw new Error(`Invalid --target: ${target}`)

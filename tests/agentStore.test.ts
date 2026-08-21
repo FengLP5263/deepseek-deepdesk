@@ -12,6 +12,7 @@ beforeEach(() => {
   saved = []
   startReqs = []
   const api = {
+    platform: { id: 'macos', shellName: 'zsh', nativeWindowControls: true },
     settings: {
       get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }),
       set: async (patch: Record<string, unknown>) => ({ ...patch })

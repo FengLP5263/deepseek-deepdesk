@@ -26,11 +26,12 @@ pnpm flow -- check --include-build --include-smoke
 - OpenAI 兼容 SSE 流式解析
 - LLM 错误、usage、reasoning 内容处理
 - Agent 工具调用与权限审批
+- Windows PowerShell 与 macOS zsh 平台适配、提示词和参数引用
 - 文件工具工作目录边界
 - Zustand store 行为
 - AppStore 持久化链路
 - Electron renderer 加载 smoke
-- Playwright Electron 覆盖启动、设置页、快捷键、侧边栏、模型入口、权限模式、模拟工作目录选择、输入框发送状态、多行输入、上下文面板、Provider 增删改、API Key 显隐、常规设置重启读回、窗口最大化，以及长会话中的回到底部控件定位与滚动行为
+- Playwright Electron 覆盖启动、设置页、平台快捷键、Windows 自定义窗口按钮、macOS 原生交通灯布局、侧边栏、模型入口、权限模式、模拟工作目录选择、输入框发送状态、多行输入、上下文面板、Provider 增删改、API Key 显隐、常规设置重启读回、窗口最大化，以及长会话中的回到底部控件定位与滚动行为
 - E2E 同时支持 CI 友好的 isolated 模式和人工观察友好的 session 模式
 
 ## 不应在测试中做的事
@@ -40,6 +41,7 @@ pnpm flow -- check --include-build --include-smoke
 - 不执行危险命令。
 - 不读写用户真实配置目录，测试应使用临时目录。
 - 不在 E2E 中打开原生文件选择框；通过 `DEEPDESK_E2E_PICK_DIRECTORY` 返回临时工作目录。
+- 平台命令测试只执行 `Write-Output` 或 `printf` 等安全输出命令。
 
 ## 端到端测试建设路线
 

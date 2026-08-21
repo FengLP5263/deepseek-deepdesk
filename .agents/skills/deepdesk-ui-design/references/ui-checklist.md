@@ -34,7 +34,7 @@ DeepDesk should feel like a serious desktop productivity client, not an AI demo.
 - Left titlebar tools:
   - first: expand/collapse sidebar
   - second: new task
-- Window controls stay on the right.
+- Windows window controls stay on the right; macOS uses native traffic lights on the left and reserves their inset space.
 - Collapsed sidebar target: width `0px`; provide the expand entry from titlebar.
 
 ## Sidebar

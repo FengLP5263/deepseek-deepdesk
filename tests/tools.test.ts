@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { executeTool, resolveInWorkdir } from '../src/main/tools'
+import { platformInfoFromNode } from '../src/shared/platform'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'tools-test-')) })
@@ -13,7 +14,7 @@ describe('resolveInWorkdir', () => {
     expect(resolveInWorkdir(dir, 'a/b.txt')).toBe(join(dir, 'a', 'b.txt'))
   })
   it('越界路径抛错', () => {
-    expect(() => resolveInWorkdir(dir, '..\\outside.txt')).toThrow()
+    expect(() => resolveInWorkdir(dir, '../outside.txt')).toThrow()
     expect(() => resolveInWorkdir(dir, join(tmpdir(), 'elsewhere'))).toThrow()
   })
 })
@@ -50,8 +51,10 @@ describe('executeTool', () => {
     expect(s.ok).toBe(true)
     expect(s.summary).toContain('2')
   })
-  it('run_command 执行 PowerShell', async () => {
-    const r = await executeTool({ id: '7', name: 'run_command', args: { command: 'Write-Output hello-agent' } }, dir)
+  it('run_command 使用当前平台 Shell', async () => {
+    const platform = platformInfoFromNode(process.platform)
+    const command = platform.id === 'windows' ? 'Write-Output hello-agent' : "printf '%s\\n' hello-agent"
+    const r = await executeTool({ id: '7', name: 'run_command', args: { command } }, dir)
     expect(r.ok).toBe(true)
     expect(r.content).toContain('hello-agent')
   })

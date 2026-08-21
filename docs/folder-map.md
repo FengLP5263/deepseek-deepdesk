@@ -10,6 +10,7 @@
 | `src/` | `src/AGENTS.md` | 源码总分层 |
 | `src/shared/` | `src/shared/AGENTS.md` | 跨进程类型、IPC、LLM 协议 |
 | `src/main/` | `src/main/AGENTS.md` | Electron 主进程、高权限能力 |
+| `src/main/platform/` | `src/main/AGENTS.md` | Windows/macOS 窗口、Shell、菜单和生命周期适配 |
 | `src/preload/` | `src/preload/AGENTS.md` | `window.api` 安全桥 |
 | `src/renderer/` | `src/renderer/AGENTS.md` | React UI 和前端状态 |
 | `tests/` | `tests/AGENTS.md` | Vitest 测试规则 |
@@ -31,6 +32,7 @@
 | --- | --- | --- |
 | 新增 IPC | `src/shared`、`src/preload`、`src/main`、`src/renderer` | 对应 4 个局部 `AGENTS.md` |
 | 新增 Agent 工具 | `src/main`、`tests` | `src/main/AGENTS.md`、`tests/AGENTS.md` |
+| 修改平台行为 | `src/main/platform`、`src/renderer`、`tests`、`e2e` | Main、Renderer、Tests、E2E 局部说明 |
 | 调整聊天 UI | `src/renderer`、`tests` | `src/renderer/AGENTS.md`、`tests/AGENTS.md` |
 | 改 LLM 协议 | `src/shared/llm`、`tests` | `src/shared/AGENTS.md`、`tests/AGENTS.md` |
 | 改构建/发布流程 | `scripts`、`docs`、`.agents` | 三个局部 `AGENTS.md` |

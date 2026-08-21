@@ -28,7 +28,8 @@ pnpm flow -- <command> [options]
 | UI Mock 会话 | `pnpm flow -- seed-ui-session` | 向本机 userData 写入 `UI会话`，用于人工检查复杂会话 UI |
 | 生产构建 | `pnpm flow -- build` | 等价于 `pnpm build` |
 | Windows 打包 | `pnpm flow -- package --target win` | 输出 NSIS 安装包 |
-| 发布候选 | `pnpm flow -- release --target win` | 完整门禁 + 指定平台打包 |
+| macOS 打包 | `pnpm flow -- package --target mac` | 在 Apple Silicon Mac 输出 arm64 DMG |
+| 发布候选 | `pnpm flow -- release --target <win-or-mac>` | 完整门禁 + 指定平台打包 |
 
 ## 流程分层
 
@@ -37,7 +38,7 @@ pnpm flow -- <command> [options]
 3. 改安全、权限、持久化、IPC、Agent 工具：必须补或更新测试
 4. 功能和修复改动：按语义化版本号同步更新 `package.json` 与 `src/shared/app-meta.ts`
 5. 提交前：`pnpm flow -- check --include-build`
-6. 发版前：`pnpm flow -- release --target win`
+6. 发版前：在目标系统运行 `pnpm flow -- release --target win` 或 `pnpm flow -- release --target mac`
 
 ## 版本规则
 
@@ -59,8 +60,8 @@ DeepDesk 还没有发布第一个稳定对外版本，因此当前使用 `0.x.y`
 ## 平台限制
 
 - Windows 包可以在 Windows 上打。
-- macOS 包必须在 macOS 上打，产物通常是 `.dmg`，不是 `.exe`。
-- Linux 包建议在 Linux 或 CI 容器中打。
+- macOS arm64 包必须在 Apple Silicon macOS 上打，产物是 `.dmg`。
+- 当前不提供 Linux 构建、测试或发布目标。
 
 ## AI 协作规则
 

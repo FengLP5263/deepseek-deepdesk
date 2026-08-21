@@ -9,10 +9,12 @@ import {
   createMessageActionsUserData,
   expectAppShell,
   expectComposerReady,
+  getDesktopPlatform,
   goBackToChat,
   isMainWindowMaximized,
   launchDeepDesk,
-  openSettings
+  openSettings,
+  pressAppShortcut
 } from './helpers'
 
 let app: ElectronApplication
@@ -111,12 +113,20 @@ test('aligns the settings navigation and content columns', async () => {
 })
 
 test('marks titlebar drag regions and supports settings back button', async () => {
+  const platform = await getDesktopPlatform(page)
   await expect(page.locator('.titlebar')).toHaveClass(/drag/)
+  await expect(page.locator('.titlebar')).toHaveClass(new RegExp('platform-' + platform))
   await expect(page.locator('.titlebar-tools')).toHaveClass(/no-drag/)
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
   await expect(page.getByTitle('收起侧边栏')).toBeVisible()
   await expect(page.getByTitle('新建任务')).toBeVisible()
-  await expect(page.locator('.win-controls')).toHaveClass(/no-drag/)
+  if (platform === 'macos') {
+    await expect(page.locator('.win-controls')).toHaveCount(0)
+    const toolsLeft = await page.locator('.titlebar-tools').evaluate(element => Math.round(element.getBoundingClientRect().left))
+    expect(toolsLeft).toBeGreaterThanOrEqual(70)
+  } else {
+    await expect(page.locator('.win-controls')).toHaveClass(/no-drag/)
+  }
 
   await openSettings(page)
 
@@ -251,21 +261,17 @@ test('opens sidebar feature pages and applies a skill template', async () => {
 
 test('supports global settings shortcuts and sidebar account footer', async () => {
   await page.locator('.app-shell').click()
-  await page.keyboard.down('Control')
-  await page.keyboard.press(',')
-  await page.keyboard.up('Control')
+  await pressAppShortcut(page, ',')
   await expect(page.locator('.settings-title', { hasText: '常规' })).toBeVisible()
 
   await page.keyboard.press('Escape')
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
 
   await expect(page.locator('.account-chip')).toContainText('个人账户')
-  await page.getByTitle('设置 (Ctrl+,)').click()
+  await page.getByRole('button', { name: '设置' }).click()
   await expect(page.locator('.settings-title', { hasText: '常规' })).toBeVisible()
 
-  await page.keyboard.down('Control')
-  await page.keyboard.press(',')
-  await page.keyboard.up('Control')
+  await pressAppShortcut(page, ',')
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
 })
 
@@ -365,7 +371,7 @@ test('selects a mock agent work directory without opening a native dialog', asyn
 })
 
 test('updates general settings without calling external services', async () => {
-  await page.getByTitle('设置 (Ctrl+,)').click()
+  await page.getByRole('button', { name: '设置' }).click()
   await page.getByRole('button', { name: '常规' }).click()
 
   await page.getByRole('button', { name: '浅色' }).click()
@@ -381,7 +387,7 @@ test('updates general settings without calling external services', async () => {
 })
 
 test('opens provider modal, validates required fields, and closes it', async () => {
-  await page.getByTitle('设置 (Ctrl+,)').click()
+  await page.getByRole('button', { name: '设置' }).click()
   await page.getByRole('button', { name: '模型服务' }).click()
   await page.getByRole('button', { name: '添加服务' }).click()
 
@@ -396,6 +402,7 @@ test('opens provider modal, validates required fields, and closes it', async () 
 })
 
 test('toggles maximize window control and emits UI state', async () => {
+  test.skip(await getDesktopPlatform(page) === 'macos', 'macOS 使用原生交通灯窗口控制')
   const maximize = page.getByRole('button', { name: '最大化' })
   const initiallyMaximized = await isMainWindowMaximized(app)
 

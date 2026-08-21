@@ -28,10 +28,11 @@
 - `store.ts`：AppStore 持有 `{ settings, providers, conversations }`，写盘走「tmp + rename」原子替换，写队列串行化避免并发覆盖
 - `llm.ts`：流式会话注册表 `Map<runId, AbortController>`，支持取消 / 全局清理
 - `ipc.ts`：全部 IPC handler；`providers:test` 通过 `GET /models` 校验凭据并导入模型
+- `platform/`：Windows/macOS 平台适配层；统一窗口参数、原生菜单、应用生命周期、命令 Shell 与参数引用
 
 ### Preload
 
-仅暴露类型化的 `window.api`，不泄漏 Node 能力；事件监听返回解绑函数，防止内存泄漏。
+仅暴露类型化的 `window.api`，不泄漏 Node 能力；事件监听返回解绑函数，防止内存泄漏。`window.api.platform` 只读暴露当前平台、Shell 名称和是否使用原生窗口按钮。
 
 ### Renderer
 
@@ -55,8 +56,15 @@
 - CSP 限制 script 来源
 - 外部链接只允许 `http/https` 且交给系统浏览器
 - `will-navigate` 拦截非白名单导航
+- Windows Agent 命令通过 PowerShell 执行，macOS 通过登录 zsh 执行；两端共用工作目录边界、超时、输出截断和权限审批
 
-## 6. 路线图
+## 6. 双平台边界
+
+- Windows：无边框窗口、右侧自定义窗口按钮、PowerShell、NSIS x64。
+- macOS：`hiddenInset` 标题栏、原生交通灯、Dock/原生菜单、zsh、DMG arm64。
+- 聊天、LLM、IPC、存储、Agent 循环和 React 界面只有一份源码；平台差异不得复制完整应用目录。
+
+## 7. 路线图
 
 - [ ] Anthropic / 非 OpenAI 协议适配器
 - [ ] safeStorage 加密 API Key

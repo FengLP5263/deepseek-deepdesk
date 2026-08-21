@@ -6,12 +6,17 @@ import { AGENT_TOOLS } from './agent-tools'
 import { executeTool, isDangerousCommand, isReadOnlyCommand, resolvePath, toolTargetPaths } from './tools'
 import type { AgentEvent, AgentRunRequest, AgentToolCall, AgentToolName, AgentToolResult } from '../shared/agent-types'
 import type { AgentPermissionMode, AppSettings, ProviderConfig } from '../shared/types'
+import type { PlatformInfo } from '../shared/platform'
+import { getPlatformAdapter } from './platform'
 
 const MAX_TURNS = 25
 const pendingApprovals = new Map<string, { resolve: (v: boolean) => void }>()
 const controllers = new Map<string, AbortController>()
 
-function buildSystemPrompt(workdir: string, platform: string, mode: AgentPermissionMode): string {
+export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode): string {
+  const readonlyExamples = platform.shellName === 'powershell'
+    ? 'Get-ChildItem、git status、Get-Content'
+    : 'ls、git status、cat、pwd'
   const modeDesc = mode === 'full'
     ? '完全访问：所有操作直接执行，无需询问'
     : mode === 'auto'
@@ -22,15 +27,15 @@ function buildSystemPrompt(workdir: string, platform: string, mode: AgentPermiss
     , '你可以通过工具调用来完成真实操作：执行命令、读写编辑文件、列目录、搜索内容。'
     , ''
     , '规则：'
-    , '1. 优先用只读命令了解现状（如 Get-ChildItem、git status、Get-Content），再动手修改。'
+    , '1. 优先用只读命令了解现状（如 ' + readonlyExamples + '），再动手修改。'
     , '2. 修改文件优先用 edit_file 做精准替换，而不是整体重写。'
-    , '3. 命令在 PowerShell 中执行（Windows）。'
+    , '3. 命令在 ' + (platform.shellName === 'powershell' ? 'PowerShell（Windows）' : 'zsh（macOS）') + ' 中执行。'
     , '4. 边做边用简短的话汇报进度；最终给出总结。'
     , '5. 无法完成或信息不足就直说，不要编造。'
     , '6. 如需通知他人，先用 search_feishu_user 按姓名查 open_id，再用 send_feishu_message 发飞书消息。'
     , ''
     , '工作目录：' + workdir
-    , '操作系统：' + platform
+    , '操作系统：' + platform.id
     , '当前权限模式：' + modeDesc
   ].join('\n')
 }
@@ -88,7 +93,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
   void (async () => {
     const messages: Array<Record<string, unknown>> = (req.history && req.history.length > 0)
       ? [...req.history]
-      : [{ role: 'system', content: buildSystemPrompt(req.workdir, process.platform, mode) }]
+      : [{ role: 'system', content: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode) }]
     messages.push({ role: 'user', content: req.task })
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {

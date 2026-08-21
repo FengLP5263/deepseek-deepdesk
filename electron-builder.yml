@@ -13,7 +13,9 @@ electronLanguages:
   - en-US
 win:
   target:
-    - nsis
+    - target: nsis
+      arch:
+        - x64
   icon: build/icon.png
 nsis:
   oneClick: false
@@ -21,9 +23,8 @@ nsis:
   perMachine: false
 mac:
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - arm64
+  icon: build/icon.icns
   category: public.app-category.productivity
-linux:
-  target:
-    - AppImage
-  category: Utility
