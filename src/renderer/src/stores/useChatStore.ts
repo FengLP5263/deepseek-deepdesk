@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ChatChunkPayload, ChatMessage, Conversation } from '@shared/types'
+import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
 import { makeTitle, uid } from '../lib/utils'
 
@@ -221,13 +222,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const payload = conv.messages
       .filter(m => !m.streaming)
       .map(m => ({ role: m.role, content: m.content }))
+    const memories = await window.api.memories.search({ query: trimmed, scopes: ['user', 'project'], limit: 6 })
+    const memoryContext = formatMemoryContext(memories)
+    const messages = memoryContext
+      ? [{ role: 'system', content: memoryContext }, ...payload]
+      : payload
     const res = await window.api.chat.start({
       runId,
       conversationId: conv.id,
       providerId: conv.providerId,
       modelId: conv.modelId,
       temperature: conv.temperature,
-      messages: payload
+      messages
     })
     if (!res.ok) {
       const handle = streamHandles.get(runId)

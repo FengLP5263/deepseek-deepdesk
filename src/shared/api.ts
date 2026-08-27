@@ -1,4 +1,4 @@
-import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload } from './types'
+import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest } from './types'
 import type { AgentEvent, AgentRunRequest, AgentSession } from './agent-types'
 import type { PlatformInfo } from './platform'
 
@@ -19,6 +19,12 @@ export interface DeepDeskApi {
     get: (id: string) => Promise<Conversation | null>
     upsert: (conversation: Conversation) => Promise<void>
     remove: (id: string) => Promise<void>
+  }
+  memories: {
+    list: () => Promise<MemoryItem[]>
+    upsert: (memory: MemoryItem) => Promise<MemoryItem>
+    remove: (id: string) => Promise<void>
+    search: (request: MemorySearchRequest) => Promise<MemoryItem[]>
   }
   chat: {
     start: (req: ChatStartRequest) => Promise<{ ok: boolean; message?: string }>

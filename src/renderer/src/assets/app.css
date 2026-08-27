@@ -757,6 +757,21 @@ input, textarea { user-select: text; }
 .settings-card .tab { border-radius: 999px; padding: 6px 12px; color: var(--text-secondary); }
 .settings-card .tab.active { border-color: transparent; background: var(--bg-active); color: var(--text); }
 .settings-card.danger-zone { border-color: var(--border); }
+.settings-section-desc { margin-top: -10px; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.55; }
+.memory-editor { display: flex; flex-direction: column; gap: 12px; padding: 18px 24px; }
+.memory-editor-grid { display: grid; grid-template-columns: 150px 150px; gap: 10px; }
+.memory-editor .textarea { min-height: 94px; resize: vertical; line-height: 1.6; }
+.memory-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.memory-list { display: flex; flex-direction: column; gap: 10px; }
+.memory-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elevated); padding: 16px 18px; }
+.memory-card-main { min-width: 0; }
+.memory-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; color: var(--text-muted); font-size: var(--fs-xs); }
+.memory-meta span { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; background: var(--bg-hover); }
+.memory-content { color: var(--text); font-size: var(--fs-sm); line-height: 1.65; white-space: pre-wrap; word-break: break-word; user-select: text; }
+.memory-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.memory-tag { color: var(--text-muted); font-size: var(--fs-xs); }
+.memory-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.memory-empty { border: 1px dashed var(--border); border-radius: 14px; padding: 28px; color: var(--text-muted); text-align: center; background: var(--bg-elevated); }
 
 .provider-card { padding: 20px 24px; gap: 16px; }
 .provider-card + .provider-card { margin-top: 0; }

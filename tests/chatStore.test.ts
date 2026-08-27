@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig } from '../src/shared/types'
+import type { ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, MemoryItem } from '../src/shared/types'
 import { useChatStore } from '../src/renderer/src/stores/useChatStore'
 import { useSettingsStore } from '../src/renderer/src/stores/useSettingsStore'
 
@@ -13,11 +13,13 @@ function makeProviders(): ProviderConfig[] {
 let startRequests: ChatStartRequest[] = []
 let chunkCb: ((p: ChatChunkPayload) => void) | null = null
 let saved: Map<string, Conversation>
+let memoryResults: MemoryItem[] = []
 
 beforeEach(() => {
   startRequests = []
   chunkCb = null
   saved = new Map()
+  memoryResults = []
   const api = {
     settings: {
       get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', enterToSend: true }),
@@ -29,6 +31,12 @@ beforeEach(() => {
       get: async (id: string) => saved.get(id) ?? null,
       upsert: async (c: Conversation) => { saved.set(c.id, structuredClone(c)) },
       remove: async (id: string) => { saved.delete(id) }
+    },
+    memories: {
+      list: async () => memoryResults,
+      upsert: async (memory: MemoryItem) => memory,
+      remove: async () => {},
+      search: async () => memoryResults
     },
     chat: {
       start: async (req: ChatStartRequest) => { startRequests.push(req); return { ok: true } },
@@ -111,6 +119,28 @@ describe('useChatStore', () => {
     expect(assistant.model).toBe('deepseek-chat')
     expect(useChatStore.getState().streaming).toBeNull()
     expect(saved.get(req.conversationId)?.messages[1].content).toBe('嗨')
+  })
+
+  it('发送时注入命中的长期记忆但不写入会话消息', async () => {
+    memoryResults = [{
+      id: 'mem-1',
+      scope: 'user',
+      kind: 'preference',
+      content: '用户偏好：回答先给结论',
+      tags: ['沟通'],
+      enabled: true,
+      createdAt: 1,
+      updatedAt: 1,
+      source: { type: 'manual' }
+    }]
+    await boot()
+    useChatStore.getState().createConversation('deepseek', 'deepseek-chat')
+    await useChatStore.getState().sendMessage('怎么优化 UI')
+    const req = startRequests[0]
+    expect(req.messages[0]).toEqual(expect.objectContaining({ role: 'system' }))
+    expect(req.messages[0].content).toContain('用户偏好：回答先给结论')
+    expect(req.messages[1]).toEqual({ role: 'user', content: '怎么优化 UI' })
+    expect(useChatStore.getState().conversations[0].messages.map(message => message.role)).toEqual(['user', 'assistant'])
   })
 
   it('流式错误标记 error 并填充错误文案', async () => {

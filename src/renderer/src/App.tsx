@@ -3,6 +3,7 @@ import TitleBar from './components/titlebar/TitleBar'
 import Sidebar from './components/sidebar/Sidebar'
 import AgentView from './components/agent/AgentView'
 import SettingsView from './components/settings/SettingsView'
+import type { SettingsTab } from './components/settings/SettingsView'
 import FeatureHub from './components/hub/FeatureHub'
 import DeepSeekLogo from './components/DeepSeekLogo'
 import { useSettingsStore } from './stores/useSettingsStore'
@@ -10,8 +11,6 @@ import { useAgentStore } from './stores/useAgentStore'
 import { Loader2 } from 'lucide-react'
 
 type View = 'chat' | 'settings' | 'connectors' | 'skills' | 'more'
-type SettingsTab = 'general' | 'providers'
-
 export default function App() {
   const ready = useSettingsStore(s => s.loaded)
   const [view, setView] = useState<View>('chat')

@@ -1,12 +1,14 @@
-import { ChevronLeft, PlugZap, Search, Settings as SettingsIcon } from 'lucide-react'
+import { Brain, ChevronLeft, PlugZap, Search, Settings as SettingsIcon } from 'lucide-react'
 import ProvidersTab from './ProvidersTab'
 import GeneralTab from './GeneralTab'
+import MemoriesTab from './MemoriesTab'
 import clsx from 'clsx'
 
-type SettingsTab = 'providers' | 'general'
+export type SettingsTab = 'providers' | 'general' | 'memories'
 
 const tabs: Array<{ key: SettingsTab; label: string; group: string; icon: typeof SettingsIcon; desc: string }> = [
   { key: 'general', label: '常规', group: '个人', icon: SettingsIcon, desc: '权限、模型默认值、主题和本地数据' },
+  { key: 'memories', label: '记忆', group: '个人', icon: Brain, desc: '管理本地长期记忆和上下文注入' },
   { key: 'providers', label: '模型服务', group: 'AI', icon: PlugZap, desc: '配置 DeepSeek 和 OpenAI 兼容服务' }
 ]
 
@@ -39,7 +41,9 @@ export default function SettingsView({ onBack, tab, onTabChange }: { onBack: () 
         </div>
         <div className='settings-scroll'>
           <div className='settings-inner'>
-          {tab === 'providers' ? <ProvidersTab /> : <GeneralTab />}
+            {tab === 'providers' && <ProvidersTab />}
+            {tab === 'general' && <GeneralTab />}
+            {tab === 'memories' && <MemoriesTab />}
           </div>
         </div>
       </section>

@@ -4,10 +4,10 @@ import DeepSeekLogo from '../DeepSeekLogo'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { formatTime } from '../../lib/format'
 import { APP_VERSION } from '@shared/app-meta'
+import type { SettingsTab } from '../settings/SettingsView'
 import clsx from 'clsx'
 
 type AppView = 'chat' | 'settings' | 'connectors' | 'skills' | 'more'
-type SettingsTab = 'general' | 'providers'
 
 export default function Sidebar({
   view,

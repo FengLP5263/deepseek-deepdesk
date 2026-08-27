@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { AgentEvent, AgentSession, AgentStep } from '@shared/agent-types'
+import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
 
 interface AgentState {
@@ -149,7 +150,9 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       const prevHistory = get().history
       const title = get().currentTask || t
       set({ running: true, currentRunId: runId, currentTask: title, currentModelId: modelId, currentSessionId: sessionId, activeSessionId: sessionId, error: null, steps: [...prevSteps, { kind: 'task', text: t }], pendingApproval: null })
-      const res = await window.api.agent.start({ runId, providerId, modelId, workdir: get().workdir, task: t, temperature: ss.settings?.temperature ?? 1, history: prevHistory })
+      const memories = await window.api.memories.search({ query: [t, get().workdir].filter(Boolean).join(' '), scopes: ['user', 'project', 'agent'], limit: 8 })
+      const memoryContext = formatMemoryContext(memories)
+      const res = await window.api.agent.start({ runId, providerId, modelId, workdir: get().workdir, task: t, temperature: ss.settings?.temperature ?? 1, history: prevHistory, memoryContext })
       if (!res.ok) {
         append({ kind: 'error', message: res.message ?? '启动失败' })
         set({ running: false, currentRunId: null })

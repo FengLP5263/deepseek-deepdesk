@@ -1,9 +1,10 @@
 import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { AppState, AppSettings, ProviderConfig, Conversation } from '../shared/types'
+import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest } from '../shared/types'
 import type { AgentSession } from '../shared/agent-types'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
+import { searchMemories } from '../shared/memory'
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
@@ -35,7 +36,8 @@ export class AppStore {
       settings: { ...DEFAULT_SETTINGS },
       providers: cloneProviders(),
       conversations: [],
-      agentSessions: []
+      agentSessions: [],
+      memories: []
     }
   }
 
@@ -53,7 +55,9 @@ export class AppStore {
     if (!this.data.settings) this.data.settings = { ...DEFAULT_SETTINGS }
     if (!this.data.conversations) this.data.conversations = []
     if (!this.data.agentSessions) this.data.agentSessions = []
+    if (!this.data.memories) this.data.memories = []
     this.migrateDeepSeekV4()
+    this.hydrateBuiltInProviderModels()
     await this.persist()
   }
 
@@ -66,7 +70,8 @@ export class AppStore {
     const providers = Array.isArray(parsed.providers) ? parsed.providers : []
     const conversations = Array.isArray(parsed.conversations) ? parsed.conversations : []
     const agentSessions = Array.isArray(parsed.agentSessions) ? parsed.agentSessions : []
-    return { settings, providers, conversations, agentSessions }
+    const memories = Array.isArray(parsed.memories) ? parsed.memories : []
+    return { settings, providers, conversations, agentSessions, memories }
   }
 
   private migrateDeepSeekV4(): void {
@@ -87,6 +92,22 @@ export class AppStore {
       if (conv.providerId === 'deepseek' && oldIds.includes(conv.modelId)) {
         conv.modelId = oldToNew[conv.modelId]
       }
+    }
+  }
+
+  private hydrateBuiltInProviderModels(): void {
+    for (const builtin of BUILTIN_PROVIDERS) {
+      const provider = this.data.providers.find(p => p.id === builtin.id)
+      if (!provider) continue
+      if (!Array.isArray(provider.models)) provider.models = []
+      const existingIds = new Set(provider.models.map(model => model.id))
+      const missing = builtin.models.filter(model => !existingIds.has(model.id))
+      if (missing.length > 0) {
+        provider.models = [...provider.models, ...missing.map(model => ({ ...model }))]
+      }
+      provider.isBuiltIn = provider.isBuiltIn ?? builtin.isBuiltIn
+      if (!provider.name) provider.name = builtin.name
+      if (!provider.baseUrl) provider.baseUrl = builtin.baseUrl
     }
   }
 
@@ -136,6 +157,39 @@ export class AppStore {
   clearConversations(): void {
     this.data.conversations = []
     this.persist()
+  }
+
+  listMemories(): MemoryItem[] {
+    return structuredClone(this.data.memories)
+  }
+
+  upsertMemory(memory: MemoryItem): MemoryItem {
+    const now = Date.now()
+    const clean: MemoryItem = {
+      ...memory,
+      content: memory.content.trim(),
+      tags: memory.tags.map(tag => tag.trim()).filter(Boolean),
+      createdAt: memory.createdAt || now,
+      updatedAt: now
+    }
+    const idx = this.data.memories.findIndex(item => item.id === clean.id)
+    if (idx >= 0) {
+      clean.createdAt = this.data.memories[idx].createdAt
+      this.data.memories[idx] = structuredClone(clean)
+    } else {
+      this.data.memories.push(structuredClone(clean))
+    }
+    this.persist()
+    return structuredClone(clean)
+  }
+
+  deleteMemory(id: string): void {
+    this.data.memories = this.data.memories.filter(memory => memory.id !== id)
+    this.persist()
+  }
+
+  searchMemories(request: MemorySearchRequest): MemoryItem[] {
+    return structuredClone(searchMemories(this.data.memories, request.query, request.scopes, request.limit))
   }
 
   upsertAgentSession(session: AgentSession): void {

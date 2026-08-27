@@ -13,7 +13,7 @@ const MAX_TURNS = 25
 const pendingApprovals = new Map<string, { resolve: (v: boolean) => void }>()
 const controllers = new Map<string, AbortController>()
 
-export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode): string {
+export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode, memoryContext?: string): string {
   const readonlyExamples = platform.shellName === 'powershell'
     ? 'Get-ChildItem、git status、Get-Content'
     : 'ls、git status、cat、pwd'
@@ -22,7 +22,7 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
     : mode === 'auto'
       ? '替我审批：低风险操作（只读命令、工作目录内的读写）自动执行，风险操作会询问用户'
       : '每次询问：执行命令、访问工作目录外的文件都会询问用户'
-  return [
+  const base = [
     '你是 DeepDesk Agent，一个运行在用户电脑上的编程与操作助手。'
     , '你可以通过工具调用来完成真实操作：执行命令、读写编辑文件、列目录、搜索内容。'
     , ''
@@ -38,6 +38,8 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
     , '操作系统：' + platform.id
     , '当前权限模式：' + modeDesc
   ].join('\n')
+  const memory = memoryContext?.trim()
+  return memory ? [base, '', memory].join('\n') : base
 }
 
 function evaluatePermission(call: AgentToolCall, workdir: string, mode: AgentPermissionMode): { needsApproval: boolean; reason: string; allowOutside: boolean } {
@@ -93,7 +95,10 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
   void (async () => {
     const messages: Array<Record<string, unknown>> = (req.history && req.history.length > 0)
       ? [...req.history]
-      : [{ role: 'system', content: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode) }]
+      : [{ role: 'system', content: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode, req.memoryContext) }]
+    if (req.history && req.history.length > 0 && req.memoryContext?.trim()) {
+      messages.push({ role: 'system', content: req.memoryContext.trim() })
+    }
     messages.push({ role: 'user', content: req.task })
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {

@@ -28,6 +28,7 @@ beforeEach(async () => {
     },
     providers: { list: async () => store.getSnapshot().providers, upsert: async () => {}, remove: async () => {}, test: async () => ({ ok: true, message: '' }) },
     conversations: { list: async () => [], get: async () => null, upsert: async () => {}, remove: async () => {} },
+    memories: { list: async () => [], upsert: async (memory: never) => memory, remove: async () => {}, search: async () => [] },
     chat: { start: async () => ({ ok: true }), cancel: async () => {}, onChunk: () => () => {} },
     agent: {
       start: async () => ({ ok: true }),
@@ -37,7 +38,8 @@ beforeEach(async () => {
       onChunk: (cb: (ev: AgentEvent) => void) => { chunkCb = cb; return () => { chunkCb = null } },
       saveSession: async (s: never) => { store.upsertAgentSession(s) },
       listSessions: async () => store.getSnapshot().agentSessions,
-      deleteSession: async (id: string) => store.deleteAgentSession(id)
+      deleteSession: async (id: string) => store.deleteAgentSession(id),
+      renameSession: async (id: string, title: string) => store.renameAgentSession(id, title)
     },
     window: { minimize: async () => {}, toggleMaximize: async () => {}, close: async () => {}, isMaximized: async () => false, onMaximizedChange: () => () => {} },
     openExternal: async () => {},
@@ -45,7 +47,7 @@ beforeEach(async () => {
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
   useSettingsStore.setState({ loaded: true, providers: [{ id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }], settings: { ...store.getSnapshot().settings } })
-  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', steps: [], sessions: [], pendingApproval: null, error: null })
+  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', draftTask: '', steps: [], history: [], sessions: [], activeSessionId: null, pendingApproval: null, error: null })
 })
 
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })

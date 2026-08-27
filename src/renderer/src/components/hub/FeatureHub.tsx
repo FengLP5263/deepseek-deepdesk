@@ -3,9 +3,9 @@ import { Blocks, Check, FolderOpen, Link2, MoreHorizontal, Plus, PlugZap, Refres
 import clsx from 'clsx'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
+import type { SettingsTab } from '../settings/SettingsView'
 
 type HubView = 'connectors' | 'skills' | 'more'
-type SettingsTab = 'general' | 'providers'
 
 interface FeatureHubProps {
   view: HubView

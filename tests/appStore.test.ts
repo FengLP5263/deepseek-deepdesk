@@ -35,6 +35,7 @@ describe('AppStore', () => {
     expect(snap.settings.defaultModelId).toBe('deepseek-v4-flash')
     expect(snap.providers.find(p => p.id === 'deepseek')?.models.map(m => m.id).sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
     expect(snap.conversations).toEqual([])
+    expect(snap.memories).toEqual([])
   })
 
   it('设置持久化并可重新加载', async () => {
@@ -69,11 +70,25 @@ describe('AppStore', () => {
   it('Agent 会话增删', async () => {
     const store = createStore()
     await store.init()
-    store.upsertAgentSession({ id: 's1', task: '任务', workdir: dir, modelId: 'deepseek-v4-pro', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task', text: '任务' }] })
+    store.upsertAgentSession({ id: 's1', task: '任务', workdir: dir, modelId: 'deepseek-v4-pro', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task', text: '任务' }], history: [] })
     expect(store.getSnapshot().agentSessions.length).toBe(1)
     expect(store.getSnapshot().agentSessions[0].task).toBe('任务')
     store.deleteAgentSession('s1')
     expect(store.getSnapshot().agentSessions.length).toBe(0)
+  })
+
+  it('记忆增删查与持久化', async () => {
+    const store = createStore()
+    await store.init()
+    store.upsertMemory({ id: 'm1', scope: 'user', kind: 'preference', content: '用户喜欢先给结论', tags: ['沟通'], enabled: true, createdAt: 1, updatedAt: 1, source: { type: 'manual' } })
+    expect(store.searchMemories({ query: '结论', scopes: ['user'], limit: 3 }).map(memory => memory.id)).toEqual(['m1'])
+    await store.flush()
+
+    const store2 = createStore()
+    await store2.init()
+    expect(store2.listMemories()[0].content).toBe('用户喜欢先给结论')
+    store2.deleteMemory('m1')
+    expect(store2.listMemories()).toEqual([])
   })
 
   it('删除默认提供商后回退到首个', async () => {
@@ -102,5 +117,24 @@ describe('AppStore', () => {
     expect(ds.models.map(m => m.id).sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
     expect(snap.settings.defaultModelId).toBe('deepseek-v4-pro')
     expect(snap.conversations[0].modelId).toBe('deepseek-v4-pro')
+    expect(snap.memories).toEqual([])
+  })
+
+  it('本地旧数据中 DeepSeek 模型列表为空时自动补回内置模型', async () => {
+    writeFileSync(join(dir, 'deepdesk.json'), JSON.stringify({
+      settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-flash', temperature: 1, theme: 'dark', enterToSend: true },
+      providers: [{
+        id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk-keep-me', isBuiltIn: true, createdAt: 0,
+        models: []
+      }],
+      conversations: [],
+      agentSessions: [],
+      memories: []
+    }))
+    const store = createStore()
+    await store.init()
+    const ds = store.getSnapshot().providers.find(p => p.id === 'deepseek')!
+    expect(ds.apiKey).toBe('sk-keep-me')
+    expect(ds.models.map(m => m.id).sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
   })
 })

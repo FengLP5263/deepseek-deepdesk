@@ -47,6 +47,31 @@ export interface Conversation {
   messages: ChatMessage[]
 }
 
+export type MemoryScope = 'user' | 'project' | 'agent'
+
+export type MemoryKind = 'preference' | 'fact' | 'procedure' | 'decision' | 'summary'
+
+export interface MemoryItem {
+  id: string
+  scope: MemoryScope
+  kind: MemoryKind
+  content: string
+  tags: string[]
+  source?: {
+    type: 'manual' | 'conversation' | 'agent'
+    id?: string
+  }
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface MemorySearchRequest {
+  query: string
+  scopes?: MemoryScope[]
+  limit?: number
+}
+
 export interface AppSettings {
   version: number
   defaultProviderId: string
@@ -63,6 +88,7 @@ export interface AppState {
   providers: ProviderConfig[]
   conversations: Conversation[]
   agentSessions: AgentSession[]
+  memories: MemoryItem[]
 }
 
 export type ChatChunkType = 'start' | 'content' | 'reasoning' | 'done' | 'error'

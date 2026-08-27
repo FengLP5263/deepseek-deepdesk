@@ -1,11 +1,13 @@
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { basename } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import type { DeepDeskE2EApp } from './helpers'
 import {
   closeDeepDesk,
   closeDeepDeskWithoutRemovingData,
   createLongAgentSessionUserData,
+  createMemoryUserData,
   createMessageActionsUserData,
   expectAppShell,
   expectComposerReady,
@@ -14,7 +16,8 @@ import {
   isMainWindowMaximized,
   launchDeepDesk,
   openSettings,
-  pressAppShortcut
+  pressAppShortcut,
+  startMockChatServer
 } from './helpers'
 
 let app: ElectronApplication
@@ -513,6 +516,64 @@ test('persists general settings after app restart with the same user data direct
 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await expect(page.getByTitle('选择权限模式')).toContainText('完全访问')
+})
+
+test('persists memory settings and injects matching memory into an agent request', async () => {
+  await closeDeepDesk(ctx)
+  ctx = null
+  const mock = await startMockChatServer('已收到记忆上下文。')
+
+  try {
+    ctx = await launchDeepDesk(createMemoryUserData(mock.baseUrl))
+    app = ctx.app
+    page = ctx.page
+
+    const memoryContent = 'DeepDesk 记忆系统相关回答要先给结论，并保持简洁。'
+
+    await openSettings(page)
+    await page.getByRole('button', { name: '记忆' }).click()
+    await expect(page.locator('.settings-title', { hasText: '记忆' })).toBeVisible()
+
+    await page.locator('.memory-editor select').nth(0).selectOption('project')
+    await page.locator('.memory-editor select').nth(1).selectOption('preference')
+    await page.locator('.memory-editor textarea').fill(memoryContent)
+    await page.locator('.memory-editor input').fill('deepdesk 记忆系统')
+    await page.getByRole('button', { name: '添加记忆' }).click()
+
+    await expect(page.locator('.memory-card', { hasText: memoryContent })).toBeVisible()
+
+    const userDataDir = ctx.userDataDir
+    await closeDeepDeskWithoutRemovingData(ctx)
+    ctx = await launchDeepDesk(userDataDir)
+    app = ctx.app
+    page = ctx.page
+
+    await openSettings(page)
+    await page.getByRole('button', { name: '记忆' }).click()
+    await expect(page.locator('.memory-card', { hasText: memoryContent })).toBeVisible()
+    await goBackToChat(page)
+
+    const task = 'DeepDesk 记忆系统 怎么介绍'
+    await page.getByPlaceholder('发消息，或让我帮你做点事…').fill(task)
+    await page.locator('.send-btn').click()
+    await expect(page.getByText('已收到记忆上下文。')).toBeVisible()
+
+    await expect.poll(() => mock.requests.length).toBe(1)
+    const messages = mock.requests[0].messages ?? []
+    expect(String(messages[0]?.content ?? '')).toContain(memoryContent)
+    expect(messages[messages.length - 1]).toEqual(expect.objectContaining({ role: 'user', content: task }))
+
+    await expect.poll(() => {
+      const raw = readFileSync(join(userDataDir, 'deepdesk.json'), 'utf8')
+      const state = JSON.parse(raw) as { agentSessions?: Array<{ steps?: Array<{ text?: string }> }> }
+      return state.agentSessions?.length ?? 0
+    }).toBe(1)
+    const raw = readFileSync(join(userDataDir, 'deepdesk.json'), 'utf8')
+    const state = JSON.parse(raw) as { agentSessions: Array<{ steps: Array<{ text?: string }> }> }
+    expect(state.agentSessions[0].steps.map(step => step.text ?? '').join('\n')).not.toContain(memoryContent)
+  } finally {
+    await mock.close()
+  }
 })
 
 test('places the scroll-to-bottom control above the composer in a long agent session', async () => {

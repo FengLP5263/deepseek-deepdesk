@@ -14,6 +14,7 @@ export interface AgentRunRequest {
   task: string
   temperature: number
   history?: Array<Record<string, unknown>>
+  memoryContext?: string
 }
 
 export interface AgentToolResult {

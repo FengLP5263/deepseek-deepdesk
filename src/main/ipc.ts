@@ -3,7 +3,7 @@ import { IPC } from '../shared/ipc-channels'
 import { startChat, cancelChat } from './llm'
 import { startAgent, cancelAgent, approveCommand } from './agent'
 import type { AppStore } from './store'
-import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult } from '../shared/types'
+import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest } from '../shared/types'
 import type { AgentRunRequest, AgentSession } from '../shared/agent-types'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
@@ -58,6 +58,16 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   ipcMain.handle(IPC.ConversationDelete, (_event, id: string) => {
     store.deleteConversation(id)
   })
+
+  ipcMain.handle(IPC.MemoriesList, () => store.listMemories())
+
+  ipcMain.handle(IPC.MemoryUpsert, (_event, memory: MemoryItem) => store.upsertMemory(memory))
+
+  ipcMain.handle(IPC.MemoryDelete, (_event, id: string) => {
+    store.deleteMemory(id)
+  })
+
+  ipcMain.handle(IPC.MemoriesSearch, (_event, request: MemorySearchRequest) => store.searchMemories(request))
 
   ipcMain.handle(IPC.ChatStart, (event, req: ChatStartRequest) => {
     const provider = store.getSnapshot().providers.find(p => p.id === req.providerId)

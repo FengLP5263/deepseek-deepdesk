@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type { DeepDeskApi } from '../shared/api'
 import type { AgentEvent, AgentRunRequest, AgentSession } from '../shared/agent-types'
-import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult } from '../shared/types'
+import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest } from '../shared/types'
 import { platformInfoFromNode } from '../shared/platform'
 
 const api: DeepDeskApi = {
@@ -22,6 +22,12 @@ const api: DeepDeskApi = {
     get: (id: string) => ipcRenderer.invoke(IPC.ConversationGet, id) as Promise<Conversation | null>,
     upsert: (conversation: Conversation) => ipcRenderer.invoke(IPC.ConversationUpsert, conversation) as Promise<void>,
     remove: (id: string) => ipcRenderer.invoke(IPC.ConversationDelete, id) as Promise<void>
+  },
+  memories: {
+    list: () => ipcRenderer.invoke(IPC.MemoriesList) as Promise<MemoryItem[]>,
+    upsert: (memory: MemoryItem) => ipcRenderer.invoke(IPC.MemoryUpsert, memory) as Promise<MemoryItem>,
+    remove: (id: string) => ipcRenderer.invoke(IPC.MemoryDelete, id) as Promise<void>,
+    search: (request: MemorySearchRequest) => ipcRenderer.invoke(IPC.MemoriesSearch, request) as Promise<MemoryItem[]>
   },
   chat: {
     start: (req: ChatStartRequest) => ipcRenderer.invoke(IPC.ChatStart, req) as Promise<{ ok: boolean; message?: string }>,
