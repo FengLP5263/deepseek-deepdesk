@@ -58,6 +58,23 @@ describe('AppStore', () => {
     expect(store.getSnapshot().providers.some(p => p.id === 'x')).toBe(false)
   })
 
+  it('连接器配置持久化并可禁用', async () => {
+    const store = createStore()
+    await store.init()
+    store.upsertConnectorConfig({ id: 'wechat', endpoint: 'http://127.0.0.1:3210', token: 'token', enabled: true })
+    await store.flush()
+
+    const store2 = createStore()
+    await store2.init()
+    const wechat = store2.getSnapshot().connectors.find(connector => connector.id === 'wechat')
+    expect(wechat?.endpoint).toBe('http://127.0.0.1:3210')
+    expect(wechat?.token).toBe('token')
+    expect(wechat?.enabled).toBe(true)
+
+    store2.upsertConnectorConfig({ id: 'wechat', enabled: false })
+    expect(store2.getSnapshot().connectors.find(connector => connector.id === 'wechat')?.enabled).toBe(false)
+  })
+
   it('会话增删查', async () => {
     const store = createStore()
     await store.init()

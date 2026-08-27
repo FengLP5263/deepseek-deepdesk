@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest } from '../shared/types'
+import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, ConnectorConfig, ConnectorConfigPatch, ConnectorId } from '../shared/types'
 import type { AgentSession } from '../shared/agent-types'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
 import { searchMemories } from '../shared/memory'
@@ -24,6 +24,32 @@ function cloneProviders(): ProviderConfig[] {
   }))
 }
 
+function createConnectorConfig(id: ConnectorId): ConnectorConfig {
+  return {
+    id,
+    enabled: false,
+    endpoint: '',
+    token: '',
+    refreshToken: '',
+    accountId: '',
+    userId: '',
+    expiresAt: 0,
+    appId: '',
+    appSecret: '',
+    verificationToken: '',
+    encryptKey: '',
+    updatedAt: 0
+  }
+}
+
+function normalizeConnectors(connectors: unknown): ConnectorConfig[] {
+  const incoming = Array.isArray(connectors) ? connectors as Partial<ConnectorConfig>[] : []
+  return (['lark', 'wechat', 'browser'] satisfies ConnectorId[]).map(id => {
+    const found = incoming.find(item => item.id === id)
+    return { ...createConnectorConfig(id), ...found, id }
+  })
+}
+
 export class AppStore {
   private file: string
   private data: AppState
@@ -35,6 +61,7 @@ export class AppStore {
     this.data = {
       settings: { ...DEFAULT_SETTINGS },
       providers: cloneProviders(),
+      connectors: normalizeConnectors([]),
       conversations: [],
       agentSessions: [],
       memories: []
@@ -53,6 +80,7 @@ export class AppStore {
       this.data.providers = cloneProviders()
     }
     if (!this.data.settings) this.data.settings = { ...DEFAULT_SETTINGS }
+    this.data.connectors = normalizeConnectors(this.data.connectors)
     if (!this.data.conversations) this.data.conversations = []
     if (!this.data.agentSessions) this.data.agentSessions = []
     if (!this.data.memories) this.data.memories = []
@@ -68,10 +96,11 @@ export class AppStore {
       settings.agentPermissionMode = 'auto'
     }
     const providers = Array.isArray(parsed.providers) ? parsed.providers : []
+    const connectors = normalizeConnectors(parsed.connectors)
     const conversations = Array.isArray(parsed.conversations) ? parsed.conversations : []
     const agentSessions = Array.isArray(parsed.agentSessions) ? parsed.agentSessions : []
     const memories = Array.isArray(parsed.memories) ? parsed.memories : []
-    return { settings, providers, conversations, agentSessions, memories }
+    return { settings, providers, connectors, conversations, agentSessions, memories }
   }
 
   private migrateDeepSeekV4(): void {
@@ -135,6 +164,22 @@ export class AppStore {
       settings.defaultProviderId = this.data.providers[0].id
     }
     this.persist()
+  }
+
+  upsertConnectorConfig(patch: ConnectorConfigPatch): ConnectorConfig {
+    const idx = this.data.connectors.findIndex(connector => connector.id === patch.id)
+    const current = idx >= 0 ? this.data.connectors[idx] : createConnectorConfig(patch.id)
+    const next: ConnectorConfig = {
+      ...current,
+      ...patch,
+      id: patch.id,
+      updatedAt: Date.now()
+    }
+    if (idx >= 0) this.data.connectors[idx] = structuredClone(next)
+    else this.data.connectors.push(structuredClone(next))
+    this.data.connectors = normalizeConnectors(this.data.connectors)
+    this.persist()
+    return structuredClone(next)
   }
 
   getConversation(id: string): Conversation | null {

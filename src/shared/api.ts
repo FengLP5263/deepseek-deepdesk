@@ -1,4 +1,4 @@
-import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest } from './types'
+import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest, ConnectorActionResult, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorStatus } from './types'
 import type { AgentEvent, AgentRunRequest, AgentSession } from './agent-types'
 import type { PlatformInfo } from './platform'
 
@@ -25,6 +25,14 @@ export interface DeepDeskApi {
     upsert: (memory: MemoryItem) => Promise<MemoryItem>
     remove: (id: string) => Promise<void>
     search: (request: MemorySearchRequest) => Promise<MemoryItem[]>
+  }
+  connectors: {
+    list: () => Promise<ConnectorStatus[]>
+    save: (config: ConnectorConfigPatch) => Promise<ConnectorConfig>
+    startAuth: (id: ConnectorId) => Promise<ConnectorAuthSession>
+    authStatus: (id: ConnectorId, sessionId: string) => Promise<ConnectorAuthSession>
+    connect: (id: ConnectorId) => Promise<ConnectorActionResult>
+    disconnect: (id: ConnectorId) => Promise<ConnectorActionResult>
   }
   chat: {
     start: (req: ChatStartRequest) => Promise<{ ok: boolean; message?: string }>

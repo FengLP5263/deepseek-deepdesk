@@ -72,6 +72,62 @@ export interface MemorySearchRequest {
   limit?: number
 }
 
+export type ConnectorId = 'lark' | 'wechat' | 'browser'
+
+export type ConnectorState = 'connected' | 'available' | 'needs_setup' | 'unavailable'
+
+export interface ConnectorConfig {
+  id: ConnectorId
+  enabled: boolean
+  endpoint: string
+  token: string
+  refreshToken: string
+  accountId: string
+  userId: string
+  expiresAt: number
+  appId: string
+  appSecret: string
+  verificationToken: string
+  encryptKey: string
+  updatedAt: number
+}
+
+export type ConnectorConfigPatch = Partial<Omit<ConnectorConfig, 'updatedAt'>> & { id: ConnectorId }
+
+export interface ConnectorStatus {
+  id: ConnectorId
+  name: string
+  state: ConnectorState
+  summary: string
+  detail: string
+  primaryAction: string
+  disconnectAction?: string
+  command?: string
+  config?: ConnectorConfig
+}
+
+export type ConnectorAuthState = 'pending' | 'scanned' | 'connected' | 'expired' | 'failed'
+
+export interface ConnectorAuthSession {
+  id: ConnectorId
+  ok: boolean
+  state: ConnectorAuthState
+  sessionId?: string
+  qrDataUrl?: string
+  qrUrl?: string
+  expiresAt?: number
+  message: string
+  detail?: string
+}
+
+export interface ConnectorActionResult {
+  id: ConnectorId
+  ok: boolean
+  message: string
+  detail?: string
+  command?: string
+}
+
 export interface AppSettings {
   version: number
   defaultProviderId: string
@@ -86,6 +142,7 @@ export interface AppSettings {
 export interface AppState {
   settings: AppSettings
   providers: ProviderConfig[]
+  connectors: ConnectorConfig[]
   conversations: Conversation[]
   agentSessions: AgentSession[]
   memories: MemoryItem[]

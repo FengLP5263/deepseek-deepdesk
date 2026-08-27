@@ -33,6 +33,8 @@
 .model-menu-option.auto { margin-top: 6px; color: var(--text); }
 .model-option-main { display: inline-flex; align-items: center; min-width: 0; gap: 10px; }
 .model-logo { flex: none; color: currentColor; }
+.model-logo-img { width: 18px; height: 18px; object-fit: contain; }
+.model-logo-img.compact { width: 15px; height: 15px; }
 .model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: var(--text); color: var(--bg-elevated); font-size: 11px; font-weight: 750; line-height: 1; flex: none; }
 .model-mark.compact { width: 15px; height: 15px; border-radius: 5px; font-size: 9px; }
@@ -73,8 +75,8 @@
 .agent-tool-chev { color: var(--text-muted); }
 .agent-tool-result { margin: 0; padding: 10px 12px; background: var(--code-bg); border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.55; white-space: pre-wrap; word-break: break-all; max-height: 360px; overflow-y: auto; color: var(--text-secondary); user-select: text; }
 
-.agent-approval { position: sticky; top: 0; z-index: 30; margin: 10px 24px; padding: 12px 14px; border-radius: var(--radius-lg); background: var(--bg-elevated); border: 1px solid rgba(212, 175, 106, 0.5); box-shadow: none; }
-.agent-approval-title { font-size: var(--fs-sm); font-weight: 700; color: var(--warning); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.agent-approval { box-sizing: border-box; width: min(820px, calc(100% - 48px)); margin: 0 auto 10px; padding: 12px 14px; border-radius: 14px; background: var(--bg-elevated); border: 1px solid rgba(212, 175, 106, 0.42); box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08); }
+.agent-approval-title { font-size: var(--fs-sm); font-weight: 650; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
 .agent-approval-cmd { margin: 0 0 6px; padding: 8px 10px; background: var(--code-bg); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); white-space: pre-wrap; word-break: break-all; user-select: text; }
 .agent-approval-cwd { font-size: var(--fs-2xs); color: var(--text-muted); margin-bottom: 10px; }
 .agent-approval-actions { display: flex; gap: 8px; }

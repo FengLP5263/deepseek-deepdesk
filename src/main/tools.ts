@@ -170,7 +170,23 @@ export function isReadOnlyCommand(command: string): boolean {
   const c = command.trim().toLowerCase()
   if (isDangerousCommand(c)) return false
   // 管道、多命令、重定向都可能产生副作用，视为风险
-  if (c.includes('|') || c.includes(';') || c.includes('>')) return false
+  if (c.includes('|') || c.includes(';') || c.includes('>') || c.includes('\n') || c.includes('&&') || c.includes('||')) return false
+  const parts = c.split(/\s+/).filter(Boolean)
+  if (parts.includes('--help') || parts.includes('-h') || parts[0] === 'help') return true
+  if (c.startsWith('lark-cli ')) {
+    const mutatingLarkWords = [
+      'send', 'create', 'update', 'delete', 'remove', 'add', 'upload', 'download',
+      'import', 'export', 'move', 'copy', 'reply', 'forward', 'invite', 'kick',
+      '+messages-send', '+file-upload', '+image-upload'
+    ]
+    if (mutatingLarkWords.some(word => parts.includes(word) || c.includes(' ' + word + ' '))) return false
+    const readOnlyLarkWords = [
+      'get', 'list', 'search', 'query', 'info', 'status', 'describe',
+      '+search', '+list', '+get', '+field-list', '+node-get', '+message-get',
+      '+messages-get', '+chat-get', '+chats-get'
+    ]
+    if (readOnlyLarkWords.some(word => parts.includes(word) || c.includes(' ' + word + ' '))) return true
+  }
   const keywords = [
     'get-', 'select-', 'where-', 'measure-', 'test-path', 'resolve-path', 'sort-', 'group-', 'compare-',
     'git status', 'git log', 'git diff', 'git show', 'git branch', 'git remote', 'git ls-files', 'git tag', 'git rev-parse', 'git fetch', 'git --version',

@@ -81,6 +81,17 @@ describe('useAgentStore 会话持久化', () => {
     expect(startReqs[0].memoryContext).toContain('提交前先跑 pnpm flow -- check')
   })
 
+  it('当前会话选择的模型优先于全局默认模型并随会话保存', async () => {
+    useAgentStore.getState().init()
+    useAgentStore.getState().setCurrentModel('glm-5.3-flash')
+    await useAgentStore.getState().start('用当前模型继续')
+
+    expect(startReqs[0].modelId).toBe('glm-5.3-flash')
+    chunkCb!({ runId: startReqs[0].runId, type: 'done' })
+    await new Promise(r => setTimeout(r, 80))
+    expect(saved[0].modelId).toBe('glm-5.3-flash')
+  })
+
   it('loadSession 载入历史步骤', () => {
     useAgentStore.setState({ sessions: [{ id: 's1', task: '旧任务', workdir: '/w', modelId: 'm', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task', text: '旧任务' }, { kind: 'text', text: '结果' }], history: [] }] })
     useAgentStore.getState().loadSession('s1')
@@ -89,6 +100,14 @@ describe('useAgentStore 会话持久化', () => {
     expect(s.currentTask).toBe('旧任务')
     expect(s.workdir).toBe('/w')
     expect(s.running).toBe(false)
+  })
+
+  it('loadSession 后继续对话沿用该会话保存的模型', async () => {
+    useAgentStore.setState({ sessions: [{ id: 's1', task: '旧任务', workdir: '/w', modelId: 'deepseek-v4-flash', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task', text: '旧任务' }], history: [] }] })
+    useAgentStore.getState().loadSession('s1')
+    await useAgentStore.getState().start('继续')
+
+    expect(startReqs[0].modelId).toBe('deepseek-v4-flash')
   })
 
   it('多轮持续对话：追加步骤、同一会话、携带历史', async () => {
@@ -125,5 +144,19 @@ describe('useAgentStore 会话持久化', () => {
     await useAgentStore.getState().deleteSession('s1')
     expect(useAgentStore.getState().sessions.length).toBe(0)
     expect(saved.length).toBe(0)
+  })
+
+  it('deleteSession 删除当前会话时清空当前状态', async () => {
+    const seed = { id: 's1', task: 't', workdir: '', modelId: 'm', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task' as const, text: 't' }], history: [] }
+    saved = [seed]
+    useAgentStore.setState({ sessions: [seed], activeSessionId: 's1', currentSessionId: 's1', currentTask: 't', currentModelId: 'm', steps: seed.steps, history: [] })
+    await useAgentStore.getState().deleteSession('s1')
+    const state = useAgentStore.getState()
+
+    expect(state.sessions.length).toBe(0)
+    expect(state.currentSessionId).toBe('')
+    expect(state.currentTask).toBe('')
+    expect(state.currentModelId).toBe('')
+    expect(state.steps.length).toBe(0)
   })
 })

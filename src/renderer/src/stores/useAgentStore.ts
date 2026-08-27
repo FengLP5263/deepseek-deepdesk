@@ -29,6 +29,7 @@ interface AgentState {
   updateStep: (index: number, patch: Partial<AgentStep>) => void
   setStepFeedback: (index: number, feedback: 'positive' | 'negative') => void
   regenerateFrom: (index: number) => Promise<void>
+  setCurrentModel: (modelId: string) => void
   setDraftTask: (task: string) => void
   clear: () => void
 }
@@ -85,11 +86,12 @@ export const useAgentStore = create<AgentState>()((set, get) => {
   function saveCurrentSession(): void {
     const s = get()
     if (!s.currentTask || s.steps.length === 0) return
+    const defaultModelId = useSettingsStore.getState().settings?.defaultModelId ?? 'deepseek-v4-pro'
     const session: AgentSession = {
       id: s.currentSessionId,
       task: s.currentTask,
       workdir: s.workdir,
-      modelId: s.currentModelId,
+      modelId: s.currentModelId || defaultModelId,
       createdAt: s.sessions.find(item => item.id === s.currentSessionId)?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
       steps: s.steps,
@@ -137,7 +139,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       if (!t || get().running) return
       const ss = useSettingsStore.getState()
       const providerId = ss.settings?.defaultProviderId ?? 'deepseek'
-      const modelId = ss.settings?.defaultModelId ?? 'deepseek-v4-pro'
+      const modelId = get().currentModelId || (ss.settings?.defaultModelId ?? 'deepseek-v4-pro')
       const provider = ss.providers.find(p => p.id === providerId)
       if (!provider || !provider.apiKey) {
         set({ error: '请先在「设置 → 模型服务」中配置 API Key' })
@@ -182,13 +184,30 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     },
     deleteSession: async (id) => {
       await window.api.agent.deleteSession(id)
-      set({ sessions: get().sessions.filter(x => x.id !== id) })
+      set(s => {
+        const nextSessions = s.sessions.filter(x => x.id !== id)
+        if (s.activeSessionId !== id && s.currentSessionId !== id) return { sessions: nextSessions }
+        return {
+          sessions: nextSessions,
+          activeSessionId: null,
+          currentSessionId: '',
+          currentTask: '',
+          currentModelId: '',
+          steps: [],
+          history: [],
+          pendingApproval: null,
+          error: null
+        }
+      })
     },
     renameSession: async (id, title) => {
       const t = title.trim()
       if (!t) return
       await window.api.agent.renameSession(id, t)
-      set({ sessions: get().sessions.map(s => (s.id === id ? { ...s, task: t } : s)) })
+      set(s => ({
+        sessions: s.sessions.map(item => (item.id === id ? { ...item, task: t } : item)),
+        currentTask: s.currentSessionId === id ? t : s.currentTask
+      }))
     },
     updateStep: (index, patch) => {
       set(s => ({ steps: s.steps.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step) }))
@@ -214,12 +233,16 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       set({ steps: steps.slice(0, taskIndex), history: [] })
       await get().start(task)
     },
+    setCurrentModel: (modelId) => {
+      set({ currentModelId: modelId })
+      saveCurrentSession()
+    },
     setDraftTask: (task) => {
       set({ draftTask: task })
     },
     clear: () => {
       if (get().running) get().stop()
-      set({ steps: [], history: [], error: null, pendingApproval: null, currentTask: '', currentSessionId: '', activeSessionId: null })
+      set({ steps: [], history: [], error: null, pendingApproval: null, currentTask: '', currentModelId: '', currentSessionId: '', activeSessionId: null })
     }
   }
 })

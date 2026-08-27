@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react'
-import { Blocks, Check, FolderOpen, Link2, MoreHorizontal, Plus, PlugZap, RefreshCw, Search, Settings, Sparkles, TerminalSquare, UserRoundCog } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Blocks, Check, ChevronDown, ExternalLink, Globe2, Link2, MoreHorizontal, Plus, PlugZap, QrCode, RefreshCw, Search, Settings, Sparkles, UserRoundCog, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { useAgentStore } from '../../stores/useAgentStore'
-import { useSettingsStore } from '../../stores/useSettingsStore'
 import type { SettingsTab } from '../settings/SettingsView'
+import type { ConnectorActionResult, ConnectorAuthSession, ConnectorConfigPatch, ConnectorId, ConnectorState, ConnectorStatus } from '@shared/types'
+import { Modal } from '../ui'
+import feishuIcon from '../../assets/icons/feishu.svg'
+import wechatIcon from '../../assets/icons/wechat.svg'
 
 type HubView = 'connectors' | 'skills' | 'more'
 
@@ -26,6 +29,41 @@ interface BuiltInSkill {
 }
 
 const categories = ['全部', '开发工具', '效率工具', '内容创作', '数据分析', '知识学习', '商业运营']
+
+const connectorStateLabels: Record<ConnectorState, string> = {
+  connected: '已连接',
+  available: '可连接',
+  needs_setup: '需配置',
+  unavailable: '不可用'
+}
+
+const connectorMeta: Record<ConnectorId, { desc: string; icon?: LucideIcon; iconSrc?: string }> = {
+  lark: {
+    desc: '飞书消息与群聊任务',
+    iconSrc: feishuIcon
+  },
+  wechat: {
+    desc: '微信消息与任务触发',
+    iconSrc: wechatIcon
+  },
+  browser: {
+    desc: '网页操作与信息采集',
+    icon: Globe2
+  }
+}
+
+function emptyConnectorDraft(id: ConnectorId): ConnectorConfigPatch {
+  return {
+    id,
+    enabled: false,
+    endpoint: '',
+    token: '',
+    appId: '',
+    appSecret: '',
+    verificationToken: '',
+    encryptKey: ''
+  }
+}
 
 const builtInSkills: BuiltInSkill[] = [
   {
@@ -142,17 +180,7 @@ const builtInSkills: BuiltInSkill[] = [
   }
 ]
 
-function getWorkdirName(workdir: string): string {
-  const normalized = workdir.trim().replace(/[\\/]+$/, '')
-  if (!normalized) return '默认工作区'
-  return normalized.split(/[\\/]+/).filter(Boolean).at(-1) ?? normalized
-}
-
 export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSettings }: FeatureHubProps) {
-  const providers = useSettingsStore(s => s.providers)
-  const settings = useSettingsStore(s => s.settings)
-  const workdir = useAgentStore(s => s.workdir)
-  const pickDirectory = useAgentStore(s => s.pickDirectory)
   const clear = useAgentStore(s => s.clear)
   const setDraftTask = useAgentStore(s => s.setDraftTask)
   const [skillQuery, setSkillQuery] = useState('')
@@ -160,8 +188,48 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
   const [showInstalledOnly, setShowInstalledOnly] = useState(false)
   const [featuredOffset, setFeaturedOffset] = useState(0)
   const [installedSkillIds, setInstalledSkillIds] = useState<Set<string>>(() => new Set(['code-review', 'ui-polish', 'e2e-composer', 'release-gate']))
-  const currentProvider = providers.find(provider => provider.id === settings?.defaultProviderId)
-  const configuredProviders = providers.filter(provider => provider.apiKey.trim()).length
+  const [connectors, setConnectors] = useState<ConnectorStatus[]>([])
+  const [connectorsLoading, setConnectorsLoading] = useState(false)
+  const [busyConnectorId, setBusyConnectorId] = useState<ConnectorId | null>(null)
+  const [connectorAction, setConnectorAction] = useState<ConnectorActionResult | null>(null)
+  const [qrConnectorId, setQrConnectorId] = useState<ConnectorId | null>(null)
+  const [showConnectorAdvanced, setShowConnectorAdvanced] = useState(false)
+  const [connectorAuth, setConnectorAuth] = useState<ConnectorAuthSession | null>(null)
+  const [connectorAuthLoading, setConnectorAuthLoading] = useState(false)
+  const [connectorDrafts, setConnectorDrafts] = useState<Record<ConnectorId, ConnectorConfigPatch>>({
+    lark: emptyConnectorDraft('lark'),
+    wechat: emptyConnectorDraft('wechat'),
+    browser: emptyConnectorDraft('browser')
+  })
+
+  const refreshConnectors = useCallback(async (): Promise<void> => {
+    setConnectorsLoading(true)
+    try {
+      const next = await window.api.connectors.list()
+      setConnectors(next)
+      setConnectorDrafts(current => {
+        const drafts = { ...current }
+        for (const connector of next) {
+          if (connector.config) drafts[connector.id] = { ...connector.config }
+        }
+        return drafts
+      })
+    } catch (error) {
+      setConnectorAction({
+        id: 'browser',
+        ok: false,
+        message: '连接器检测失败',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      setConnectorsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (view !== 'connectors') return
+    void refreshConnectors()
+  }, [refreshConnectors, view])
 
   const startWithDraft = (task: string): void => {
     clear()
@@ -177,6 +245,133 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
       return next
     })
   }
+
+  const runConnectorAction = async (id: ConnectorId): Promise<void> => {
+    setBusyConnectorId(id)
+    try {
+      const result = await window.api.connectors.connect(id)
+      setConnectorAction(result)
+      setConnectors(await window.api.connectors.list())
+    } catch (error) {
+      setConnectorAction({
+        id,
+        ok: false,
+        message: '连接器操作失败',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      setBusyConnectorId(null)
+    }
+  }
+
+  const saveConnector = async (id: ConnectorId): Promise<void> => {
+    setBusyConnectorId(id)
+    try {
+      const saved = await window.api.connectors.save(connectorDrafts[id])
+      setConnectorDrafts(current => ({ ...current, [id]: { ...saved } }))
+      setConnectorAction({ id, ok: true, message: '连接器配置已保存', detail: id === 'wechat' ? '微信接入信息已保存。' : '飞书接入信息已保存。' })
+      await refreshConnectors()
+    } catch (error) {
+      setConnectorAction({
+        id,
+        ok: false,
+        message: '保存连接器配置失败',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      setBusyConnectorId(null)
+    }
+  }
+
+  const disconnectConnector = async (id: ConnectorId): Promise<void> => {
+    setBusyConnectorId(id)
+    try {
+      const result = await window.api.connectors.disconnect(id)
+      setConnectorAction(result)
+      await refreshConnectors()
+    } catch (error) {
+      setConnectorAction({
+        id,
+        ok: false,
+        message: '断开连接器失败',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      setBusyConnectorId(null)
+    }
+  }
+
+  const updateConnectorDraft = (id: ConnectorId, key: keyof ConnectorConfigPatch, value: string): void => {
+    setConnectorDrafts(current => ({ ...current, [id]: { ...current[id], [key]: value } }))
+  }
+
+  const openConnectorQr = (id: ConnectorId): void => {
+    setQrConnectorId(id)
+    setShowConnectorAdvanced(false)
+    setConnectorAction(null)
+    setConnectorAuth(null)
+  }
+
+  const closeConnectorQr = (): void => {
+    setQrConnectorId(null)
+    setShowConnectorAdvanced(false)
+    setConnectorAuth(null)
+  }
+
+  const requestConnectorQr = useCallback(async (id: ConnectorId): Promise<void> => {
+    setConnectorAuthLoading(true)
+    try {
+      const connectorApi = window.api.connectors as typeof window.api.connectors & {
+        startAuth?: (connectorId: ConnectorId) => Promise<ConnectorAuthSession>
+      }
+      if (typeof connectorApi.startAuth !== 'function') {
+        setConnectorAuth({
+          id,
+          ok: false,
+          state: 'failed',
+          message: '请重启 DeepDesk',
+          detail: '连接器能力已更新，当前窗口仍在使用旧 preload。请停止 pnpm dev 后重新启动。'
+        })
+        setShowConnectorAdvanced(false)
+        return
+      }
+      const session = await connectorApi.startAuth(id)
+      setConnectorAuth(session)
+      if (!session.ok) setShowConnectorAdvanced(true)
+    } catch (error) {
+      setConnectorAuth({
+        id,
+        ok: false,
+        state: 'failed',
+        message: '获取二维码失败',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+      setShowConnectorAdvanced(true)
+    } finally {
+      setConnectorAuthLoading(false)
+    }
+  }, [])
+
+  const refreshConnectorAuth = useCallback(async (id: ConnectorId, sessionId: string): Promise<void> => {
+    try {
+      const connectorApi = window.api.connectors as typeof window.api.connectors & {
+        authStatus?: (connectorId: ConnectorId, connectorSessionId: string) => Promise<ConnectorAuthSession>
+      }
+      if (typeof connectorApi.authStatus !== 'function') return
+      const session = await connectorApi.authStatus(id, sessionId)
+      setConnectorAuth(session)
+      if (session.state === 'connected') await refreshConnectors()
+    } catch (error) {
+      setConnectorAuth(current => ({
+        id,
+        ok: false,
+        state: 'failed',
+        sessionId: current?.sessionId,
+        message: '查询授权状态失败',
+        detail: error instanceof Error ? error.message : String(error)
+      }))
+    }
+  }, [refreshConnectors])
 
   const filteredSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase()
@@ -199,34 +394,161 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
     return Array.from({ length: Math.min(5, featured.length) }, (_, index) => featured[(featuredOffset + index) % featured.length])
   }, [featuredOffset, installedSkillIds, showInstalledOnly, skillQuery])
 
+  const qrConnector = qrConnectorId ? connectors.find(connector => connector.id === qrConnectorId) : undefined
+
+  useEffect(() => {
+    if (!qrConnectorId || qrConnectorId === 'browser') return
+    void requestConnectorQr(qrConnectorId)
+  }, [qrConnectorId, requestConnectorQr])
+
+  useEffect(() => {
+    if (!qrConnectorId || !connectorAuth?.sessionId) return
+    if (connectorAuth.state !== 'pending' && connectorAuth.state !== 'scanned') return
+    const timer = window.setInterval(() => {
+      void refreshConnectorAuth(qrConnectorId, connectorAuth.sessionId!)
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [connectorAuth?.sessionId, connectorAuth?.state, qrConnectorId, refreshConnectorAuth])
+
   if (view === 'connectors') {
     return (
-      <div className='hub-view'>
+      <div className='hub-view connector-view'>
         <div className='hub-header'>
           <div className='hub-icon'><PlugZap size={20} /></div>
           <h1>连接器</h1>
-          <p>管理 DeepDesk 可以调用的模型服务、工作区和本地能力。</p>
+          <p>连接消息工具和浏览器能力。</p>
         </div>
-        <div className='hub-grid'>
-          <section className='hub-card'>
-            <div className='hub-card-icon'><Sparkles size={18} /></div>
-            <div className='hub-card-title'>模型服务</div>
-            <div className='hub-card-desc'>当前默认：{currentProvider?.name ?? '未配置'}，已配置 {configuredProviders} 个服务。</div>
-            <button className='btn btn-ghost btn-sm' onClick={() => onOpenSettings('providers')}>打开模型服务设置</button>
-          </section>
-          <section className='hub-card'>
-            <div className='hub-card-icon'><FolderOpen size={18} /></div>
-            <div className='hub-card-title'>工作区</div>
-            <div className='hub-card-desc'>当前任务默认使用：{getWorkdirName(workdir)}。不选择时仍可使用默认工作区。</div>
-            <button className='btn btn-ghost btn-sm' onClick={() => void pickDirectory()}>选择工作区</button>
-          </section>
-          <section className='hub-card'>
-            <div className='hub-card-icon'><TerminalSquare size={18} /></div>
-            <div className='hub-card-title'>本地工具</div>
-            <div className='hub-card-desc'>Agent 已支持命令执行、文件读写、目录列表、内容搜索和飞书消息工具。</div>
-            <button className='btn btn-ghost btn-sm' onClick={() => startWithDraft('请检查当前工作区的项目结构，并给出可以继续开发的建议。')}>用工具开始任务</button>
-          </section>
+        <div className='connector-toolbar'>
+          <button className='btn btn-ghost btn-sm' onClick={() => void refreshConnectors()} disabled={connectorsLoading}>
+            <RefreshCw size={14} /> {connectorsLoading ? '检测中' : '重新检测'}
+          </button>
         </div>
+        <div className='connector-grid'>
+          {connectors.map(connector => {
+            const meta = connectorMeta[connector.id]
+            const Icon = meta.icon
+            return (
+              <section key={connector.id} className={clsx('connector-card', `state-${connector.state}`)}>
+                <div className='connector-card-head'>
+                  <div className={clsx('connector-icon', `brand-${connector.id}`)}>
+                    {meta.iconSrc ? <img src={meta.iconSrc} alt={`${connector.name} 图标`} /> : Icon ? <Icon width={19} height={19} /> : null}
+                  </div>
+                  <div className='connector-title-block'>
+                    <div className='connector-title'>{connector.name}</div>
+                    <div className='connector-subtitle'>{meta.desc}</div>
+                  </div>
+                  <span className='connector-state'>{connectorStateLabels[connector.state]}</span>
+                </div>
+                <div className='connector-summary'>{connector.summary}</div>
+                <div className='connector-actions'>
+                  {connector.state === 'connected' && connector.disconnectAction ? (
+                    <button className='btn btn-ghost btn-sm' onClick={() => void disconnectConnector(connector.id)} disabled={busyConnectorId === connector.id}>
+                      {busyConnectorId === connector.id ? '处理中' : connector.disconnectAction}
+                    </button>
+                  ) : connector.id === 'browser' || connector.primaryAction === '连接' ? (
+                    <button className='btn btn-primary btn-sm' onClick={() => void runConnectorAction(connector.id)} disabled={busyConnectorId === connector.id}>
+                      {busyConnectorId === connector.id ? '处理中' : connector.primaryAction}
+                    </button>
+                  ) : (
+                    <button className='btn btn-primary btn-sm' onClick={() => openConnectorQr(connector.id)} disabled={busyConnectorId === connector.id}>
+                      扫码接入
+                    </button>
+                  )}
+                </div>
+              </section>
+            )
+          })}
+          {connectorsLoading && connectors.length === 0 && (
+            <div className='connector-empty'>正在检测本机连接器状态…</div>
+          )}
+          {!connectorsLoading && connectors.length === 0 && (
+            <div className='connector-empty'>暂时没有可展示的连接器。</div>
+          )}
+        </div>
+        {connectorAction && !qrConnector && (
+          <div className={clsx('connector-result', connectorAction.ok ? 'ok' : 'warn')}>
+            <div>
+              <strong>{connectorAction.message}</strong>
+              {connectorAction.detail && <span>{connectorAction.detail}</span>}
+            </div>
+          </div>
+        )}
+        <div className='connector-note'>
+          <ExternalLink size={14} />
+          模型服务仍在“更多 / 设置 / 模型服务”中管理；这里仅管理办公工具和浏览器能力。
+        </div>
+        {qrConnector && qrConnector.id !== 'browser' && (
+          <Modal
+            title={`${qrConnector.name}扫码接入`}
+            onClose={closeConnectorQr}
+            width={420}
+            footer={(
+              <>
+                <button className='btn btn-ghost' onClick={closeConnectorQr}>关闭</button>
+                {connectorAuth?.sessionId && connectorAuth.state !== 'connected' && (
+                  <button className='btn btn-ghost' onClick={() => void refreshConnectorAuth(qrConnector.id, connectorAuth.sessionId!)} disabled={connectorAuthLoading}>
+                    刷新状态
+                  </button>
+                )}
+                <button className='btn btn-primary' onClick={() => void requestConnectorQr(qrConnector.id)} disabled={connectorAuthLoading}>
+                  {connectorAuthLoading ? '获取中' : '获取二维码'}
+                </button>
+              </>
+            )}
+          >
+            <div className='connector-qr-panel'>
+              <div className='connector-qr-box' aria-label={`${qrConnector.name}扫码接入二维码`}>
+                {connectorAuth?.qrDataUrl ? (
+                  <img src={connectorAuth.qrDataUrl} alt={`${qrConnector.name}扫码接入二维码`} />
+                ) : (
+                  <>
+                    <QrCode size={42} />
+                    <span>{connectorAuthLoading ? '获取中' : '未生成二维码'}</span>
+                  </>
+                )}
+              </div>
+              <p className='connector-qr-caption'>
+                {connectorAuth?.message ?? '配置接入服务后获取二维码。'}
+                {connectorAuth?.detail ? ` ${connectorAuth.detail}` : ''}
+              </p>
+              <button className='connector-advanced-toggle' onClick={() => setShowConnectorAdvanced(value => !value)}>
+                高级配置 <ChevronDown size={14} className={clsx(showConnectorAdvanced && 'open')} />
+              </button>
+              {showConnectorAdvanced && (
+                <div className='connector-form connector-form-modal'>
+                  {qrConnector.id === 'lark' && (
+                    <>
+                      <input value={String(connectorDrafts.lark.endpoint ?? '')} onChange={event => updateConnectorDraft('lark', 'endpoint', event.target.value)} placeholder='飞书接入服务地址' />
+                      <input value={String(connectorDrafts.lark.token ?? '')} onChange={event => updateConnectorDraft('lark', 'token', event.target.value)} placeholder='访问令牌（可选）' type='password' />
+                      <input value={String(connectorDrafts.lark.appId ?? '')} onChange={event => updateConnectorDraft('lark', 'appId', event.target.value)} placeholder='飞书应用 ID' />
+                      <input value={String(connectorDrafts.lark.appSecret ?? '')} onChange={event => updateConnectorDraft('lark', 'appSecret', event.target.value)} placeholder='飞书应用密钥' type='password' />
+                      <input value={String(connectorDrafts.lark.verificationToken ?? '')} onChange={event => updateConnectorDraft('lark', 'verificationToken', event.target.value)} placeholder='事件校验令牌（可选）' />
+                      <input value={String(connectorDrafts.lark.encryptKey ?? '')} onChange={event => updateConnectorDraft('lark', 'encryptKey', event.target.value)} placeholder='消息加密密钥（可选）' type='password' />
+                    </>
+                  )}
+                  {qrConnector.id === 'wechat' && (
+                    <>
+                      <input value={String(connectorDrafts.wechat.endpoint ?? '')} onChange={event => updateConnectorDraft('wechat', 'endpoint', event.target.value)} placeholder='微信接入服务地址' />
+                      <input value={String(connectorDrafts.wechat.token ?? '')} onChange={event => updateConnectorDraft('wechat', 'token', event.target.value)} placeholder='访问令牌' type='password' />
+                    </>
+                  )}
+                  <div className='connector-modal-actions'>
+                    <button className='btn btn-ghost btn-sm' onClick={() => void saveConnector(qrConnector.id)} disabled={busyConnectorId === qrConnector.id}>保存配置</button>
+                    <button className='btn btn-primary btn-sm' onClick={() => void runConnectorAction(qrConnector.id)} disabled={busyConnectorId === qrConnector.id}>
+                      {qrConnector.id === 'lark' ? '启用飞书' : '启用微信'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {connectorAction?.id === qrConnector.id && (
+                <div className={clsx('connector-modal-result', connectorAction.ok ? 'ok' : 'warn')}>
+                  <strong>{connectorAction.message}</strong>
+                  {connectorAction.detail && <span>{connectorAction.detail}</span>}
+                </div>
+              )}
+            </div>
+          </Modal>
+        )}
       </div>
     )
   }

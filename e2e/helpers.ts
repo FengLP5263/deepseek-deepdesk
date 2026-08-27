@@ -79,6 +79,58 @@ export async function startMockChatServer(reply = '已收到记忆上下文。')
   }
 }
 
+export async function startMockApprovalServer(): Promise<MockChatServer> {
+  const requests: MockChatRequest[] = []
+  const server = createServer(async (req, res) => {
+    if (req.url === '/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: [{ id: 'mock-chat' }] }))
+      return
+    }
+    if (req.url === '/chat/completions') {
+      const body = await readJsonBody(req) as MockChatRequest
+      requests.push(body)
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      })
+      writeSse(res, {
+        id: 'mock-approval',
+        model: body.model ?? 'mock-chat',
+        choices: [{
+          index: 0,
+          delta: {
+            role: 'assistant',
+            tool_calls: [{
+              index: 0,
+              id: 'call_approval_1',
+              type: 'function',
+              function: {
+                name: 'run_command',
+                arguments: JSON.stringify({ command: 'node -v' })
+              }
+            }]
+          }
+        }]
+      })
+      writeSse(res, { id: 'mock-approval', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })
+      res.write('data: [DONE]\n\n')
+      res.end()
+      return
+    }
+    res.writeHead(404)
+    res.end('not found')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = (server.address() as { port: number }).port
+  return {
+    baseUrl: 'http://127.0.0.1:' + port,
+    requests,
+    close: () => new Promise(resolve => server.close(() => resolve()))
+  }
+}
+
 export function createMemoryUserData(baseUrl: string): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
@@ -183,7 +235,8 @@ export async function launchDeepDesk(userDataDir = mkdtempSync(join(tmpdir(), 'd
     env: {
       ...process.env,
       DEEPDESK_USER_DATA_DIR: userDataDir,
-      DEEPDESK_E2E_PICK_DIRECTORY: userDataDir
+      DEEPDESK_E2E_PICK_DIRECTORY: userDataDir,
+      DEEPDESK_DISABLE_DIRECT_CONNECTORS: '1'
     }
   })
   const page = await app.firstWindow()

@@ -17,6 +17,7 @@ import {
   launchDeepDesk,
   openSettings,
   pressAppShortcut,
+  startMockApprovalServer,
   startMockChatServer
 } from './helpers'
 
@@ -217,10 +218,44 @@ test('opens sidebar feature pages and applies a skill template', async () => {
   await page.getByRole('button', { name: '连接器' }).click()
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
   await expect(page.locator('.hub-header', { hasText: '连接器' })).toBeVisible()
-  await page.getByRole('button', { name: '打开模型服务设置' }).click()
-  await expect(page.locator('.settings-title', { hasText: '模型服务' })).toBeVisible()
+  await expect(page.locator('.connector-card', { hasText: '飞书' })).toBeVisible()
+  await expect(page.locator('.connector-card', { hasText: '微信' })).toBeVisible()
+  await expect(page.locator('.connector-card', { hasText: '浏览器自动化' })).toBeVisible()
+  await expect(page.locator('.connector-card', { hasText: '飞书' }).getByAltText('飞书 图标')).toBeVisible()
+  await expect(page.locator('.connector-card', { hasText: '微信' }).getByAltText('微信 图标')).toBeVisible()
+  const connectorIconSizes = await page.locator('.connector-card', { hasText: /飞书|微信/ }).locator('.connector-icon img').evaluateAll(images => {
+    return images.map(image => {
+      const rect = image.getBoundingClientRect()
+      return { width: Math.round(rect.width), height: Math.round(rect.height) }
+    })
+  })
+  expect(connectorIconSizes).toEqual([{ width: 34, height: 34 }, { width: 34, height: 34 }])
+  await expect(page.locator('.connector-state')).toHaveCount(3)
+  await expect(page.locator('.connector-note')).toContainText('模型服务')
+  const wechatConnector = page.locator('.connector-card', { hasText: '微信' })
+  await expect(wechatConnector).not.toContainText('OpenClaw')
+  await expect(wechatConnector).not.toContainText('LobsterAI')
+  await expect(wechatConnector.getByPlaceholder('微信接入服务地址')).toHaveCount(0)
+  await wechatConnector.getByRole('button', { name: '扫码接入' }).click()
+  const wechatModal = page.locator('.modal', { hasText: '微信扫码接入' })
+  await expect(wechatModal.getByLabel('微信扫码接入二维码')).toBeVisible()
+  await expect(wechatModal.getByText('请先配置微信接入服务')).toBeVisible()
+  await expect(wechatModal.getByRole('button', { name: '高级配置' })).toBeVisible()
+  await wechatModal.getByPlaceholder('微信接入服务地址').fill('http://127.0.0.1:3210')
+  await wechatModal.getByPlaceholder('访问令牌').fill('test-token')
+  await wechatModal.getByRole('button', { name: '保存配置' }).click()
+  await expect(wechatModal.locator('.connector-modal-result', { hasText: '连接器配置已保存' })).toBeVisible()
+  await wechatModal.getByRole('button', { name: '启用微信' }).click()
+  await expect(wechatModal.locator('.connector-modal-result', { hasText: '已启用微信接入' })).toBeVisible()
+  await wechatModal.getByRole('button', { name: '关闭' }).click()
+  await expect(wechatConnector).toContainText('已连接')
+  await expect(wechatConnector.getByRole('button', { name: '断开' })).toBeVisible()
+  await expect(wechatConnector.getByRole('button', { name: '扫码接入' })).toHaveCount(0)
+  await wechatConnector.getByRole('button', { name: '断开' }).click()
+  await expect(wechatConnector).toContainText('可连接')
+  await expect(wechatConnector.getByRole('button', { name: '连接' })).toBeVisible()
+  await expect(wechatConnector.getByRole('button', { name: '断开' })).toHaveCount(0)
 
-  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: '技能广场' }).click()
   await page.setViewportSize({ width: 1050, height: 720 })
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
@@ -473,13 +508,14 @@ test('adds, edits, adds model, and deletes a custom provider without network cal
   await page.getByRole('button', { name: '添加服务' }).click()
 
   const modal = page.locator('.modal')
-  await modal.getByPlaceholder('例如：智谱 GLM / Kimi / 本地 Ollama').fill('Mock Local')
-  await modal.getByPlaceholder('https://api.deepseek.com').fill('http://127.0.0.1:11434/v1')
+  await modal.getByPlaceholder('例如：智谱 GLM / Kimi / 本地 Ollama').fill('智谱 GLM')
+  await modal.getByPlaceholder('https://api.deepseek.com').fill('https://open.bigmodel.cn/api/paas/v4')
   await modal.getByPlaceholder('sk-…').fill('sk-test-e2e')
   await modal.getByRole('button', { name: '保存' }).click()
 
-  const card = page.locator('.provider-card').filter({ hasText: 'Mock Local' })
+  const card = page.locator('.provider-card').filter({ hasText: '智谱 GLM' })
   await expect(card).toBeVisible()
+  await expect(card.locator('.provider-icon.brand-zhipu img')).toBeVisible()
   await expect(card.getByText('自定义')).toBeVisible()
   await expect(card.getByText('已配置')).toBeVisible()
 
@@ -489,10 +525,12 @@ test('adds, edits, adds model, and deletes a custom provider without network cal
   await expect(apiKeyInput).toHaveAttribute('type', 'text')
 
   await card.locator('input').first().fill('Mock Local Updated')
-  await card.getByRole('button', { name: '保存' }).click()
+  const renamedDraftCard = page.locator('.provider-card').filter({ hasText: 'Mock Local Updated' })
+  await renamedDraftCard.getByRole('button', { name: '保存' }).click()
 
   const updatedCard = page.locator('.provider-card').filter({ hasText: 'Mock Local Updated' })
   await expect(updatedCard).toBeVisible()
+  await expect(updatedCard.getByRole('status')).toContainText('保存成功')
 
   await updatedCard.getByPlaceholder('添加模型 ID，如 deepseek-v4-flash').fill('mock-chat')
   await updatedCard.getByRole('button', { name: '添加' }).click()
@@ -613,6 +651,49 @@ test('places the scroll-to-bottom control above the composer in a long agent ses
   await expect.poll(async () => scroll.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(2)
 })
 
+test('places agent approval above the composer instead of the top of the conversation', async () => {
+  await closeDeepDesk(ctx)
+  ctx = null
+  const mock = await startMockApprovalServer()
+
+  try {
+    ctx = await launchDeepDesk(createMemoryUserData(mock.baseUrl))
+    app = ctx.app
+    page = ctx.page
+
+    await page.getByPlaceholder('发消息，或让我帮你做点事…').fill('请检查当前版本')
+    await page.locator('.send-btn').click()
+
+    const approval = page.getByRole('dialog', { name: '执行审批' })
+    await expect(approval).toBeVisible()
+    await expect(approval).toContainText('执行命令')
+    await expect(approval).toContainText('node -v')
+    await expect(page.locator('.agent-scroll .agent-approval')).toHaveCount(0)
+
+    const layout = await page.evaluate(() => {
+      const approvalEl = document.querySelector<HTMLElement>('.agent-approval')
+      const composerEl = document.querySelector<HTMLElement>('.agent-footer .agent-composer')
+      const scrollEl = document.querySelector<HTMLElement>('.agent-scroll')
+      if (!approvalEl || !composerEl || !scrollEl) return null
+      const approvalBox = approvalEl.getBoundingClientRect()
+      const composerBox = composerEl.getBoundingClientRect()
+      const scrollBox = scrollEl.getBoundingClientRect()
+      return {
+        approval: { x: approvalBox.x, y: approvalBox.y, width: approvalBox.width, height: approvalBox.height },
+        composer: { x: composerBox.x, y: composerBox.y, width: composerBox.width },
+        scroll: { y: scrollBox.y, height: scrollBox.height }
+      }
+    })
+    expect(layout).not.toBeNull()
+    expect(layout!.approval.y).toBeGreaterThan(layout!.scroll.y + 120)
+    expect(layout!.approval.y + layout!.approval.height).toBeLessThanOrEqual(layout!.composer.y - 8)
+    expect(Math.abs(layout!.approval.x - layout!.composer.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout!.approval.width - layout!.composer.width)).toBeLessThanOrEqual(1)
+  } finally {
+    await mock.close()
+  }
+})
+
 test('provides polished message actions and code block download in a local conversation', async () => {
   await closeDeepDesk(ctx)
   ctx = await launchDeepDesk(createMessageActionsUserData())
@@ -662,4 +743,32 @@ test('provides polished message actions and code block download in a local conve
   })
   expect(messageLayout).not.toBeNull()
   expect(messageLayout!.actionsBottom).toBeLessThanOrEqual(messageLayout!.messageBottom)
+})
+
+test('manages recent task titles and deletion from the sidebar overflow menu', async () => {
+  await closeDeepDesk(ctx)
+  ctx = await launchDeepDesk(createMessageActionsUserData())
+  app = ctx.app
+  page = ctx.page
+
+  const session = page.locator('.conv-item', { hasText: '消息操作视觉回归' })
+  await expect(session).toBeVisible()
+  await session.hover()
+  await session.getByRole('button', { name: /会话操作/ }).click()
+  await expect(page.getByRole('menu', { name: '会话操作' })).toBeVisible()
+  await page.getByRole('menuitem', { name: '编辑标题' }).click()
+
+  const input = page.getByLabel('编辑会话标题')
+  await expect(input).toBeVisible()
+  await input.fill('侧栏菜单会话')
+  await input.press('Enter')
+  await expect(page.locator('.conv-item', { hasText: '侧栏菜单会话' })).toBeVisible()
+
+  const renamed = page.locator('.conv-item', { hasText: '侧栏菜单会话' })
+  await renamed.hover()
+  await renamed.getByRole('button', { name: /会话操作/ }).click()
+  await page.getByRole('menuitem', { name: '删除会话' }).click()
+  await expect(page.getByText('删除这个会话？')).toBeVisible()
+  await page.getByRole('button', { name: '确认删除' }).click()
+  await expect(page.locator('.conv-item', { hasText: '侧栏菜单会话' })).toHaveCount(0)
 })

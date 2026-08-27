@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Blocks, ChevronDown, Link2, MoreHorizontal, Settings, Trash2, Pencil, SquarePen, UserRound } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Blocks, ChevronDown, Link2, MoreHorizontal, Settings, SquarePen, UserRound } from 'lucide-react'
 import DeepSeekLogo from '../DeepSeekLogo'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { formatTime } from '../../lib/format'
@@ -27,21 +27,49 @@ export default function Sidebar({
   const loadSession = useAgentStore(s => s.loadSession)
   const deleteSession = useAgentStore(s => s.deleteSession)
   const renameSession = useAgentStore(s => s.renameSession)
+  const [menuId, setMenuId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameText, setRenameText] = useState('')
   const [tasksOpen, setTasksOpen] = useState(true)
+  const menuRef = useRef<HTMLDivElement>(null)
   const settingsShortcut = window.api.platform.id === 'macos' ? '⌘,' : 'Ctrl+,'
+
+  useEffect(() => {
+    const closeMenu = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) {
+        setMenuId(null)
+        setConfirmId(null)
+      }
+    }
+    document.addEventListener('pointerdown', closeMenu)
+    return () => document.removeEventListener('pointerdown', closeMenu)
+  }, [])
 
   const commitRename = (id: string): void => {
     const t = renameText.trim()
     if (t) void renameSession(id, t)
     setRenamingId(null)
+    setMenuId(null)
   }
 
   const openSession = (id: string): void => {
+    if (renamingId || confirmId) return
     loadSession(id)
     onNavigate('chat')
+  }
+
+  const beginRename = (id: string, task: string): void => {
+    setConfirmId(null)
+    setMenuId(null)
+    setRenamingId(id)
+    setRenameText(task)
+  }
+
+  const confirmDelete = async (id: string): Promise<void> => {
+    await deleteSession(id)
+    setConfirmId(null)
+    setMenuId(null)
   }
 
   return (
@@ -75,21 +103,46 @@ export default function Sidebar({
                 </div>
               )}
               {sessions.map(s => (
-                <div key={s.id} className={clsx('conv-item', activeSessionId === s.id && view === 'chat' && 'active')} onClick={() => openSession(s.id)}>
+                <div key={s.id} className={clsx('conv-item', activeSessionId === s.id && view === 'chat' && 'active', menuId === s.id && 'menu-open')} onClick={() => openSession(s.id)}>
                   {renamingId === s.id ? (
-                    <input className='input' style={{ height: 24, padding: '0 6px' }} autoFocus value={renameText} onChange={e => setRenameText(e.target.value)} onClick={e => e.stopPropagation()} onBlur={() => commitRename(s.id)} onKeyDown={e => { if (e.key === 'Enter') commitRename(s.id); if (e.key === 'Escape') setRenamingId(null) }} />
+                    <input className='conv-rename-input' aria-label='编辑会话标题' autoFocus value={renameText} onChange={e => setRenameText(e.target.value)} onClick={e => e.stopPropagation()} onBlur={() => commitRename(s.id)} onKeyDown={e => { if (e.key === 'Enter') commitRename(s.id); if (e.key === 'Escape') setRenamingId(null) }} />
                   ) : (
-                    <div className='conv-title' title='双击重命名' onDoubleClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameText(s.task) }}>{s.task}</div>
+                    <div className='conv-title'>{s.task}</div>
                   )}
                   {renamingId !== s.id && <div className='conv-time'>{formatTime(s.updatedAt)}</div>}
-                  {renamingId !== s.id && (confirmId === s.id ? (
-                    <div className='conv-del confirm' onClick={e => { e.stopPropagation(); void deleteSession(s.id); setConfirmId(null) }}>确认</div>
-                  ) : (
-                    <>
-                      <div className='conv-del' onClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameText(s.task) }} title='重命名'><Pencil size={12} /></div>
-                      <div className='conv-del' onClick={e => { e.stopPropagation(); setConfirmId(confirmId === s.id ? null : s.id) }} title='删除'><Trash2 size={13} /></div>
-                    </>
-                  ))}
+                  {renamingId !== s.id && (
+                    <button
+                      type='button'
+                      className='conv-action'
+                      aria-label={'会话操作：' + s.task}
+                      aria-expanded={menuId === s.id}
+                      onClick={e => {
+                        e.stopPropagation()
+                        setConfirmId(null)
+                        setMenuId(menuId === s.id ? null : s.id)
+                      }}
+                    >
+                      <MoreHorizontal size={15} />
+                    </button>
+                  )}
+                  {menuId === s.id && (
+                    <div className='conv-menu' ref={menuRef} role='menu' aria-label='会话操作' onClick={e => e.stopPropagation()}>
+                      {confirmId === s.id ? (
+                        <>
+                          <div className='conv-menu-confirm'>删除这个会话？</div>
+                          <div className='conv-menu-actions'>
+                            <button type='button' className='conv-menu-button' onClick={() => setConfirmId(null)}>取消</button>
+                            <button type='button' className='conv-menu-button danger' onClick={() => void confirmDelete(s.id)}>确认删除</button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <button type='button' className='conv-menu-item' role='menuitem' onClick={() => beginRename(s.id, s.task)}>编辑标题</button>
+                          <button type='button' className='conv-menu-item danger' role='menuitem' onClick={() => setConfirmId(s.id)}>删除会话</button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

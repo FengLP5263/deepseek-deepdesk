@@ -5,6 +5,16 @@ import { useSettingsStore } from '../../stores/useSettingsStore'
 import { Badge, Button, Input, Spinner } from '../ui'
 import { normalizeBaseUrl } from '../../lib/utils'
 import clsx from 'clsx'
+import zhipuIcon from '../../assets/icons/zhipu.svg'
+
+function isZhipuProvider(provider: ProviderConfig): boolean {
+  const text = [
+    provider.name,
+    provider.baseUrl,
+    ...provider.models.map(model => model.id + ' ' + (model.name ?? ''))
+  ].join(' ').toLowerCase()
+  return text.includes('智谱') || text.includes('zhipu') || text.includes('bigmodel') || text.includes('glm')
+}
 
 export default function ProviderCard({ provider }: { provider: ProviderConfig }) {
   const saveProvider = useSettingsStore(s => s.saveProvider)
@@ -14,18 +24,26 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [newModelId, setNewModelId] = useState('')
   const dirty = JSON.stringify(draft) !== JSON.stringify(provider)
 
   const save = async (): Promise<void> => {
     const clean = { ...draft, baseUrl: normalizeBaseUrl(draft.baseUrl) }
-    await saveProvider(clean)
-    setDraft(clean)
+    try {
+      await saveProvider(clean)
+      setDraft(clean)
+      setSaveResult({ ok: true, message: '保存成功，模型选择已生效' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存失败'
+      setSaveResult({ ok: false, message })
+    }
   }
 
   const test = async (): Promise<void> => {
     setTesting(true)
     setTestResult(null)
+    setSaveResult(null)
     const clean = { ...draft, baseUrl: normalizeBaseUrl(draft.baseUrl) }
     const res = await testProvider(clean)
     setTestResult({ ok: res.ok, message: res.message })
@@ -44,6 +62,7 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
     if (!id) return
     if (draft.models.some(m => m.id === id)) { setNewModelId(''); return }
     const m: ModelConfig = { id }
+    setSaveResult(null)
     setDraft(d => ({ ...d, models: [...d.models, m] }))
     setNewModelId('')
   }
@@ -51,7 +70,9 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
   return (
     <div className='provider-card'>
       <div className='provider-head'>
-        <div className='provider-icon'><Server size={16} /></div>
+        <div className={clsx('provider-icon', isZhipuProvider(draft) && 'brand-zhipu')}>
+          {isZhipuProvider(draft) ? <img src={zhipuIcon} alt='' aria-hidden /> : <Server size={16} />}
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className='provider-name'>{draft.name}</span>
@@ -68,16 +89,16 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
       <div className='form-grid'>
         <div>
           <label className='field-label'>服务名称</label>
-          <Input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder='例如：DeepSeek' />
+          <Input value={draft.name} onChange={e => { setSaveResult(null); setDraft({ ...draft, name: e.target.value }) }} placeholder='例如：DeepSeek' />
         </div>
         <div>
           <label className='field-label'>Base URL（OpenAI 兼容）</label>
-          <Input value={draft.baseUrl} onChange={e => setDraft({ ...draft, baseUrl: e.target.value })} placeholder='https://api.deepseek.com' />
+          <Input value={draft.baseUrl} onChange={e => { setSaveResult(null); setDraft({ ...draft, baseUrl: e.target.value }) }} placeholder='https://api.deepseek.com' />
         </div>
         <div className='full'>
           <label className='field-label'>API Key</label>
           <div className='input-wrap'>
-            <Input type={showKey ? 'text' : 'password'} value={draft.apiKey} onChange={e => setDraft({ ...draft, apiKey: e.target.value })} placeholder='sk-…' style={{ paddingRight: 30 }} />
+            <Input type={showKey ? 'text' : 'password'} value={draft.apiKey} onChange={e => { setSaveResult(null); setDraft({ ...draft, apiKey: e.target.value }) }} placeholder='sk-…' style={{ paddingRight: 30 }} />
             <span className='input-suffix'>
               <button type='button' className='icon-btn' onClick={() => setShowKey(v => !v)}>{showKey ? <EyeOff size={13} /> : <Eye size={13} />}</button>
             </span>
@@ -95,7 +116,7 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
           {draft.models.map(m => (
             <span key={m.id} className='model-chip-item'>
               <span className='mono'>{m.id}</span>
-              <span className='remove' onClick={() => setDraft(d => ({ ...d, models: d.models.filter(x => x.id !== m.id) }))}><X size={11} /></span>
+              <span className='remove' onClick={() => { setSaveResult(null); setDraft(d => ({ ...d, models: d.models.filter(x => x.id !== m.id) })) }}><X size={11} /></span>
             </span>
           ))}
           {draft.models.length === 0 && <span className='muted fs-xs'>暂无模型，可点击「测试连接」自动导入</span>}
@@ -111,6 +132,7 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
         <Button size='sm' onClick={() => void test()} disabled={testing}>
           {testing ? <Spinner size={12} /> : <PlugZap size={13} />} 测试连接
         </Button>
+        {saveResult && <div role='status' className={clsx('key-status', saveResult.ok ? 'ok' : 'bad')}>{saveResult.ok ? '✓' : '✕'} {saveResult.message}</div>}
       </div>
     </div>
   )

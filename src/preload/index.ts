@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type { DeepDeskApi } from '../shared/api'
 import type { AgentEvent, AgentRunRequest, AgentSession } from '../shared/agent-types'
-import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest } from '../shared/types'
+import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, ConnectorActionResult, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorStatus } from '../shared/types'
 import { platformInfoFromNode } from '../shared/platform'
 
 const api: DeepDeskApi = {
@@ -28,6 +28,14 @@ const api: DeepDeskApi = {
     upsert: (memory: MemoryItem) => ipcRenderer.invoke(IPC.MemoryUpsert, memory) as Promise<MemoryItem>,
     remove: (id: string) => ipcRenderer.invoke(IPC.MemoryDelete, id) as Promise<void>,
     search: (request: MemorySearchRequest) => ipcRenderer.invoke(IPC.MemoriesSearch, request) as Promise<MemoryItem[]>
+  },
+  connectors: {
+    list: () => ipcRenderer.invoke(IPC.ConnectorsList) as Promise<ConnectorStatus[]>,
+    save: (config: ConnectorConfigPatch) => ipcRenderer.invoke(IPC.ConnectorSave, config) as Promise<ConnectorConfig>,
+    startAuth: (id: ConnectorId) => ipcRenderer.invoke(IPC.ConnectorAuthStart, id) as Promise<ConnectorAuthSession>,
+    authStatus: (id: ConnectorId, sessionId: string) => ipcRenderer.invoke(IPC.ConnectorAuthStatus, id, sessionId) as Promise<ConnectorAuthSession>,
+    connect: (id: ConnectorId) => ipcRenderer.invoke(IPC.ConnectorConnect, id) as Promise<ConnectorActionResult>,
+    disconnect: (id: ConnectorId) => ipcRenderer.invoke(IPC.ConnectorDisconnect, id) as Promise<ConnectorActionResult>
   },
   chat: {
     start: (req: ChatStartRequest) => ipcRenderer.invoke(IPC.ChatStart, req) as Promise<{ ok: boolean; message?: string }>,

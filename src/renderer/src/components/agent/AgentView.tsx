@@ -9,6 +9,7 @@ import { formatTokens } from '../../lib/format'
 import Markdown from '../chat/Markdown'
 import { copyText } from '../../lib/utils'
 import DeepSeekLogo from '../DeepSeekLogo'
+import zhipuIcon from '../../assets/icons/zhipu.svg'
 import '../../assets/agent.css'
 
 function estimateTokens(history: Array<Record<string, unknown>>): number {
@@ -205,9 +206,11 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const workdir = useAgentStore(s => s.workdir)
   const history = useAgentStore(s => s.history)
   const draftTask = useAgentStore(s => s.draftTask)
+  const currentModelId = useAgentStore(s => s.currentModelId)
   const start = useAgentStore(s => s.start)
   const stop = useAgentStore(s => s.stop)
   const pickDirectory = useAgentStore(s => s.pickDirectory)
+  const setCurrentModel = useAgentStore(s => s.setCurrentModel)
   const setDraftTask = useAgentStore(s => s.setDraftTask)
   const settings = useSettingsStore(s => s.settings)
   const providers = useSettingsStore(s => s.providers)
@@ -220,12 +223,13 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const menuRef = useRef<HTMLDivElement>(null)
 
   const provider = providers.find(p => p.id === (settings?.defaultProviderId ?? 'deepseek'))
-  const contextWindow = provider?.models.find(m => m.id === (settings?.defaultModelId ?? ''))?.contextWindow ?? 128000
+  const effectiveModelId = currentModelId || (settings?.defaultModelId ?? '')
+  const contextWindow = provider?.models.find(m => m.id === effectiveModelId)?.contextWindow ?? 128000
   const mode = settings?.agentPermissionMode ?? 'ask'
   const modeLabel = mode === 'full' ? '完全访问' : mode === 'auto' ? '替我审批' : '每次询问'
   const models = provider?.models ?? []
-  const selectedModel = models.find(item => item.id === settings?.defaultModelId)
-  const selectedModelLabel = selectedModel?.name ?? settings?.defaultModelId ?? '选择模型'
+  const selectedModel = models.find(item => item.id === effectiveModelId)
+  const selectedModelLabel = selectedModel?.name ?? (effectiveModelId || '选择模型')
   const modelButtonLabel = autoModelMode ? 'Auto' : selectedModelLabel
   const workdirLabel = formatWorkdirName(workdir)
   const workdirTitle = workdir ? `工作目录：${workdir}` : '选择工作目录'
@@ -233,8 +237,19 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
     const text = (model.id + ' ' + (model.name ?? '')).toLowerCase()
     return text.includes('deepseek')
   }
+  const isZhipuModel = (model: { id: string; name?: string }): boolean => {
+    const text = [
+      provider?.name,
+      provider?.baseUrl,
+      model.id,
+      model.name
+    ].filter(Boolean).join(' ').toLowerCase()
+    return text.includes('智谱') || text.includes('zhipu') || text.includes('bigmodel') || text.includes('glm')
+  }
   const modelButtonIcon = autoModelMode ? <RefreshCw size={14} /> : selectedModel && isDeepSeekModel(selectedModel)
     ? <DeepSeekLogo className='model-logo' width={15} height={15} aria-hidden />
+    : selectedModel && isZhipuModel(selectedModel)
+      ? <img src={zhipuIcon} className='model-logo model-logo-img compact' alt='' aria-hidden />
     : <span className='model-mark compact'>{selectedModelLabel.trim().charAt(0).toUpperCase()}</span>
 
   useEffect(() => {
@@ -244,6 +259,10 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
     document.addEventListener('pointerdown', closeMenu)
     return () => document.removeEventListener('pointerdown', closeMenu)
   }, [])
+
+  useEffect(() => {
+    setAutoModelMode(!currentModelId)
+  }, [currentModelId])
 
   useEffect(() => {
     const ta = taRef.current
@@ -322,18 +341,18 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
                     <span />
                   </button>
                 </div>
-                <button className='model-menu-option auto' role='menuitemradio' aria-checked={autoModelMode} onClick={() => { setAutoModelMode(true); setOpenMenu(null) }}>
+                <button className='model-menu-option auto' role='menuitemradio' aria-checked={autoModelMode} onClick={() => { setAutoModelMode(true); setCurrentModel(''); setOpenMenu(null) }}>
                   <span className='model-option-main'><RefreshCw size={16} /><span>Auto</span></span>
                   {autoModelMode && <Check size={15} />}
                 </button>
                 <div className='model-menu-list'>
                 {models.map(item => (
-                  <button key={item.id} className='model-menu-option' role='menuitemradio' aria-checked={!autoModelMode && settings?.defaultModelId === item.id} onClick={() => { setAutoModelMode(false); void updateSettings({ defaultModelId: item.id }); setOpenMenu(null) }}>
+                  <button key={item.id} className='model-menu-option' role='menuitemradio' aria-checked={!autoModelMode && effectiveModelId === item.id} onClick={() => { setAutoModelMode(false); setCurrentModel(item.id); setOpenMenu(null) }}>
                     <span className='model-option-main'>
-                      {isDeepSeekModel(item) ? <DeepSeekLogo className='model-logo' width={18} height={18} aria-hidden /> : <span className='model-mark'>{(item.name ?? item.id).trim().charAt(0).toUpperCase()}</span>}
+                      {isDeepSeekModel(item) ? <DeepSeekLogo className='model-logo' width={18} height={18} aria-hidden /> : isZhipuModel(item) ? <img src={zhipuIcon} className='model-logo model-logo-img' alt='' aria-hidden /> : <span className='model-mark'>{(item.name ?? item.id).trim().charAt(0).toUpperCase()}</span>}
                       <span className='model-name'>{item.name ?? item.id}</span>
                     </span>
-                    {!autoModelMode && item.id === settings?.defaultModelId && <span className='model-check'><Check size={15} /></span>}
+                    {!autoModelMode && item.id === effectiveModelId && <span className='model-check'><Check size={15} /></span>}
                   </button>
                 ))}
                 </div>
@@ -401,17 +420,6 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
   return (
     <div className='agent-view'>
       {error && <div className='agent-error' style={{ margin: '10px 24px 0' }}>{error}</div>}
-      {pendingApproval && (
-        <div className='agent-approval'>
-          <div className='agent-approval-title'>{pendingApproval.reason || '等待批准'}</div>
-          <pre className='agent-approval-cmd'>{pendingApproval.command || pendingApproval.target}</pre>
-          {pendingApproval.command && <div className='agent-approval-cwd'>工作目录：{pendingApproval.cwd}</div>}
-          <div className='agent-approval-actions'>
-            <button className='btn btn-primary btn-sm' onClick={() => approve(true)}><Check size={13} /> 批准</button>
-            <button className='btn btn-danger btn-sm' onClick={() => approve(false)}><X size={13} /> 拒绝</button>
-          </div>
-        </div>
-      )}
       {steps.length === 0 ? (
         <div className='agent-empty'>
           <div className='empty-title'>你好，我是 DeepDesk</div>
@@ -436,6 +444,17 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
             <button type='button' className='scroll-to-bottom' title='回到底部' aria-label='回到底部' onClick={scrollToBottom}>
               <ArrowDown size={17} />
             </button>
+          )}
+          {pendingApproval && (
+            <div className='agent-approval' role='dialog' aria-label='执行审批'>
+              <div className='agent-approval-title'>{pendingApproval.reason || '等待批准'}</div>
+              <pre className='agent-approval-cmd'>{pendingApproval.command || pendingApproval.target}</pre>
+              {pendingApproval.command && <div className='agent-approval-cwd'>工作目录：{pendingApproval.cwd}</div>}
+              <div className='agent-approval-actions'>
+                <button className='btn btn-primary btn-sm' onClick={() => approve(true)}><Check size={13} /> 批准</button>
+                <button className='btn btn-danger btn-sm' onClick={() => approve(false)}><X size={13} /> 拒绝</button>
+              </div>
+            </div>
           )}
           <AgentComposer onOpenSettings={onOpenSettings} />
         </div>

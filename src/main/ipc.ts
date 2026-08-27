@@ -2,8 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { startChat, cancelChat } from './llm'
 import { startAgent, cancelAgent, approveCommand } from './agent'
+import { connectConnector, disconnectConnector, getConnectorAuthStatus, listConnectors, startConnectorAuth } from './connectors'
 import type { AppStore } from './store'
-import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest } from '../shared/types'
+import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, ConnectorConfigPatch, ConnectorId } from '../shared/types'
 import type { AgentRunRequest, AgentSession } from '../shared/agent-types'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
@@ -68,6 +69,18 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   })
 
   ipcMain.handle(IPC.MemoriesSearch, (_event, request: MemorySearchRequest) => store.searchMemories(request))
+
+  ipcMain.handle(IPC.ConnectorsList, () => listConnectors(store.getSnapshot().connectors))
+
+  ipcMain.handle(IPC.ConnectorSave, (_event, config: ConnectorConfigPatch) => store.upsertConnectorConfig(config))
+
+  ipcMain.handle(IPC.ConnectorAuthStart, (_event, id: ConnectorId) => startConnectorAuth(store, id))
+
+  ipcMain.handle(IPC.ConnectorAuthStatus, (_event, id: ConnectorId, sessionId: string) => getConnectorAuthStatus(store, id, sessionId))
+
+  ipcMain.handle(IPC.ConnectorConnect, (_event, id: ConnectorId) => connectConnector(store, id))
+
+  ipcMain.handle(IPC.ConnectorDisconnect, (_event, id: ConnectorId) => disconnectConnector(store, id))
 
   ipcMain.handle(IPC.ChatStart, (event, req: ChatStartRequest) => {
     const provider = store.getSnapshot().providers.find(p => p.id === req.providerId)
