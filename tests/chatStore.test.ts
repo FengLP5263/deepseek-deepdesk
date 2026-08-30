@@ -14,12 +14,14 @@ let startRequests: ChatStartRequest[] = []
 let chunkCb: ((p: ChatChunkPayload) => void) | null = null
 let saved: Map<string, Conversation>
 let memoryResults: MemoryItem[] = []
+let cancelledRunIds: string[] = []
 
 beforeEach(() => {
   startRequests = []
   chunkCb = null
   saved = new Map()
   memoryResults = []
+  cancelledRunIds = []
   const api = {
     settings: {
       get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true }),
@@ -40,7 +42,7 @@ beforeEach(() => {
     },
     chat: {
       start: async (req: ChatStartRequest) => { startRequests.push(req); return { ok: true } },
-      cancel: async () => {},
+      cancel: async (runId: string) => { cancelledRunIds.push(runId) },
       onChunk: (cb: (p: ChatChunkPayload) => void) => { chunkCb = cb; return () => { chunkCb = null } }
     }
   }
@@ -54,6 +56,26 @@ async function boot(): Promise<void> {
 }
 
 describe('useChatStore', () => {
+  it('停止生成时立即保留已有内容并忽略后续分片', async () => {
+    await boot()
+    useChatStore.getState().createConversation('deepseek', 'deepseek-chat')
+    await useChatStore.getState().sendMessage('开始生成长回答')
+    const req = startRequests[0]
+    chunkCb!({ runId: req.runId, conversationId: req.conversationId, type: 'content', text: '已经生成的部分' })
+
+    useChatStore.getState().stopStreaming()
+
+    const stopped = useChatStore.getState()
+    const assistant = stopped.conversations[0].messages[1]
+    expect(cancelledRunIds).toEqual([req.runId])
+    expect(stopped.streaming).toBeNull()
+    expect(assistant.streaming).toBe(false)
+    expect(assistant.content).toBe('已经生成的部分')
+
+    chunkCb!({ runId: req.runId, conversationId: req.conversationId, type: 'content', text: '迟到内容' })
+    expect(useChatStore.getState().conversations[0].messages[1].content).toBe('已经生成的部分')
+  })
+
   it('init 加载会话并设置 activeId 为最近会话', async () => {
     saved.set('c1', { id: 'c1', title: '旧', createdAt: 1, updatedAt: 1, providerId: 'deepseek', modelId: 'deepseek-chat', temperature: 1, messages: [] })
     saved.set('c2', { id: 'c2', title: '新', createdAt: 2, updatedAt: 2, providerId: 'deepseek', modelId: 'deepseek-chat', temperature: 1, messages: [] })
@@ -184,6 +206,22 @@ describe('useChatStore', () => {
     expect(startRequests.length).toBe(2)
     expect(startRequests[1].messages.length).toBe(1)
     expect(startRequests[1].messages[0].content).toBe('你好')
+  })
+
+  it('updateMessage 保存用户消息且不触发重发', async () => {
+    await boot()
+    useChatStore.getState().createConversation('deepseek', 'deepseek-chat')
+    await useChatStore.getState().sendMessage('原始问题')
+    const req = startRequests[0]
+    chunkCb!({ runId: req.runId, conversationId: req.conversationId, type: 'done' })
+    const userMsgId = useChatStore.getState().conversations[0].messages[0].id
+
+    useChatStore.getState().updateMessage(userMsgId, '保存后的问题')
+
+    const conv = useChatStore.getState().conversations[0]
+    expect(startRequests).toHaveLength(1)
+    expect(conv.messages[0].content).toBe('保存后的问题')
+    expect(saved.get(conv.id)?.messages[0].content).toBe('保存后的问题')
   })
 
   it('editAndResend 截断并重发', async () => {

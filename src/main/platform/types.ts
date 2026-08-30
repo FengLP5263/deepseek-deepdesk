@@ -15,7 +15,7 @@ export interface PlatformAdapter {
   readonly info: PlatformInfo
   readonly windowOptions: BrowserWindowConstructorOptions
   quoteArgument(value: string): string
-  executeCommand(command: string, cwd: string, env?: CommandEnvironment): Promise<CommandResult>
+  executeCommand(command: string, cwd: string, env?: CommandEnvironment, signal?: AbortSignal): Promise<CommandResult>
   installApplicationMenu(): void
   shouldQuitWhenAllWindowsClose(): boolean
 }

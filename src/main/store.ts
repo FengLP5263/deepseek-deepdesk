@@ -165,6 +165,10 @@ export class AppStore {
       if (missing.length > 0) {
         provider.models = [...provider.models, ...missing.map(model => ({ ...model }))]
       }
+      provider.models = provider.models.map(model => {
+        const builtinModel = builtin.models.find(item => item.id === model.id)
+        return builtinModel ? { ...model, contextWindow: builtinModel.contextWindow, supportsReasoning: builtinModel.supportsReasoning ?? model.supportsReasoning } : model
+      })
       provider.isBuiltIn = provider.isBuiltIn ?? builtin.isBuiltIn
       if (!provider.name) provider.name = builtin.name
       if (!provider.baseUrl) provider.baseUrl = builtin.baseUrl

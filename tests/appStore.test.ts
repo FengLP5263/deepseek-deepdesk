@@ -35,6 +35,7 @@ describe('AppStore', () => {
     expect(snap.settings.defaultModelId).toBe('deepseek-v4-flash')
     expect(snap.settings.appFont).toBe('default')
     expect(snap.providers.find(p => p.id === 'deepseek')?.models.map(m => m.id).sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
+    expect(snap.providers.find(p => p.id === 'deepseek')?.models.every(m => m.contextWindow === 256000)).toBe(true)
     expect(snap.conversations).toEqual([])
     expect(snap.memories).toEqual([])
     expect(snap.connectorActivities).toEqual([])
@@ -171,5 +172,23 @@ describe('AppStore', () => {
     const ds = store.getSnapshot().providers.find(p => p.id === 'deepseek')!
     expect(ds.apiKey).toBe('sk-keep-me')
     expect(ds.models.map(m => m.id).sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
+    expect(ds.models.every(m => m.contextWindow === 256000)).toBe(true)
+  })
+
+  it('本地旧数据中 DeepSeek 128K 上下文窗口会升级到 256K', async () => {
+    writeFileSync(join(dir, 'deepdesk.json'), JSON.stringify({
+      settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-flash', temperature: 1, theme: 'dark', enterToSend: true },
+      providers: [{
+        id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk-keep-me', isBuiltIn: true, createdAt: 0,
+        models: [{ id: 'deepseek-v4-flash', contextWindow: 128000 }, { id: 'deepseek-v4-pro', contextWindow: 128000 }]
+      }],
+      conversations: [],
+      agentSessions: [],
+      memories: []
+    }))
+    const store = createStore()
+    await store.init()
+    const ds = store.getSnapshot().providers.find(p => p.id === 'deepseek')!
+    expect(ds.models.map(m => m.contextWindow)).toEqual([256000, 256000])
   })
 })

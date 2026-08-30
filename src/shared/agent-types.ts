@@ -1,4 +1,25 @@
-export type AgentToolName = 'run_command' | 'read_file' | 'write_file' | 'edit_file' | 'list_files' | 'search_content' | 'search_feishu_user' | 'send_feishu_message'
+export type AgentToolName =
+  | 'run_command'
+  | 'read_file'
+  | 'write_file'
+  | 'edit_file'
+  | 'list_files'
+  | 'search_content'
+  | 'search_feishu_user'
+  | 'send_feishu_message'
+  | 'browser_pages'
+  | 'browser_navigate'
+  | 'browser_snapshot'
+  | 'browser_click'
+  | 'browser_type'
+  | 'browser_debug'
+  | 'browser_evaluate'
+
+export interface AgentQueuedMessage {
+  id: string
+  text: string
+  createdAt: number
+}
 
 export type AgentSessionSource =
   | { type: 'desktop' }
@@ -63,7 +84,7 @@ export interface AgentStep {
   callId?: string
   name?: string
   args?: string
-  status?: 'running' | 'ok' | 'error' | 'denied'
+  status?: 'running' | 'ok' | 'error' | 'denied' | 'cancelled'
   summary?: string
   result?: string
   message?: string
@@ -81,5 +102,6 @@ export interface AgentSession {
   updatedAt: number
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
+  queuedMessages?: AgentQueuedMessage[]
   source?: AgentSessionSource
 }

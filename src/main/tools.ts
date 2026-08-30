@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { AgentToolCall, AgentToolResult } from '../shared/agent-types'
+import { executeBrowserTool, isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
 
 const MAX_OUTPUT = 20000
@@ -19,11 +20,18 @@ export function resolveInWorkdir(workdir: string, p: string): string {
   return r.abs
 }
 
-function runLarkCli(args: string): Promise<{ stdout: string; stderr: string; code: number }> {
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('操作已取消')
+  error.name = 'AbortError'
+  throw error
+}
+
+function runLarkCli(args: string, signal?: AbortSignal): Promise<{ stdout: string; stderr: string; code: number }> {
   return getPlatformAdapter().executeCommand(args, process.cwd(), {
     LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1',
     LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1'
-  })
+  }, signal)
 }
 
 export function toolTargetPaths(call: AgentToolCall): string[] {
@@ -45,7 +53,9 @@ function truncate(s: string): string {
   return s.slice(0, MAX_OUTPUT) + '\n...（输出过长已截断）'
 }
 
-export async function executeTool(call: AgentToolCall, workdir: string, allowOutside = false): Promise<AgentToolResult> {
+export async function executeTool(call: AgentToolCall, workdir: string, allowOutside = false, signal?: AbortSignal): Promise<AgentToolResult> {
+  throwIfAborted(signal)
+  if (isBrowserToolName(call.name)) return await executeBrowserTool(call, signal)
   const resolve = (p: string): string => {
     const r = resolvePath(workdir, p)
     if (!r.inside && !allowOutside) throw new Error('路径超出工作目录范围: ' + p)
@@ -57,13 +67,15 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       const command = String(a.command ?? '')
       if (!command.trim()) return { ok: false, content: '命令为空', summary: '命令为空' }
       const cwd = a.cwd ? resolve(String(a.cwd)) : workdir
-      const r = await getPlatformAdapter().executeCommand(command, cwd)
+      const r = await getPlatformAdapter().executeCommand(command, cwd, undefined, signal)
+      throwIfAborted(signal)
       const content = (r.stdout ? truncate(r.stdout) + '\n' : '') + (r.stderr ? '[stderr]\n' + truncate(r.stderr) + '\n' : '') + '[exit code: ' + r.code + ']'
       return { ok: r.code === 0, content, summary: command }
     }
     case 'read_file': {
       const p = resolve(String(a.path ?? ''))
       const raw = await fs.readFile(p, 'utf-8')
+      throwIfAborted(signal)
       const lines = raw.split('\n')
       const numbered = lines.map((l, i) => (i + 1) + ': ' + l).join('\n')
       return { ok: true, content: truncate(numbered), summary: path.basename(p) }
@@ -72,7 +84,9 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       const p = resolve(String(a.path ?? ''))
       const content = String(a.content ?? '')
       await fs.mkdir(path.dirname(p), { recursive: true })
+      throwIfAborted(signal)
       await fs.writeFile(p, content, 'utf-8')
+      throwIfAborted(signal)
       return { ok: true, content: '已写入 ' + p + '（' + content.length + ' 字符）', summary: '写入 ' + path.basename(p) }
     }
     case 'edit_file': {
@@ -80,16 +94,19 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       const oldStr = String(a.old_string ?? '')
       const newStr = String(a.new_string ?? '')
       const raw = await fs.readFile(p, 'utf-8')
+      throwIfAborted(signal)
       const count = raw.split(oldStr).length - 1
       if (count === 0) return { ok: false, content: '未找到要替换的文本', summary: '未找到替换文本' }
       if (count > 1) return { ok: false, content: '要替换的文本出现 ' + count + ' 次，请提供更精确的上下文', summary: '替换文本不唯一' }
       const updated = raw.replace(oldStr, newStr)
       await fs.writeFile(p, updated, 'utf-8')
+      throwIfAborted(signal)
       return { ok: true, content: '已替换 ' + path.basename(p) + ' 中的 1 处文本', summary: '编辑 ' + path.basename(p) }
     }
     case 'list_files': {
       const p = a.path ? resolve(String(a.path)) : workdir
       const entries = await fs.readdir(p, { withFileTypes: true })
+      throwIfAborted(signal)
       const lines = entries.map(e => (e.isDirectory() ? '[目录] ' : '       ') + e.name)
       return { ok: true, content: lines.join('\n') || '（空目录）', summary: '列出 ' + entries.length + ' 项' }
     }
@@ -98,9 +115,11 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       const root = a.path ? resolve(String(a.path)) : workdir
       const matches: string[] = []
       const walk = async (dir: string): Promise<void> => {
+        throwIfAborted(signal)
         let entries
         try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
         for (const e of entries) {
+          throwIfAborted(signal)
           const full = path.join(dir, e.name)
           if (e.isDirectory()) {
             if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || e.name === 'out') continue
@@ -125,7 +144,8 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       if (!name) return { ok: false, content: '缺少 name 参数', summary: '缺少姓名' }
       const quote = getPlatformAdapter().quoteArgument
       const cmd = 'lark-cli contact +search-user --query ' + quote(name) + ' --exclude-external-users --as user'
-      const r = await runLarkCli(cmd)
+      const r = await runLarkCli(cmd, signal)
+      throwIfAborted(signal)
       try {
         const j = JSON.parse(r.stdout.trim()) as { data?: { users?: Array<{ open_id?: string; localized_name?: string; department?: string }> } }
         const users = (j.data?.users ?? []).map(u => ({ open_id: u.open_id ?? '', name: u.localized_name ?? '', department: u.department || '（无部门）' }))
@@ -142,7 +162,8 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       if (!user_id || !text) return { ok: false, content: '缺少 user_id 或 text 参数', summary: '缺少参数' }
       const quote = getPlatformAdapter().quoteArgument
       const cmd = 'lark-cli im +messages-send --user-id ' + quote(user_id) + ' --text ' + quote(text) + ' --as user'
-      const r = await runLarkCli(cmd)
+      const r = await runLarkCli(cmd, signal)
+      throwIfAborted(signal)
       try {
         const j = JSON.parse(r.stdout.trim()) as { ok?: boolean; data?: { message_id?: string }; error?: { message?: string } }
         if (j.ok) return { ok: true, content: '消息已发送，message_id=' + (j.data?.message_id ?? ''), summary: '已发送给 ' + user_id }

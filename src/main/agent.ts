@@ -7,12 +7,21 @@ import { executeTool, isDangerousCommand, isReadOnlyCommand, resolvePath, toolTa
 import type { AgentEvent, AgentRunRequest, AgentToolCall, AgentToolName, AgentToolResult } from '../shared/agent-types'
 import type { AgentPermissionMode, AppSettings, ProviderConfig } from '../shared/types'
 import type { PlatformInfo } from '../shared/platform'
+import { getModelContextWindow, manageContextMessages } from '../shared/context-manager'
+import { isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
 
 const MAX_TURNS = 25
 const pendingApprovals = new Map<string, { resolve: (v: boolean) => void }>()
 const approvalIdsByRunId = new Map<string, Set<string>>()
 const controllers = new Map<string, AbortController>()
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  const error = new Error('Agent 已停止')
+  error.name = 'AbortError'
+  throw error
+}
 
 export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode, memoryContext?: string): string {
   const readonlyExamples = platform.shellName === 'powershell'
@@ -25,7 +34,7 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
       : '每次询问：执行命令、访问工作目录外的文件都会询问用户'
   const base = [
     '你是 DeepDesk Agent，一个运行在用户电脑上的编程与操作助手。'
-    , '你可以通过工具调用来完成真实操作：执行命令、读写编辑文件、列目录、搜索内容。'
+    , '你可以通过工具调用来完成真实操作：执行命令、读写编辑文件、列目录、搜索内容，以及通过浏览器调试连接读取和操作网页。'
     , ''
     , '规则：'
     , '1. 优先用只读命令了解现状（如 ' + readonlyExamples + '），再动手修改。'
@@ -34,6 +43,7 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
     , '4. 边做边用简短的话汇报进度；最终给出总结。'
     , '5. 无法完成或信息不足就直说，不要编造。'
     , '6. 如需通知他人，先用 search_feishu_user 按姓名查 open_id，再用 send_feishu_message 发飞书消息。'
+    , '7. 需要操作网页时，先用 browser_pages 和 browser_snapshot 了解页面，再点击、输入或调试；浏览器未连接时请提示用户在“连接器”中启动。'
     , ''
     , '工作目录：' + workdir
     , '操作系统：' + platform.id
@@ -44,6 +54,11 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
 }
 
 function evaluatePermission(call: AgentToolCall, workdir: string, mode: AgentPermissionMode): { needsApproval: boolean; reason: string; allowOutside: boolean } {
+  if (isBrowserToolName(call.name)) {
+    const highRisk = call.name === 'browser_click' || call.name === 'browser_type' || call.name === 'browser_evaluate'
+    const needsApproval = highRisk ? mode !== 'full' : call.name === 'browser_navigate' && mode === 'ask'
+    return { needsApproval, reason: highRisk ? '操作浏览器页面' : '访问浏览器页面', allowOutside: false }
+  }
   if (call.name === 'send_feishu_message') {
     return { needsApproval: mode !== 'full', reason: '发送飞书消息', allowOutside: false }
   }
@@ -104,6 +119,7 @@ function clearPendingApprovalsForRun(runId: string, value: boolean): void {
 export function cancelAgent(runId: string): void {
   const c = controllers.get(runId)
   if (c) c.abort()
+  clearPendingApprovalsForRun(runId, false)
 }
 
 export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: ProviderConfig, settings: AppSettings): void {
@@ -112,16 +128,20 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
   const send = (ev: AgentEvent): void => { if (!win.isDestroyed()) win.webContents.send(IPC.AgentChunk, ev) }
   const mode: AgentPermissionMode = settings.agentPermissionMode ?? 'ask'
   void (async () => {
-    const messages: Array<Record<string, unknown>> = (req.history && req.history.length > 0)
+    let messages: Array<Record<string, unknown>> = (req.history && req.history.length > 0)
       ? [...req.history]
       : [{ role: 'system', content: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode, req.memoryContext) }]
     if (req.history && req.history.length > 0 && req.memoryContext?.trim()) {
       messages.push({ role: 'system', content: req.memoryContext.trim() })
     }
     messages.push({ role: 'user', content: req.task })
+    const contextWindow = getModelContextWindow(provider, req.modelId)
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
+        throwIfAborted(controller.signal)
         send({ runId: req.runId, type: 'thinking' })
+        const managed = manageContextMessages(messages, { contextWindow })
+        messages = managed.messages
         let content = ''
         let toolCalls: ToolCallItem[] = []
         let usage: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined
@@ -134,6 +154,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
           temperature: req.temperature,
           signal: controller.signal
         })) {
+          throwIfAborted(controller.signal)
           if (chunk.type === 'content') {
             content += chunk.text
             send({ runId: req.runId, type: 'text', text: chunk.text })
@@ -142,6 +163,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
             usage = chunk.usage
           }
         }
+        throwIfAborted(controller.signal)
         if (toolCalls.length > 0) {
           messages.push({
             role: 'assistant',
@@ -149,6 +171,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
             tool_calls: toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } }))
           })
           for (const rawCall of toolCalls) {
+            throwIfAborted(controller.signal)
             const call: AgentToolCall = { id: rawCall.id, name: rawCall.name as AgentToolName, args: rawCall.args }
             send({ runId: req.runId, type: 'tool_call', call })
             const perm = evaluatePermission(call, req.workdir, mode)
@@ -161,19 +184,23 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
               } else if (call.name === 'send_feishu_message') {
                 approval.command = String(call.args.text ?? '')
                 approval.target = String(call.args.user_id ?? '')
+              } else if (isBrowserToolName(call.name)) {
+                approval.command = call.name + ' ' + JSON.stringify(call.args)
               } else {
                 approval.target = String(call.args.path ?? '')
               }
               send(approval)
               const approved = await waitApproval(req.runId, call.id)
+              throwIfAborted(controller.signal)
               if (!approved) {
                 result = { ok: false, content: '用户拒绝了该操作', summary: '已拒绝: ' + (approval.command ?? approval.target ?? '') }
               } else {
-                result = await executeTool(call, req.workdir, perm.allowOutside)
+                result = await executeTool(call, req.workdir, perm.allowOutside, controller.signal)
               }
             } else {
-              result = await executeTool(call, req.workdir, perm.allowOutside)
+              result = await executeTool(call, req.workdir, perm.allowOutside, controller.signal)
             }
+            throwIfAborted(controller.signal)
             send({ runId: req.runId, type: 'tool_result', callId: call.id, summary: result.summary, ok: result.ok, output: result.content })
             messages.push({ role: 'tool', tool_call_id: call.id, content: result.content })
           }
@@ -186,7 +213,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
       send({ runId: req.runId, type: 'error', message: '已达到最大执行步数（' + MAX_TURNS + '），已停止', history: messages })
     } catch (err) {
       const e = err as Error
-      if (e && e.name === 'AbortError') {
+      if (controller.signal.aborted || (e && e.name === 'AbortError')) {
         send({ runId: req.runId, type: 'done', message: '已停止', history: messages })
       } else {
         send({ runId: req.runId, type: 'error', message: e && e.message ? e.message : '未知错误', history: messages })

@@ -84,7 +84,15 @@ export interface StreamFinalChunk {
 
 export type StreamChunk = StreamContentChunk | StreamFinalChunk
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('请求已取消')
+  error.name = 'AbortError'
+  throw error
+}
+
 export async function* streamChatCompletionWithTools(req: ToolCallRequest): AsyncGenerator<StreamChunk> {
+  throwIfAborted(req.signal)
   let base = req.baseUrl.trim()
   while (base.endsWith('/')) base = base.slice(0, -1)
   const res = await fetch(base + '/chat/completions', {
@@ -110,6 +118,7 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
     } catch {
       detail = ''
     }
+    throwIfAborted(req.signal)
     throw new Error('HTTP ' + res.status + ': ' + (detail || res.statusText))
   }
   if (!res.body) throw new Error('响应为空')
@@ -118,47 +127,57 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
   let buffer = ''
   const tcMap = new Map<number, { id: string; name: string; args: string }>()
   let usage: StreamFinalChunk['usage']
-  while (true) {
-    const r = await reader.read()
-    if (r.done) break
-    buffer += decoder.decode(r.value, { stream: true })
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() ?? ''
-    for (const part of parts) {
-      for (const line of part.split('\n')) {
-        if (!line.startsWith('data:')) continue
-        const data = line.slice(5).trim()
-        if (data === '' || data === '[DONE]') continue
-        try {
-          const json = JSON.parse(data) as {
-            choices?: Array<{ delta?: { content?: string; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> } }>
-            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
-          }
-          const delta = json.choices && json.choices[0] && json.choices[0].delta
-          if (delta) {
-            if (typeof delta.content === 'string' && delta.content !== '') {
-              yield { type: 'content', text: delta.content }
+  const abortReader = (): void => { void reader.cancel().catch(() => undefined) }
+  req.signal?.addEventListener('abort', abortReader, { once: true })
+  try {
+    while (true) {
+      throwIfAborted(req.signal)
+      const r = await reader.read()
+      throwIfAborted(req.signal)
+      if (r.done) break
+      buffer += decoder.decode(r.value, { stream: true })
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() ?? ''
+      for (const part of parts) {
+        for (const line of part.split('\n')) {
+          if (!line.startsWith('data:')) continue
+          const data = line.slice(5).trim()
+          if (data === '' || data === '[DONE]') continue
+          try {
+            const json = JSON.parse(data) as {
+              choices?: Array<{ delta?: { content?: string; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> } }>
+              usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
             }
-            if (Array.isArray(delta.tool_calls)) {
-              for (const tc of delta.tool_calls) {
-                const idx = tc.index ?? 0
-                const entry = tcMap.get(idx) ?? { id: '', name: '', args: '' }
-                if (tc.id) entry.id = tc.id
-                if (tc.function && tc.function.name) entry.name += tc.function.name
-                if (tc.function && tc.function.arguments) entry.args += tc.function.arguments
-                tcMap.set(idx, entry)
+            const delta = json.choices && json.choices[0] && json.choices[0].delta
+            if (delta) {
+              if (typeof delta.content === 'string' && delta.content !== '') {
+                yield { type: 'content', text: delta.content }
+              }
+              if (Array.isArray(delta.tool_calls)) {
+                for (const tc of delta.tool_calls) {
+                  const idx = tc.index ?? 0
+                  const entry = tcMap.get(idx) ?? { id: '', name: '', args: '' }
+                  if (tc.id) entry.id = tc.id
+                  if (tc.function && tc.function.name) entry.name += tc.function.name
+                  if (tc.function && tc.function.arguments) entry.args += tc.function.arguments
+                  tcMap.set(idx, entry)
+                }
               }
             }
+            if (json.usage) {
+              usage = { promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, totalTokens: json.usage.total_tokens }
+            }
+          } catch {
+            // 跳过不完整分片
           }
-          if (json.usage) {
-            usage = { promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, totalTokens: json.usage.total_tokens }
-          }
-        } catch {
-          // 跳过不完整分片
         }
       }
     }
+  } finally {
+    req.signal?.removeEventListener('abort', abortReader)
+    reader.releaseLock()
   }
+  throwIfAborted(req.signal)
   const toolCalls: ToolCallItem[] = [...tcMap.values()].map(e => {
     let args: Record<string, unknown> = {}
     try {

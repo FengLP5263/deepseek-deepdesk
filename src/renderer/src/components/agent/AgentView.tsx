@@ -1,37 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ArrowDown, Check, ChevronDown, Copy, FolderOpen, Gauge, Pencil, RefreshCw, Square, Terminal, ThumbsDown, ThumbsUp, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
+import { ArrowDown, Check, ChevronDown, Copy, FolderOpen, Gauge, Pencil, RefreshCw, SendHorizontal, Terminal, ThumbsDown, ThumbsUp, Trash2, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import type { AgentStep } from '@shared/agent-types'
 import clsx from 'clsx'
 import { formatTokens } from '../../lib/format'
+import { DEFAULT_CONTEXT_WINDOW, estimateContextUsage } from '@shared/context-manager'
 import Markdown from '../chat/Markdown'
 import { copyText } from '../../lib/utils'
 import DeepSeekLogo from '../DeepSeekLogo'
 import zhipuIcon from '../../assets/icons/zhipu.svg'
 import '../../assets/agent.css'
-
-function estimateTokens(history: Array<Record<string, unknown>>): number {
-  let tokens = 0
-  for (const m of history) {
-    const parts: string[] = []
-    if (typeof m.content === 'string') parts.push(m.content)
-    if (Array.isArray(m.tool_calls)) {
-      for (const tc of m.tool_calls as Array<Record<string, unknown>>) {
-        const fn = tc.function as Record<string, unknown> | undefined
-        if (fn && typeof fn.arguments === 'string') parts.push(fn.arguments)
-      }
-    }
-    for (const part of parts) {
-      for (const ch of part) {
-        const code = ch.charCodeAt(0)
-        tokens += (code >= 0x2e80 && code <= 0x9fff) ? 1 : 0.25
-      }
-    }
-  }
-  return Math.max(1, Math.round(tokens))
-}
 
 function formatWorkdirName(workdir: string): string {
   const normalized = workdir.trim().replace(/[\\/]+$/, '')
@@ -40,8 +20,9 @@ function formatWorkdirName(workdir: string): string {
   return parts.at(-1) ?? normalized
 }
 
-function ContextMeter({ history, contextWindow, open, onToggle }: { history: Array<Record<string, unknown>>; contextWindow: number; open: boolean; onToggle: () => void }) {
-  const used = estimateTokens(history)
+function ContextMeter({ history, currentInput, contextWindow, open, onToggle }: { history: Array<Record<string, unknown>>; currentInput: string; contextWindow: number; open: boolean; onToggle: () => void }) {
+  const usage = estimateContextUsage(history, currentInput)
+  const used = usage.used
   const percent = Math.min(100, Math.round(used / contextWindow * 100))
   const RADIUS = 5.5
   const CIRC = 2 * Math.PI * RADIUS
@@ -60,7 +41,27 @@ function ContextMeter({ history, contextWindow, open, onToggle }: { history: Arr
             <span className='ctx-percent'>{percent}%</span>
             <span className='ctx-figures'>~{formatTokens(used)} / {formatTokens(contextWindow)}</span>
           </div>
-          <div className='ctx-bar'><div className='ctx-bar-fill' style={{ width: percent + '%' }} /></div>
+          <div className='ctx-bar' aria-label='上下文组成进度'>
+            {usage.parts.map(part => (
+              <div
+                className='ctx-bar-segment'
+                data-tone={part.tone}
+                key={part.label}
+                style={{ width: Math.max(0.8, part.tokens / contextWindow * 100) + '%' }}
+                title={`${part.label}：~${formatTokens(part.tokens)}`}
+              />
+            ))}
+          </div>
+          <div className='ctx-breakdown' aria-label='上下文组成'>
+            {usage.parts.length > 0 ? usage.parts.map(part => (
+              <div className='ctx-breakdown-row' data-tone={part.tone} key={part.label}>
+                <span className='ctx-breakdown-label'><span className='ctx-breakdown-dot' aria-hidden />{part.label}</span>
+                <span className='ctx-breakdown-value'>~{formatTokens(part.tokens)}</span>
+              </div>
+            )) : (
+              <div className='ctx-breakdown-empty'>暂无上下文内容</div>
+            )}
+          </div>
         </div>
       )}
     </span>
@@ -83,8 +84,15 @@ function ToolCard({ step }: { step: AgentStep }) {
     : step.name === 'search_content' ? '搜索 ' + String(a.pattern ?? '')
     : step.name === 'search_feishu_user' ? '搜索飞书通讯录 ' + String(a.name ?? '')
     : step.name === 'send_feishu_message' ? '发送飞书消息'
+    : step.name === 'browser_pages' ? '查看浏览器页面'
+    : step.name === 'browser_navigate' ? '访问 ' + String(a.url ?? '')
+    : step.name === 'browser_snapshot' ? '读取浏览器页面'
+    : step.name === 'browser_click' ? '点击 ' + String(a.selector ?? '')
+    : step.name === 'browser_type' ? '输入到 ' + String(a.selector ?? '')
+    : step.name === 'browser_debug' ? '调试浏览器页面'
+    : step.name === 'browser_evaluate' ? '执行浏览器调试脚本'
     : String(step.name ?? '工具')
-  const statusText = step.status === 'running' ? '运行中…' : step.status === 'ok' ? '完成' : step.status === 'error' ? '出错' : step.status === 'denied' ? '已拒绝' : ''
+  const statusText = step.status === 'running' ? '运行中…' : step.status === 'ok' ? '完成' : step.status === 'error' ? '出错' : step.status === 'denied' ? '已拒绝' : step.status === 'cancelled' ? '已停止' : ''
   return (
     <div className={clsx('agent-tool', step.status)}>
       <div className='agent-tool-head' onClick={() => setOpen(o => !o)}>
@@ -142,6 +150,8 @@ function MessageActions({
 
 function TaskStep({ step, index, isLastMessage }: { step: AgentStep; index: number; isLastMessage: boolean }) {
   const updateStep = useAgentStore(s => s.updateStep)
+  const rerunTaskFrom = useAgentStore(s => s.rerunTaskFrom)
+  const running = useAgentStore(s => s.running)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(step.text ?? '')
   const save = (): void => {
@@ -150,24 +160,41 @@ function TaskStep({ step, index, isLastMessage }: { step: AgentStep; index: numb
     updateStep(index, { text })
     setEditing(false)
   }
+  const cancel = (): void => {
+    setDraft(step.text ?? '')
+    setEditing(false)
+  }
+  const resend = (): void => {
+    const text = draft.trim()
+    if (!text || running) return
+    setEditing(false)
+    void rerunTaskFrom(index, text)
+  }
   return (
     <div className={clsx('agent-message', 'user', isLastMessage && 'is-last-message')}>
       {editing ? (
-        <textarea
-          className='agent-message-editor'
-          value={draft}
-          autoFocus
-          onChange={event => setDraft(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-              event.preventDefault()
-              save()
-            }
-            if (event.key === 'Escape') setEditing(false)
-          }}
-        />
+        <div className='agent-message-editor-wrap'>
+          <textarea
+            className='agent-message-editor'
+            value={draft}
+            autoFocus
+            onChange={event => setDraft(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault()
+                save()
+              }
+              if (event.key === 'Escape') cancel()
+            }}
+          />
+          <div className='agent-message-editor-actions'>
+            <button className='message-edit-button secondary' type='button' onClick={cancel}>取消</button>
+            <button className='message-edit-button secondary' type='button' onClick={save} disabled={!draft.trim()}>保存</button>
+            <button className='message-edit-button primary' type='button' onClick={resend} disabled={!draft.trim() || running}>重新发送</button>
+          </div>
+        </div>
       ) : <div className='agent-task'>{step.text}</div>}
-      <MessageActions text={step.text ?? ''} isUser isLastMessage={isLastMessage} onEdit={() => { setDraft(step.text ?? ''); setEditing(true) }} />
+      {!editing && <MessageActions text={step.text ?? ''} isUser isLastMessage={isLastMessage} onEdit={() => { setDraft(step.text ?? ''); setEditing(true) }} />}
     </div>
   )
 }
@@ -201,6 +228,74 @@ function StepItem({ step, index, isLastMessage }: { step: AgentStep; index: numb
   }
 }
 
+function QueuedMessages() {
+  const queuedMessages = useAgentStore(s => s.queuedMessages)
+  const updateQueuedMessage = useAgentStore(s => s.updateQueuedMessage)
+  const removeQueuedMessage = useAgentStore(s => s.removeQueuedMessage)
+  const sendQueuedNow = useAgentStore(s => s.sendQueuedNow)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+
+  if (queuedMessages.length === 0) return null
+
+  const beginEdit = (id: string, text: string): void => {
+    setEditingId(id)
+    setDraft(text)
+  }
+  const cancelEdit = (): void => {
+    setEditingId(null)
+    setDraft('')
+  }
+  const saveEdit = (): void => {
+    if (!editingId || !draft.trim()) return
+    updateQueuedMessage(editingId, draft)
+    cancelEdit()
+  }
+
+  return (
+    <section className='agent-queue' aria-label='待发送消息队列'>
+      <div className='agent-queue-header'>待发送 <span>{queuedMessages.length}</span></div>
+      <div className='agent-queue-list'>
+        {queuedMessages.map((message, index) => (
+          <div className='agent-queue-item' key={message.id}>
+            <span className='agent-queue-order'>{index + 1}</span>
+            {editingId === message.id ? (
+              <textarea
+                className='agent-queue-editor'
+                value={draft}
+                autoFocus
+                rows={2}
+                onChange={event => setDraft(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                    event.preventDefault()
+                    saveEdit()
+                  }
+                  if (event.key === 'Escape') cancelEdit()
+                }}
+              />
+            ) : <span className='agent-queue-text'>{message.text}</span>}
+            <div className='agent-queue-actions'>
+              {editingId === message.id ? (
+                <>
+                  <button type='button' className='queue-text-button' onClick={cancelEdit}>取消</button>
+                  <button type='button' className='queue-text-button primary' disabled={!draft.trim()} onClick={saveEdit}>保存</button>
+                </>
+              ) : (
+                <>
+                  <button type='button' className='queue-icon-button' aria-label='编辑待发送消息' title='编辑' onClick={() => beginEdit(message.id, message.text)}><Pencil size={14} /></button>
+                  <button type='button' className='queue-send-now' onClick={() => void sendQueuedNow(message.id)}><SendHorizontal size={14} />立即发送</button>
+                  <button type='button' className='queue-icon-button danger' aria-label='移除待发送消息' title='移除' onClick={() => removeQueuedMessage(message.id)}><Trash2 size={14} /></button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const running = useAgentStore(s => s.running)
   const workdir = useAgentStore(s => s.workdir)
@@ -208,6 +303,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const draftTask = useAgentStore(s => s.draftTask)
   const currentModelId = useAgentStore(s => s.currentModelId)
   const start = useAgentStore(s => s.start)
+  const enqueueMessage = useAgentStore(s => s.enqueueMessage)
   const stop = useAgentStore(s => s.stop)
   const pickDirectory = useAgentStore(s => s.pickDirectory)
   const setCurrentModel = useAgentStore(s => s.setCurrentModel)
@@ -224,7 +320,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   const provider = providers.find(p => p.id === (settings?.defaultProviderId ?? 'deepseek'))
   const effectiveModelId = currentModelId || (settings?.defaultModelId ?? '')
-  const contextWindow = provider?.models.find(m => m.id === effectiveModelId)?.contextWindow ?? 128000
+  const contextWindow = provider?.models.find(m => m.id === effectiveModelId)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW
   const mode = settings?.agentPermissionMode ?? 'ask'
   const modeLabel = mode === 'full' ? '完全访问' : mode === 'auto' ? '替我审批' : '每次询问'
   const models = provider?.models ?? []
@@ -279,9 +375,11 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   }, [draftTask, setDraftTask])
 
   const submit = async (): Promise<void> => {
-    if (!text.trim() || running) return
+    if (!text.trim()) return
+    const task = text
     setText('')
-    await start(text)
+    if (running) await enqueueMessage(task)
+    else await start(task)
   }
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
@@ -300,7 +398,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
       <textarea
         ref={taRef}
         className='composer-textarea'
-        placeholder='发消息，或让我帮你做点事…'
+        placeholder={running ? '输入下一条消息，将在当前回复完成后发送…' : '发消息，或让我帮你做点事…'}
         value={text}
         onChange={e => setText(e.target.value)}
         onKeyDown={onKeyDown}
@@ -363,9 +461,14 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
               </div>
             )}
           </div>
-          <ContextMeter history={history} contextWindow={contextWindow} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
+          <ContextMeter history={history} currentInput={text} contextWindow={contextWindow} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
           {running ? (
-            <button className='stop-btn' onClick={stop} title='停止'><Square size={13} /></button>
+            <>
+              {text.trim() && (
+                <button className='send-btn queue-send-button' onClick={() => void submit()} title='加入待发送队列' aria-label='加入待发送队列'><svg viewBox='0 0 16 16' width='16' height='16' aria-hidden><path d='M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z' fill='currentColor' /></svg></button>
+              )}
+              <button className='stop-btn' onClick={stop} title='停止' aria-label='停止生成'><span className='stop-square' aria-hidden /></button>
+            </>
           ) : (
             <button className='send-btn' disabled={!text.trim()} onClick={() => void submit()} title='发送'><svg viewBox='0 0 16 16' width='16' height='16' aria-hidden><path d='M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z' fill='currentColor' /></svg></button>
           )}
@@ -445,6 +548,7 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
               <ArrowDown size={17} />
             </button>
           )}
+          <QueuedMessages />
           {pendingApproval && (
             <div className='agent-approval' role='dialog' aria-label='执行审批'>
               <div className='agent-approval-title'>{pendingApproval.reason || '等待批准'}</div>

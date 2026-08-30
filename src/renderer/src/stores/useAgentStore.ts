@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentSession, AgentSessionSource, AgentStep } from '@shared/agent-types'
+import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, AgentStep } from '@shared/agent-types'
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
 
@@ -15,12 +15,14 @@ interface RunningAgentSession {
   runId: string
   sessionId: string
   task: string
+  input: string
   workdir: string
   modelId: string
   source?: AgentSessionSource
   createdAt: number
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
+  queuedMessages: AgentQueuedMessage[]
 }
 
 interface TextBufferState {
@@ -40,6 +42,7 @@ interface AgentState {
   draftTask: string
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
+  queuedMessages: AgentQueuedMessage[]
   sessions: AgentSession[]
   activeSessionId: string | null
   runningSessions: Record<string, string>
@@ -48,6 +51,10 @@ interface AgentState {
   error: string | null
   init: () => void
   start: (task: string) => Promise<void>
+  enqueueMessage: (text: string) => Promise<void>
+  updateQueuedMessage: (id: string, text: string) => void
+  removeQueuedMessage: (id: string) => void
+  sendQueuedNow: (id: string) => Promise<void>
   stop: () => void
   approve: (approved: boolean) => void
   pickDirectory: () => Promise<void>
@@ -59,6 +66,7 @@ interface AgentState {
   updateStep: (index: number, patch: Partial<AgentStep>) => void
   setStepFeedback: (index: number, feedback: 'positive' | 'negative') => void
   regenerateFrom: (index: number) => Promise<void>
+  rerunTaskFrom: (index: number, task: string) => Promise<void>
   setCurrentModel: (modelId: string) => void
   setDraftTask: (task: string) => void
   clear: () => void
@@ -81,6 +89,41 @@ function latestTask(steps: AgentStep[]): string {
     if (step.kind === 'task') return step.text?.trim() ?? ''
   }
   return ''
+}
+
+function replaceUserHistoryAtTaskIndex(history: Array<Record<string, unknown>>, steps: AgentStep[], taskIndex: number, text: string): Array<Record<string, unknown>> {
+  let targetUserIndex = -1
+  for (let index = 0; index <= taskIndex; index += 1) {
+    if (steps[index]?.kind === 'task') targetUserIndex += 1
+  }
+  if (targetUserIndex < 0) return history
+
+  let userIndex = -1
+  let changed = false
+  const nextHistory = history.map(item => {
+    if (item.role !== 'user') return item
+    userIndex += 1
+    if (userIndex !== targetUserIndex) return item
+    changed = true
+    return { ...item, content: text }
+  })
+  return changed ? nextHistory : history
+}
+
+function historyBeforeTaskIndex(history: Array<Record<string, unknown>>, steps: AgentStep[], taskIndex: number): Array<Record<string, unknown>> {
+  let targetUserIndex = -1
+  for (let index = 0; index <= taskIndex; index += 1) {
+    if (steps[index]?.kind === 'task') targetUserIndex += 1
+  }
+  if (targetUserIndex <= 0) return []
+
+  let userIndex = -1
+  for (let index = 0; index < history.length; index += 1) {
+    if (history[index].role !== 'user') continue
+    userIndex += 1
+    if (userIndex === targetUserIndex) return history.slice(0, index)
+  }
+  return history
 }
 
 function latestAssistantText(steps: AgentStep[]): string {
@@ -138,6 +181,7 @@ function sessionFromContext(ctx: RunningAgentSession): AgentSession {
     updatedAt: Date.now(),
     steps: ctx.steps,
     history: ctx.history,
+    queuedMessages: ctx.queuedMessages,
     source: ctx.source
   }
 }
@@ -147,7 +191,7 @@ function mergeLiveSessions(sessions: AgentSession[]): AgentSession[] {
   const merged = sessions.map(session => {
     const runId = runIdBySessionId.get(session.id)
     const ctx = runId ? runContexts.get(runId) : undefined
-    return ctx ? { ...session, steps: ctx.steps, history: ctx.history, updatedAt: Date.now() } : session
+    return ctx ? { ...session, steps: ctx.steps, history: ctx.history, queuedMessages: ctx.queuedMessages, updatedAt: Date.now() } : session
   })
   for (const ctx of runContexts.values()) {
     if (!seen.has(ctx.sessionId)) merged.unshift(sessionFromContext(ctx))
@@ -176,6 +220,37 @@ function activeRunState(sessionId: string | null): { running: boolean; currentRu
   return { running: runId !== null, currentRunId: runId }
 }
 
+function stoppedSteps(steps: AgentStep[]): AgentStep[] {
+  const next = steps.map(step => step.kind === 'tool' && step.status === 'running'
+    ? { ...step, status: 'cancelled' as const }
+    : step)
+  while (next.at(-1)?.kind === 'thinking') next.pop()
+  return next
+}
+
+function stoppedHistory(ctx: RunningAgentSession): Array<Record<string, unknown>> {
+  const history = [...ctx.history]
+  const last = history.at(-1)
+  if (last?.role !== 'user' || last.content !== ctx.input) {
+    history.push({ role: 'user', content: ctx.input })
+  }
+  let taskIndex = -1
+  for (let index = ctx.steps.length - 1; index >= 0; index -= 1) {
+    if (ctx.steps[index].kind === 'task') {
+      taskIndex = index
+      break
+    }
+  }
+  const partialReply = ctx.steps
+    .slice(taskIndex + 1)
+    .filter(step => step.kind === 'text' && step.text)
+    .map(step => step.text)
+    .join('')
+    .trim()
+  if (partialReply) history.push({ role: 'assistant', content: partialReply })
+  return history
+}
+
 export const useAgentStore = create<AgentState>()((set, get) => {
   function commitContext(ctx: RunningAgentSession): void {
     set(s => {
@@ -189,6 +264,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         updatedAt: Date.now(),
         steps: ctx.steps,
         history: ctx.history,
+        queuedMessages: ctx.queuedMessages,
         source: ctx.source
       }
       const sessions = exists
@@ -199,6 +275,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         sessions,
         steps: active ? ctx.steps : s.steps,
         history: active ? ctx.history : s.history,
+        queuedMessages: active ? ctx.queuedMessages : s.queuedMessages,
         currentTask: active ? ctx.task : s.currentTask,
         currentModelId: active ? ctx.modelId : s.currentModelId,
         currentSource: active ? ctx.source : s.currentSource,
@@ -277,6 +354,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       updatedAt: Date.now(),
       steps: s.steps,
       history: s.history,
+      queuedMessages: s.queuedMessages,
       source: s.currentSource
     }
     saveSession(session)
@@ -339,6 +417,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     const source = session?.source ?? activeState.currentSource
     const previousSteps = session?.steps ?? activeState.steps
     const previousHistory = session?.history ?? activeState.history
+    const queuedMessages = session?.queuedMessages ?? (activeState.currentSessionId === sessionId ? activeState.queuedMessages : [])
     const title = session?.task || activeState.currentTask || t
     const createdAt = session?.createdAt ?? activeState.sessions.find(item => item.id === sessionId)?.createdAt ?? Date.now()
     const nextTaskStep: AgentStep = { kind: 'task', text: t }
@@ -348,12 +427,14 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       runId,
       sessionId,
       task: title,
+      input: t,
       workdir,
       modelId,
       source,
       createdAt,
       steps,
-      history: previousHistory
+      history: previousHistory,
+      queuedMessages
     }
 
     runContexts.set(runId, ctx)
@@ -368,6 +449,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       workdir: activate ? workdir : s.workdir,
       steps: activate ? steps : s.steps,
       history: activate ? previousHistory : s.history,
+      queuedMessages: activate ? queuedMessages : s.queuedMessages,
       pendingApproval: activate ? null : s.pendingApproval,
       error: activate ? null : s.error,
       ...activeRunState(activate ? sessionId : s.activeSessionId)
@@ -379,17 +461,24 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     const res = await window.api.agent.start({ runId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, history: previousHistory, memoryContext })
     if (!res.ok) {
       append(ctx, { kind: 'error', message: res.message ?? '启动失败' })
-      finishRun(ctx, ctx.history, false)
+      finishRun(ctx, ctx.history, false, true)
       return false
     }
     if (!activate) scheduleConnectorStatusMessage(ctx)
     return true
   }
 
-  function finishRun(ctx: RunningAgentSession, history: Array<Record<string, unknown>> | undefined, shouldSyncReply: boolean): void {
+  function finishRun(
+    ctx: RunningAgentSession,
+    history: Array<Record<string, unknown>> | undefined,
+    shouldSyncReply: boolean,
+    processQueue: boolean
+  ): AgentSession {
     flushTextBuffer(ctx.runId)
     ctx.history = history ?? ctx.history
+    const nextQueuedMessage = processQueue ? ctx.queuedMessages.shift() : undefined
     const session = sessionFromContext(ctx)
+    const activateNextRun = get().activeSessionId === ctx.sessionId
     runContexts.delete(ctx.runId)
     runIdBySessionId.delete(ctx.sessionId)
     clearTextBuffer(ctx.runId)
@@ -406,11 +495,14 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         ...activeRunState(s.activeSessionId),
         pendingApproval: active ? null : s.pendingApproval,
         history: active ? ctx.history : s.history,
-        steps: active ? ctx.steps : s.steps
+        steps: active ? ctx.steps : s.steps,
+        queuedMessages: active ? ctx.queuedMessages : s.queuedMessages
       }
     })
     saveSession(session)
     if (shouldSyncReply) syncConnectorReply(session)
+    if (nextQueuedMessage) void startSession(session, nextQueuedMessage.text, activateNextRun)
+    return session
   }
 
   function handleEvent(ev: AgentEvent): void {
@@ -446,12 +538,12 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         updateTool(ctx, ev.callId ?? '', { status: ev.ok ? 'ok' : 'error', summary: ev.summary ?? '', result: ev.output ?? '' })
         break
       case 'done':
-        finishRun(ctx, ev.history, true)
+        finishRun(ctx, ev.history, true, true)
         break
       case 'error':
         flushTextBuffer(ev.runId)
         append(ctx, { kind: 'error', message: ev.message ?? '未知错误' })
-        finishRun(ctx, ev.history, false)
+        finishRun(ctx, ev.history, false, true)
         break
     }
   }
@@ -468,6 +560,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     draftTask: '',
     steps: [],
     history: [],
+    queuedMessages: [],
     sessions: [],
     activeSessionId: null,
     runningSessions: {},
@@ -485,9 +578,89 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     start: async (task) => {
       await startSession(null, task, true)
     },
+    enqueueMessage: async (text) => {
+      const task = text.trim()
+      if (!task) return
+      if (!get().running) {
+        await startSession(null, task, true)
+        return
+      }
+      const message: AgentQueuedMessage = { id: makeId('queued'), text: task, createdAt: Date.now() }
+      const runId = get().currentRunId
+      const ctx = runId ? runContexts.get(runId) : undefined
+      if (!ctx) return
+      ctx.queuedMessages = [...ctx.queuedMessages, message]
+      commitContext(ctx)
+      saveCurrentSession()
+    },
+    updateQueuedMessage: (id, text) => {
+      const value = text.trim()
+      if (!value) return
+      const runId = get().currentRunId
+      const ctx = runId ? runContexts.get(runId) : undefined
+      const queuedMessages = get().queuedMessages.map(message => message.id === id ? { ...message, text: value } : message)
+      if (ctx) ctx.queuedMessages = queuedMessages
+      set(s => ({
+        queuedMessages,
+        sessions: s.sessions.map(session => session.id === s.currentSessionId
+          ? { ...session, queuedMessages, updatedAt: Date.now() }
+          : session)
+      }))
+      saveCurrentSession()
+    },
+    removeQueuedMessage: (id) => {
+      const runId = get().currentRunId
+      const ctx = runId ? runContexts.get(runId) : undefined
+      const queuedMessages = get().queuedMessages.filter(message => message.id !== id)
+      if (ctx) ctx.queuedMessages = queuedMessages
+      set(s => ({
+        queuedMessages,
+        sessions: s.sessions.map(session => session.id === s.currentSessionId
+          ? { ...session, queuedMessages, updatedAt: Date.now() }
+          : session)
+      }))
+      saveCurrentSession()
+    },
+    sendQueuedNow: async (id) => {
+      const message = get().queuedMessages.find(item => item.id === id)
+      if (!message) return
+      const queuedMessages = get().queuedMessages.filter(item => item.id !== id)
+      const runId = get().currentRunId
+      const ctx = runId ? runContexts.get(runId) : undefined
+      if (ctx && runId) {
+        void window.api.agent.cancel(runId)
+        flushTextBuffer(runId)
+        ctx.steps = stoppedSteps(ctx.steps)
+        ctx.history = stoppedHistory(ctx)
+        ctx.queuedMessages = queuedMessages
+        const session = finishRun(ctx, ctx.history, false, false)
+        await startSession(session, message.text, true)
+        return
+      }
+      const current = get()
+      const session = current.sessions.find(item => item.id === current.currentSessionId)
+      if (!session) return
+      const nextSession = { ...session, queuedMessages, updatedAt: Date.now() }
+      set(s => ({
+        queuedMessages,
+        sessions: s.sessions.map(item => item.id === nextSession.id ? nextSession : item)
+      }))
+      saveSession(nextSession)
+      await startSession(nextSession, message.text, true)
+    },
     stop: () => {
       const id = get().currentRunId
-      if (id) void window.api.agent.cancel(id)
+      if (!id) return
+      void window.api.agent.cancel(id)
+      const ctx = runContexts.get(id)
+      if (!ctx) {
+        set({ running: false, currentRunId: null, pendingApproval: null })
+        return
+      }
+      flushTextBuffer(id)
+      ctx.steps = stoppedSteps(ctx.steps)
+      ctx.history = stoppedHistory(ctx)
+      finishRun(ctx, ctx.history, false, false)
     },
     approve: (approved) => {
       const p = get().pendingApproval
@@ -538,6 +711,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         currentSource: ctx?.source ?? s.source,
         workdir: ctx?.workdir ?? s.workdir,
         history: ctx?.history ?? s.history ?? [],
+        queuedMessages: ctx?.queuedMessages ?? s.queuedMessages ?? [],
         currentSessionId: id,
         activeSessionId: id,
         running: active.running,
@@ -569,6 +743,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
           currentModelId: '',
           steps: [],
           history: [],
+          queuedMessages: [],
           running: false,
           currentRunId: null,
           pendingApproval: null,
@@ -589,10 +764,20 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       }))
     },
     updateStep: (index, patch) => {
-      set(s => ({ steps: s.steps.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step) }))
+      set(s => {
+        const currentStep = s.steps[index]
+        const nextSteps = s.steps.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step)
+        const nextHistory = currentStep?.kind === 'task' && typeof patch.text === 'string'
+          ? replaceUserHistoryAtTaskIndex(s.history, s.steps, index, patch.text)
+          : s.history
+        return { steps: nextSteps, history: nextHistory }
+      })
       const runId = get().currentRunId
       const ctx = runId ? runContexts.get(runId) : undefined
-      if (ctx) ctx.steps = get().steps
+      if (ctx) {
+        ctx.steps = get().steps
+        ctx.history = get().history
+      }
       saveCurrentSession()
     },
     setStepFeedback: (index, feedback) => {
@@ -612,8 +797,19 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       }
       const task = taskIndex >= 0 ? steps[taskIndex].text?.trim() : ''
       if (!task) return
-      set({ steps: steps.slice(0, taskIndex), history: [] })
+      const history = historyBeforeTaskIndex(get().history, steps, taskIndex)
+      set({ steps: steps.slice(0, taskIndex), history })
       await get().start(task)
+    },
+    rerunTaskFrom: async (index, task) => {
+      if (get().running) return
+      const text = task.trim()
+      if (!text) return
+      const steps = get().steps
+      if (steps[index]?.kind !== 'task') return
+      const history = historyBeforeTaskIndex(get().history, steps, index)
+      set({ steps: steps.slice(0, index), history })
+      await get().start(text)
     },
     setCurrentModel: (modelId) => {
       set({ currentModelId: modelId })
@@ -624,7 +820,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     },
     clear: () => {
       if (get().running) get().stop()
-      set({ steps: [], history: [], error: null, pendingApproval: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, activeSessionId: null, running: false, currentRunId: null })
+      set({ steps: [], history: [], queuedMessages: [], error: null, pendingApproval: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, activeSessionId: null, running: false, currentRunId: null })
     }
   }
 })

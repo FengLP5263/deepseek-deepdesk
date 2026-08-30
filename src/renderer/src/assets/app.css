@@ -492,6 +492,7 @@ input, textarea { user-select: text; }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .stop-btn { width: 34px; height: 34px; border-radius: 999px; display: flex; align-items: center; justify-content: center; background: var(--bg-active); color: var(--text); border: 1px solid var(--border-strong); cursor: pointer; transition: background 0.13s ease; }
 .stop-btn:hover { background: var(--bg-hover); }
+.stop-square { width: 10px; height: 10px; border: 0; border-radius: 2px; background: currentColor; flex: 0 0 auto; }
 .model-pill { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; font-size: var(--fs-xs); color: var(--text-secondary); cursor: pointer; border: 1px solid var(--border); background: transparent; transition: all 0.12s ease; max-width: 220px; }
 .model-pill:hover { border-color: var(--accent); color: var(--text); }
 .model-pill .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -816,6 +817,14 @@ input, textarea { user-select: text; }
 .message-action:hover { background: var(--bg-hover); color: var(--text); }
 .message-action.active { color: var(--accent-text); background: var(--accent-soft); }
 .message-action:focus-visible, .codeblock-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.msg-editor-wrap { width: min(520px, 100%); display: flex; flex-direction: column; align-items: stretch; }
+.msg-edit-actions { display: flex; justify-content: flex-end; gap: 8px; min-height: 28px; margin-top: 8px; }
+.message-edit-button { height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); font-size: var(--fs-xs); font-weight: 500; cursor: pointer; }
+.message-edit-button.secondary { background: var(--bg-elevated); color: var(--text-secondary); }
+.message-edit-button.primary { background: var(--text); border-color: var(--text); color: var(--bg-elevated); }
+.message-edit-button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.message-edit-button.primary:hover:not(:disabled) { background: var(--text-secondary); border-color: var(--text-secondary); color: var(--bg-elevated); }
+.message-edit-button:disabled { cursor: not-allowed; opacity: 0.45; }
 
 /* 输入与工具栏沿用灰阶焦点，避免原生蓝色粗描边破坏整体层级。 */
 .sidebar .input:focus, .sidebar .input:focus-visible { border-color: var(--border-strong); box-shadow: none; outline: none; }

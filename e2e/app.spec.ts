@@ -7,6 +7,7 @@ import {
   closeDeepDesk,
   closeDeepDeskWithoutRemovingData,
   createConnectorSessionUserData,
+  createContextBreakdownUserData,
   createLongAgentSessionUserData,
   createMemoryUserData,
   createMessageActionsUserData,
@@ -221,7 +222,7 @@ test('opens sidebar feature pages and applies a skill template', async () => {
   await expect(page.locator('.hub-header', { hasText: '连接器' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '飞书' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '微信' })).toBeVisible()
-  await expect(page.locator('.connector-card', { hasText: '浏览器自动化' })).toBeVisible()
+  await expect(page.locator('.connector-card', { hasText: '浏览器调试' })).toBeVisible()
   await expect(page.locator('.connector-activity-panel', { hasText: '连接器消息' })).toBeVisible()
   await expect(page.locator('.connector-activity-empty')).toContainText('还没有收到连接器消息')
   await expect(page.locator('.connector-card', { hasText: '飞书' }).getByAltText('飞书 图标')).toBeVisible()
@@ -492,6 +493,10 @@ test('supports multiline composer input and context meter panel', async () => {
   await page.locator('.ctx-trigger').click()
   await expect(page.locator('.ctx-panel')).toBeVisible()
   await expect(page.locator('.ctx-panel', { hasText: '上下文已用' })).toBeVisible()
+  await expect(page.locator('.ctx-panel', { hasText: '256K' })).toBeVisible()
+  await expect(page.locator('.ctx-panel', { hasText: '当前输入' })).toBeVisible()
+  await expect(page.locator('.ctx-breakdown-row[data-tone="input"] .ctx-breakdown-dot')).toBeVisible()
+  await expect(page.locator('.ctx-bar-segment[data-tone="input"]')).toBeVisible()
 
   await page.getByTitle('选择模型').click()
   const modelMenu = page.getByRole('menu', { name: '选择模型' })
@@ -509,6 +514,28 @@ test('supports multiline composer input and context meter panel', async () => {
   await expect(modelMenu).toBeVisible()
   await textarea.click()
   await expect(modelMenu).toBeHidden()
+})
+
+test('shows colored context composition categories', async () => {
+  await closeDeepDesk(ctx)
+  ctx = await launchDeepDesk(createContextBreakdownUserData())
+  app = ctx.app
+  page = ctx.page
+
+  await page.locator('.conv-item', { hasText: '上下文组成视觉回归' }).click()
+  await page.locator('.ctx-trigger').click()
+  const panel = page.locator('.ctx-panel')
+  await expect(panel).toBeVisible()
+  await expect(panel.locator('.ctx-breakdown-row[data-tone="system"]', { hasText: '系统指令 / 记忆' })).toBeVisible()
+  await expect(panel.locator('.ctx-breakdown-row[data-tone="user"]', { hasText: '用户消息' })).toBeVisible()
+  await expect(panel.locator('.ctx-breakdown-row[data-tone="assistant"]', { hasText: 'AI 回复' })).toBeVisible()
+  await expect(panel.locator('.ctx-breakdown-row[data-tone="tool-call"]', { hasText: '工具调用参数' })).toBeVisible()
+  await expect(panel.locator('.ctx-breakdown-row[data-tone="tool-result"]', { hasText: '工具返回结果' })).toBeVisible()
+  await expect(panel.locator('.ctx-bar-segment[data-tone="system"]')).toBeVisible()
+  await expect(panel.locator('.ctx-bar-segment[data-tone="user"]')).toBeVisible()
+  await expect(panel.locator('.ctx-bar-segment[data-tone="assistant"]')).toBeVisible()
+  await expect(panel.locator('.ctx-bar-segment[data-tone="tool-call"]')).toBeVisible()
+  await expect(panel.locator('.ctx-bar-segment[data-tone="tool-result"]')).toBeVisible()
 })
 
 test('adds, edits, adds model, and deletes a custom provider without network calls', async () => {
@@ -693,7 +720,7 @@ test('places the scroll-to-bottom control above the composer in a long agent ses
   await expect.poll(async () => scroll.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(2)
 })
 
-test('places agent approval above the composer instead of the top of the conversation', async () => {
+test('queues editable messages during a run, keeps approval above the composer, and stops immediately', async () => {
   await closeDeepDesk(ctx)
   ctx = null
   const mock = await startMockApprovalServer()
@@ -711,6 +738,17 @@ test('places agent approval above the composer instead of the top of the convers
     await expect(approval).toContainText('执行命令')
     await expect(approval).toContainText('node -v')
     await expect(page.locator('.agent-scroll .agent-approval')).toHaveCount(0)
+
+    const runningInput = page.getByPlaceholder('输入下一条消息，将在当前回复完成后发送…')
+    await runningInput.fill('稍后检查测试')
+    await runningInput.press('Enter')
+    const queue = page.getByRole('region', { name: '待发送消息队列' })
+    await expect(queue).toContainText('稍后检查测试')
+    await queue.getByRole('button', { name: '编辑待发送消息' }).click()
+    await queue.locator('.agent-queue-editor').fill('稍后检查完整测试')
+    await queue.getByRole('button', { name: '保存' }).click()
+    await expect(queue).toContainText('稍后检查完整测试')
+    await expect(queue.getByRole('button', { name: '立即发送' })).toBeVisible()
 
     const layout = await page.evaluate(() => {
       const approvalEl = document.querySelector<HTMLElement>('.agent-approval')
@@ -731,6 +769,34 @@ test('places agent approval above the composer instead of the top of the convers
     expect(layout!.approval.y + layout!.approval.height).toBeLessThanOrEqual(layout!.composer.y - 8)
     expect(Math.abs(layout!.approval.x - layout!.composer.x)).toBeLessThanOrEqual(1)
     expect(Math.abs(layout!.approval.width - layout!.composer.width)).toBeLessThanOrEqual(1)
+
+    const stopButton = page.getByRole('button', { name: '停止生成' })
+    await expect(stopButton).toBeVisible()
+    const stopIcon = await stopButton.evaluate(element => {
+      const square = element.querySelector<HTMLElement>('.stop-square')
+      if (!square) return null
+      const style = getComputedStyle(square)
+      return {
+        width: style.width,
+        height: style.height,
+        borderWidth: style.borderWidth,
+        filled: style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent',
+        svgCount: element.querySelectorAll('svg').length
+      }
+    })
+    expect(stopIcon).toEqual({
+      width: '10px',
+      height: '10px',
+      borderWidth: '0px',
+      filled: true,
+      svgCount: 0
+    })
+
+    await stopButton.click()
+    await expect(stopButton).toBeHidden()
+    await expect(approval).toBeHidden()
+    await expect(page.getByText('思考中…')).toHaveCount(0)
+    await expect(queue).toContainText('稍后检查完整测试')
   } finally {
     await mock.close()
   }
@@ -752,6 +818,16 @@ test('provides polished message actions and code block download in a local conve
   await expect(userMessage.getByRole('button', { name: '复制消息' })).toBeVisible()
   await userMessage.getByRole('button', { name: '编辑消息' }).click()
   await expect(userMessage.locator('textarea')).toHaveValue('你看看这个是什么类型')
+  await expect(userMessage.getByRole('button', { name: '取消' })).toBeVisible()
+  await expect(userMessage.getByRole('button', { name: '保存' })).toBeVisible()
+  await expect(userMessage.getByRole('button', { name: '重新发送' })).toBeVisible()
+  await userMessage.getByRole('button', { name: '取消' }).click()
+  await expect(userMessage.locator('textarea')).toHaveCount(0)
+  await userMessage.getByRole('button', { name: '编辑消息' }).click()
+  await userMessage.locator('textarea').fill('你看看这个是什么类型，顺便解释依据')
+  await userMessage.getByRole('button', { name: '保存' }).click()
+  await expect(userMessage).toContainText('你看看这个是什么类型，顺便解释依据')
+  await expect(userMessage.locator('textarea')).toHaveCount(0)
 
   await expect(assistantMessage.getByRole('button', { name: '复制消息' })).toBeVisible()
   await expect(assistantMessage.getByRole('button', { name: '重新生成' })).toBeVisible()

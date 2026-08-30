@@ -11,6 +11,7 @@ import clsx from 'clsx'
 export default function MessageItem({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user'
   const streaming = !!message.streaming
+  const updateMessage = useChatStore(s => s.updateMessage)
   const editAndResend = useChatStore(s => s.editAndResend)
   const regenerate = useChatStore(s => s.regenerate)
   const setMessageFeedback = useChatStore(s => s.setMessageFeedback)
@@ -19,7 +20,19 @@ export default function MessageItem({ message }: { message: ChatMessage }) {
   const [copied, setCopied] = useState(false)
   const display = useThrottledText(message.content, streaming)
 
-  const onEdit = async (): Promise<void> => {
+  const onSave = (): void => {
+    const text = draft.trim()
+    if (!text) return
+    setEditing(false)
+    updateMessage(message.id, text)
+  }
+
+  const onCancel = (): void => {
+    setDraft(message.content)
+    setEditing(false)
+  }
+
+  const onResend = async (): Promise<void> => {
     const text = draft.trim()
     if (!text) return
     setEditing(false)
@@ -44,7 +57,14 @@ export default function MessageItem({ message }: { message: ChatMessage }) {
           {streaming && <span className='muted'>生成中…</span>}
         </div>
         {isUser && editing ? (
-          <textarea className='textarea' value={draft} onChange={e => setDraft(e.target.value)} rows={Math.min(8, Math.max(2, draft.split(String.fromCharCode(10)).length))} autoFocus onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void onEdit() } if (e.key === 'Escape') setEditing(false) }} />
+          <div className='msg-editor-wrap'>
+            <textarea className='textarea' value={draft} onChange={e => setDraft(e.target.value)} rows={Math.min(8, Math.max(2, draft.split(String.fromCharCode(10)).length))} autoFocus onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave() } if (e.key === 'Escape') onCancel() }} />
+            <div className='msg-edit-actions'>
+              <button className='message-edit-button secondary' type='button' onClick={onCancel}>取消</button>
+              <button className='message-edit-button secondary' type='button' onClick={onSave} disabled={!draft.trim()}>保存</button>
+              <button className='message-edit-button primary' type='button' onClick={() => void onResend()} disabled={!draft.trim() || streaming}>重新发送</button>
+            </div>
+          </div>
         ) : isUser ? (
           <div className='msg-content user'>{message.content}</div>
         ) : (
@@ -56,7 +76,7 @@ export default function MessageItem({ message }: { message: ChatMessage }) {
             {streaming && display.length > 0 && <span className='stream-cursor' />}
           </div>
         )}
-        <div className='msg-actions'>
+        {!editing && <div className='msg-actions'>
           {!streaming && isUser && (
             <>
               <button className='message-action' aria-label='复制消息' title='复制消息' onClick={() => void onCopy()}>{copied ? <Check size={15} /> : <Copy size={15} />}</button>
@@ -71,7 +91,7 @@ export default function MessageItem({ message }: { message: ChatMessage }) {
               <button className={clsx('message-action', message.feedback === 'negative' && 'active')} aria-label='不喜欢' aria-pressed={message.feedback === 'negative'} title='不喜欢' onClick={() => setMessageFeedback(message.id, 'negative')}><ThumbsDown size={15} /></button>
             </>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   )

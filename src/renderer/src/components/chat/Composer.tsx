@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ChevronDown, Send, Square, Settings } from 'lucide-react'
+import { ChevronDown, Send, Settings } from 'lucide-react'
 import { useChatStore } from '../../stores/useChatStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import clsx from 'clsx'
@@ -95,8 +95,8 @@ export default function Composer({ onOpenSettings }: { onOpenSettings: () => voi
           </button>
           <div className='composer-hint'>{streaming ? '正在生成…按 Esc 停止' : enterToSend ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送'}</div>
           {streaming ? (
-            <button className='stop-btn' onClick={stopStreaming} title='停止生成'>
-              <Square size={13} />
+            <button className='stop-btn' onClick={stopStreaming} title='停止生成' aria-label='停止生成'>
+              <span className='stop-square' aria-hidden />
             </button>
           ) : (
             <button className='send-btn' disabled={!canSend} onClick={() => void submit()} title='发送'>

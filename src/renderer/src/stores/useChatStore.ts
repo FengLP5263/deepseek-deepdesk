@@ -120,6 +120,7 @@ interface ChatState {
   sendMessage: (text: string) => Promise<void>
   stopStreaming: () => void
   regenerate: () => Promise<void>
+  updateMessage: (messageId: string, newText: string) => void
   editAndResend: (messageId: string, newText: string) => Promise<void>
   setMessageFeedback: (messageId: string, feedback: 'positive' | 'negative') => void
   dismissNotice: () => void
@@ -246,6 +247,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const s = get().streaming
     if (!s) return
     void window.api.chat.cancel(s.runId)
+    const handle = streamHandles.get(s.runId)
+    if (handle) finishStream(handle, { runId: s.runId, conversationId: s.conversationId, type: 'done' }, null)
+    else set({ streaming: null })
   },
   regenerate: async () => {
     const conv = get().conversations.find(c => c.id === get().activeId)
@@ -259,6 +263,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (!lastUser) return
     set({ conversations: replaceConv(get().conversations, conv) })
     await get().sendMessage(lastUser.content)
+  },
+  updateMessage: (messageId, newText) => {
+    const text = newText.trim()
+    if (!text) return
+    const conv = get().conversations.find(c => c.id === get().activeId)
+    if (!conv || get().streaming) return
+    const msg = conv.messages.find(m => m.id === messageId)
+    if (!msg || msg.role !== 'user') return
+    msg.content = text
+    get().updateConversation(conv)
   },
   editAndResend: async (messageId, newText) => {
     const conv = get().conversations.find(c => c.id === get().activeId)

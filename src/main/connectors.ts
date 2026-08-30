@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import QRCode from 'qrcode'
 import type { AppStore } from './store'
 import type { ConnectorActionResult, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityFeed, ConnectorActivityStatus, ConnectorAuthSession, ConnectorAuthState, ConnectorConfig, ConnectorId, ConnectorOutboundMessage, ConnectorState, ConnectorStatus } from '../shared/types'
+import { listBrowserPages } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
 
 const WECHAT_ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com'
@@ -42,13 +43,6 @@ interface GatewaySendMessageResponse {
   id?: unknown
   message?: unknown
   detail?: unknown
-}
-
-interface BrowserTargetResponse {
-  id?: unknown
-  type?: unknown
-  title?: unknown
-  url?: unknown
 }
 
 interface ActiveDirectAuthSession {
@@ -560,7 +554,7 @@ async function pollWeChatIlinkStatus(store: AppStore, session: ActiveDirectAuthS
 export async function startConnectorAuth(store: AppStore, id: ConnectorId): Promise<ConnectorAuthSession> {
   const config = findConfig(store.getSnapshot().connectors, id)
   if (id === 'browser') {
-    return { id, ok: false, state: 'failed', message: '浏览器自动化不需要扫码接入' }
+    return { id, ok: false, state: 'failed', message: '浏览器调试不需要扫码接入' }
   }
   if (hasText(config.endpoint)) return startGatewayAuth(id, config)
   if (id === 'lark') return startLarkLocalAuth(store, config)
@@ -647,7 +641,7 @@ function normalizeGatewayActivity(id: ConnectorId, raw: unknown, index: number):
 }
 
 export async function sendConnectorMessage(store: AppStore, id: ConnectorId, message: ConnectorOutboundMessage): Promise<ConnectorActionResult> {
-  if (id === 'browser') return { id, ok: false, message: '浏览器自动化不支持消息回写' }
+  if (id === 'browser') return { id, ok: false, message: '浏览器调试不支持消息回写' }
   const text = message.text.trim()
   const threadId = message.threadId.trim()
   if (!text || !threadId) return { id, ok: false, message: '消息内容或会话标识为空' }
@@ -916,32 +910,21 @@ async function syncGatewayActivities(store: AppStore, id: ConnectorId, config: C
 }
 
 async function listBrowserTargets(): Promise<ConnectorActivity[]> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 800)
   try {
-    const res = await fetch('http://127.0.0.1:9222/json', { signal: controller.signal })
-    if (!res.ok) return []
-    const json = await res.json() as unknown
-    if (!Array.isArray(json)) return []
-    const pages = json
-      .map(item => item as BrowserTargetResponse)
-      .filter(item => item.type === 'page')
-      .slice(0, 5)
+    const pages = (await listBrowserPages()).slice(0, 5)
     return pages.map((page, index) => ({
-      id: 'browser-' + String(page.id ?? index),
+      id: 'browser-' + String(page.id || index),
       connectorId: 'browser',
       direction: 'system',
-      sourceName: '浏览器自动化',
-      sourceId: String(page.id ?? ''),
+      sourceName: '浏览器调试',
+      sourceId: page.id,
       conversationName: 'Chrome DevTools',
-      text: (textFromUnknown(page.title) ?? '未命名页面') + (textFromUnknown(page.url) ? ' · ' + textFromUnknown(page.url) : ''),
+      text: page.title + (page.url ? ' · ' + page.url : ''),
       createdAt: Date.now(),
       status: 'handled'
     }))
   } catch {
     return []
-  } finally {
-    clearTimeout(timer)
   }
 }
 
@@ -1064,13 +1047,13 @@ function browserLaunchCommand(): string {
 
 async function checkBrowser(config: ConnectorConfig): Promise<ConnectorStatus> {
   if (await fetchBrowserVersion()) {
-    return connectorStatus('browser', '浏览器自动化', 'connected', '已连接', 'DeepDesk 可以使用当前浏览器会话完成网页操作和信息采集。', '重新检测', config, '关闭连接')
+    return connectorStatus('browser', '浏览器调试', 'connected', '已连接', 'AI 可以读取页面结构、操作网页，并采集控制台、异常和网络调试信息。', '重新检测', config, '断开')
   }
   const candidate = await findExisting(chromeCandidates())
   if (candidate) {
-    return connectorStatus('browser', '浏览器自动化', 'available', '可启动', '点击启动后，DeepDesk 会打开一个用于自动化任务的浏览器会话。', '启动浏览器', config, undefined, browserLaunchCommand())
+    return connectorStatus('browser', '浏览器调试', 'available', '可连接', '连接后，AI 将获得网页读取、交互和调试能力。', '连接浏览器', config, undefined, browserLaunchCommand())
   }
-  return connectorStatus('browser', '浏览器自动化', 'needs_setup', '不可用', '需要先安装 Chrome 或 Chromium 浏览器，才能使用浏览器自动化。', '重新检测', config, undefined, browserLaunchCommand())
+  return connectorStatus('browser', '浏览器调试', 'needs_setup', '不可用', '需要先安装 Chrome 或 Chromium 浏览器，才能启用浏览器调试连接。', '重新检测', config, undefined, browserLaunchCommand())
 }
 
 export async function listConnectors(configs: ConnectorConfig[]): Promise<ConnectorStatus[]> {
@@ -1108,13 +1091,13 @@ async function openBrowserDebug(): Promise<ConnectorActionResult> {
     if (!candidate) return { id: 'browser', ok: false, message: '未检测到可用浏览器', detail: '请先安装 Chrome 或 Chromium。' }
     const child = spawn(candidate.path, ['--remote-debugging-port=9222', '--user-data-dir=' + profile], { detached: true, stdio: 'ignore', windowsHide: true })
     child.unref()
-    return { id: 'browser', ok: true, message: '已启动浏览器会话', detail: '浏览器准备完成后即可用于网页任务。' }
+    return { id: 'browser', ok: true, message: '已连接浏览器调试', detail: 'AI 现在可以读取、操作并调试这个独立浏览器会话。' }
   }
   const command = browserLaunchCommand()
   const result = await getPlatformAdapter().executeCommand(command, process.cwd())
   return result.code === 0
-    ? { id: 'browser', ok: true, message: '已启动浏览器会话', detail: '浏览器准备完成后即可用于网页任务。' }
-    : { id: 'browser', ok: false, message: '启动浏览器会话失败', detail: commandResultMessage(result.stdout, result.stderr) }
+    ? { id: 'browser', ok: true, message: '已连接浏览器调试', detail: 'AI 现在可以读取、操作并调试这个独立浏览器会话。' }
+    : { id: 'browser', ok: false, message: '连接浏览器调试失败', detail: commandResultMessage(result.stdout, result.stderr) }
 }
 
 function managedBrowserCloseCommand(): string {
@@ -1130,12 +1113,12 @@ async function disconnectBrowser(): Promise<ConnectorActionResult> {
   const command = managedBrowserCloseCommand()
   const result = await getPlatformAdapter().executeCommand(command, process.cwd())
   if (result.code !== 0) {
-    return { id: 'browser', ok: false, message: '关闭浏览器会话失败', detail: commandResultMessage(result.stdout, result.stderr) }
+    return { id: 'browser', ok: false, message: '断开浏览器调试失败', detail: commandResultMessage(result.stdout, result.stderr) }
   }
   if (result.stdout.includes('closed')) {
-    return { id: 'browser', ok: true, message: '已关闭浏览器会话', detail: '只关闭由 DeepDesk 启动的浏览器会话。' }
+    return { id: 'browser', ok: true, message: '已断开浏览器调试', detail: '已关闭由 DeepDesk 启动的独立浏览器会话。' }
   }
-  return { id: 'browser', ok: false, message: '未找到可关闭的浏览器会话', detail: '当前浏览器会话可能不是由 DeepDesk 启动的。' }
+  return { id: 'browser', ok: false, message: '未找到可断开的浏览器调试', detail: '当前浏览器会话可能不是由 DeepDesk 启动的。' }
 }
 
 export async function disconnectConnector(store: AppStore, id: ConnectorId): Promise<ConnectorActionResult> {

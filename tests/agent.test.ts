@@ -4,19 +4,32 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const mocks = vi.hoisted(() => ({
-  responses: [] as Array<{ content: string | null; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> }>
+  responses: [] as Array<{ content: string | null; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>; waitForAbort?: boolean }>,
+  requests: [] as Array<{ messages: Array<Record<string, unknown>> }>
 }))
 
 vi.mock('../src/shared/llm/toolcall', () => ({
-  streamChatCompletionWithTools: async function* () {
+  streamChatCompletionWithTools: async function* (req: { messages: Array<Record<string, unknown>>; signal?: AbortSignal }) {
+    mocks.requests.push({ messages: structuredClone(req.messages) })
     const resp = mocks.responses.shift()
     if (!resp) return
+    if (resp.waitForAbort) {
+      await new Promise<void>((_resolve, reject) => {
+        const rejectAbort = (): void => {
+          const error = new Error('aborted')
+          error.name = 'AbortError'
+          reject(error)
+        }
+        if (req.signal?.aborted) rejectAbort()
+        else req.signal?.addEventListener('abort', rejectAbort, { once: true })
+      })
+    }
     if (resp.content) yield { type: 'content', text: resp.content }
     yield { type: 'final', toolCalls: resp.toolCalls }
   }
 }))
 
-import { startAgent, approveCommand } from '../src/main/agent'
+import { startAgent, cancelAgent, approveCommand } from '../src/main/agent'
 import type { AgentEvent } from '../src/shared/agent-types'
 import type { AppSettings, ProviderConfig } from '../src/shared/types'
 
@@ -63,10 +76,25 @@ async function waitForApprovalCount(events: AgentEvent[], count: number): Promis
 }
 
 let dir: string
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'agent-test-')); mocks.responses.length = 0 })
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'agent-test-')); mocks.responses.length = 0; mocks.requests.length = 0 })
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 
 describe('startAgent', () => {
+  it('取消时会中止仍在等待的模型流并结束当前运行', async () => {
+    mocks.responses.push({ content: null, toolCalls: [], waitForAbort: true })
+    const { events, win } = makeWin()
+    startAgent(win as never, { runId: 'r-cancel', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '长时间思考', temperature: 1 }, provider, baseSettings)
+    for (let index = 0; index < 50 && !events.some(event => event.type === 'thinking'); index += 1) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+
+    cancelAgent('r-cancel')
+    await runUntilDone(events)
+
+    expect(events.some(event => event.type === 'done' && event.message === '已停止')).toBe(true)
+    expect(events.some(event => event.type === 'error')).toBe(false)
+  })
+
   it('工具调用循环：写文件后产出最终答案', async () => {
     const target = join(dir, 'hello.txt')
     mocks.responses.push({ content: null, toolCalls: [{ id: 'c1', name: 'write_file', args: { path: 'hello.txt', content: 'hello agent' } }] })
@@ -80,6 +108,34 @@ describe('startAgent', () => {
     expect(events.some(e => e.type === 'tool_result' && e.ok === true)).toBe(true)
     expect(events.some(e => e.type === 'text' && e.text === '已完成')).toBe(true)
     expect(events.some(e => e.type === 'done')).toBe(true)
+  })
+
+  it('发送给模型前会压缩超过窗口预算的旧上下文并保留当前问题', async () => {
+    const smallProvider: ProviderConfig = {
+      ...provider,
+      models: [{ id: 'tiny', contextWindow: 900 }]
+    }
+    mocks.responses.push({ content: '已完成', toolCalls: [] })
+    const { events, win } = makeWin()
+    startAgent(win as never, {
+      runId: 'r-context',
+      providerId: 'deepseek',
+      modelId: 'tiny',
+      workdir: dir,
+      task: '最新问题必须保留',
+      temperature: 1,
+      history: [
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: '较早上下文'.repeat(500) },
+        { role: 'assistant', content: '较早回答'.repeat(500) }
+      ]
+    }, smallProvider, baseSettings)
+    await runUntilDone(events)
+
+    const sent = mocks.requests[0].messages
+    expect(sent.some(message => String(message.content).includes('[上下文压缩摘要]'))).toBe(true)
+    expect(sent.at(-1)).toEqual({ role: 'user', content: '最新问题必须保留' })
+    expect(JSON.stringify(sent).length).toBeLessThan('较早上下文'.repeat(500).length + '较早回答'.repeat(500).length)
   })
 
   it('ask 模式：run_command 默认需批准，拒绝后不执行', async () => {
@@ -192,6 +248,24 @@ describe('startAgent', () => {
     const tr = events.find(e => e.type === 'tool_result')
     expect(tr?.ok).toBe(false)
     expect(tr?.summary).toContain('拒绝')
+  })
+
+  it('浏览器脚本执行默认需批准，拒绝后不连接调试页面', async () => {
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'browser-1', name: 'browser_evaluate', args: { expression: 'document.cookie' } }] })
+    mocks.responses.push({ content: '完成', toolCalls: [] })
+    const { events, win } = makeWin()
+    startAgent(win as never, { runId: 'r-browser', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '检查页面', temperature: 1 }, provider, baseSettings)
+
+    const approval = await waitForApproval(events)
+    expect(approval).toBeTruthy()
+    expect(approval?.reason).toBe('操作浏览器页面')
+    expect(approval?.command).toContain('browser_evaluate')
+    approveCommand(approval!.callId!, false)
+    await runUntilDone(events)
+
+    const result = events.find(event => event.type === 'tool_result')
+    expect(result?.ok).toBe(false)
+    expect(result?.summary).toContain('拒绝')
   })
 
   it('full 模式：写工作目录外文件直接放行', async () => {

@@ -120,6 +120,102 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
         required: ['user_id', 'text']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_pages',
+      description: '列出当前浏览器调试连接中的所有可操作页面，返回页面 ID、标题和 URL。使用其他浏览器工具前先调用此工具。',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_navigate',
+      description: '让浏览器页面访问指定 HTTP/HTTPS 地址，也可以新建页面。',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: '完整的 http:// 或 https:// 地址' },
+          target_id: { type: 'string', description: '可选，browser_pages 返回的页面 ID' },
+          new_page: { type: 'boolean', description: '为 true 时创建新页面' }
+        },
+        required: ['url']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_snapshot',
+      description: '读取页面标题、URL、正文和可交互元素列表。返回的 selector 可直接用于点击和输入。',
+      parameters: {
+        type: 'object',
+        properties: { target_id: { type: 'string', description: '可选，页面 ID；默认使用第一个普通页面' } }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_click',
+      description: '点击页面中的元素。点击可能提交表单或触发外部操作，需遵守权限审批。',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'browser_snapshot 返回的 CSS selector' },
+          target_id: { type: 'string', description: '可选，页面 ID' }
+        },
+        required: ['selector']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_type',
+      description: '在输入框或可编辑元素中输入文本，可选提交表单。',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'browser_snapshot 返回的 CSS selector' },
+          text: { type: 'string', description: '要输入的文本' },
+          submit: { type: 'boolean', description: '输入后是否提交表单' },
+          target_id: { type: 'string', description: '可选，页面 ID' }
+        },
+        required: ['selector', 'text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_debug',
+      description: '采集页面运行状态、控制台输出、脚本异常、网络失败和最近资源请求，用于调试网页问题。',
+      parameters: {
+        type: 'object',
+        properties: {
+          target_id: { type: 'string', description: '可选，页面 ID' },
+          duration_ms: { type: 'number', description: '采集新事件的时长，100 到 2000 毫秒' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_evaluate',
+      description: '在页面上下文执行 JavaScript 调试表达式并返回可序列化结果。该能力权限较高，通常需要用户批准。',
+      parameters: {
+        type: 'object',
+        properties: {
+          expression: { type: 'string', description: '要执行的 JavaScript 表达式' },
+          target_id: { type: 'string', description: '可选，页面 ID' }
+        },
+        required: ['expression']
+      }
+    }
   }
   ]
 }

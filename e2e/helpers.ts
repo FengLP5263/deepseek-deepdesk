@@ -232,6 +232,56 @@ export function createMessageActionsUserData(): string {
   return userDataDir
 }
 
+export function createContextBreakdownUserData(): string {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
+  const state = {
+    settings: {
+      version: 1,
+      defaultProviderId: 'deepseek',
+      defaultModelId: 'deepseek-v4-flash',
+      temperature: 1,
+      theme: 'light',
+      appFont: 'default',
+      enterToSend: true,
+      agentWorkdir: '',
+      agentPermissionMode: 'ask'
+    },
+    providers: [],
+    conversations: [],
+    agentSessions: [{
+      id: 'context-breakdown',
+      task: '上下文组成视觉回归',
+      workdir: '',
+      modelId: 'deepseek-v4-flash',
+      createdAt: 1,
+      updatedAt: 1,
+      steps: [
+        { kind: 'task', text: '解释上下文组成' },
+        { kind: 'tool', callId: 'call-1', name: 'read_file', args: JSON.stringify({ path: 'src/main/store.ts' }), status: 'ok', result: 'store.ts 中包含持久化逻辑。' },
+        { kind: 'text', text: '上下文由系统指令、用户消息、AI 回复和工具信息共同组成。' }
+      ],
+      history: [
+        { role: 'system', content: '系统指令：你是 DeepDesk Agent。长期记忆：用户偏好简洁结论。' },
+        { role: 'user', content: '请解释上下文组成。' },
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call-1',
+            type: 'function',
+            function: { name: 'read_file', arguments: JSON.stringify({ path: 'src/main/store.ts' }) }
+          }]
+        },
+        { role: 'tool', tool_call_id: 'call-1', content: 'store.ts 中包含持久化逻辑。' },
+        { role: 'assistant', content: '上下文由系统指令、用户消息、AI 回复和工具信息共同组成。' }
+      ]
+    }],
+    memories: []
+  }
+  writeFileSync(join(userDataDir, 'deepdesk.json'), JSON.stringify(state), 'utf8')
+  return userDataDir
+}
+
 export function createConnectorSessionUserData(): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {

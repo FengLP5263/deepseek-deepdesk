@@ -31,15 +31,20 @@ export function quotePosixArgument(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'"
 }
 
-export function executeShellInvocation(invocation: ShellInvocation, cwd: string, env?: CommandEnvironment): Promise<CommandResult> {
-  return new Promise(resolve => {
+export function executeShellInvocation(invocation: ShellInvocation, cwd: string, env?: CommandEnvironment, signal?: AbortSignal): Promise<CommandResult> {
+  return new Promise((resolve, reject) => {
     execFile(invocation.executable, invocation.args, {
       cwd,
       timeout: COMMAND_TIMEOUT,
       maxBuffer: COMMAND_MAX_BUFFER,
       windowsHide: true,
-      env: env ? { ...process.env, ...env } : process.env
+      env: env ? { ...process.env, ...env } : process.env,
+      signal
     }, (err, stdout, stderr) => {
+      if (err?.name === 'AbortError') {
+        reject(err)
+        return
+      }
       const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0
       resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), code })
     })

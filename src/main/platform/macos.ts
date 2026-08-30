@@ -33,7 +33,7 @@ export const macosPlatformAdapter: PlatformAdapter = {
     trafficLightPosition: { x: 14, y: 10 }
   },
   quoteArgument: quotePosixArgument,
-  executeCommand: (command, cwd, env) => executeShellInvocation(buildZshInvocation(command), cwd, env),
+  executeCommand: (command, cwd, env, signal) => executeShellInvocation(buildZshInvocation(command), cwd, env, signal),
   installApplicationMenu: () => Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate)),
   shouldQuitWhenAllWindowsClose: () => false
 }

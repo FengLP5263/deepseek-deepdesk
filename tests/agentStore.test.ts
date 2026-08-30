@@ -9,6 +9,7 @@ let saved: AgentSession[] = []
 let startReqs: AgentRunRequest[] = []
 let memoryResults: MemoryItem[] = []
 let connectorMessages: Array<{ id: string; sessionId: string; threadId: string; text: string; replyToken?: string }> = []
+let cancelledRunIds: string[] = []
 
 beforeEach(() => {
   chunkCb = null
@@ -16,6 +17,7 @@ beforeEach(() => {
   startReqs = []
   memoryResults = []
   connectorMessages = []
+  cancelledRunIds = []
   const api = {
     platform: { id: 'macos', shellName: 'zsh', nativeWindowControls: true },
     settings: {
@@ -46,7 +48,7 @@ beforeEach(() => {
     chat: { start: async () => ({ ok: true }), cancel: async () => {}, onChunk: () => () => {} },
     agent: {
       start: async (req: AgentRunRequest) => { startReqs.push(req); return { ok: true } },
-      cancel: async () => {},
+      cancel: async (runId: string) => { cancelledRunIds.push(runId) },
       approve: async () => {},
       pickDirectory: async () => null,
       onChunk: (cb: (ev: AgentEvent) => void) => { chunkCb = cb; return () => { chunkCb = null } },
@@ -61,10 +63,33 @@ beforeEach(() => {
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
   useSettingsStore.setState({ loaded: true, providers: [{ id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }], settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' } })
-  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, draftTask: '', steps: [], history: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
+  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, draftTask: '', steps: [], history: [], queuedMessages: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
 })
 
 describe('useAgentStore 会话持久化', () => {
+  it('停止后立即结束运行态、移除思考状态并忽略迟到分片', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('持续分析这个问题')
+    const runId = startReqs[0].runId
+    chunkCb!({ runId, type: 'tool_call', call: { id: 'tool-1', name: 'search_content', args: { pattern: 'author' } } })
+    chunkCb!({ runId, type: 'thinking' })
+
+    useAgentStore.getState().stop()
+
+    const stopped = useAgentStore.getState()
+    expect(cancelledRunIds).toEqual([runId])
+    expect(stopped.running).toBe(false)
+    expect(stopped.currentRunId).toBeNull()
+    expect(stopped.steps.some(step => step.kind === 'thinking')).toBe(false)
+    expect(stopped.steps.find(step => step.callId === 'tool-1')?.status).toBe('cancelled')
+    expect(stopped.history.at(-1)).toEqual({ role: 'user', content: '持续分析这个问题' })
+
+    chunkCb!({ runId, type: 'text', text: '不应再显示的迟到内容' })
+    chunkCb!({ runId, type: 'thinking' })
+    expect(useAgentStore.getState().steps.some(step => step.text?.includes('不应再显示'))).toBe(false)
+    expect(useAgentStore.getState().steps.some(step => step.kind === 'thinking')).toBe(false)
+  })
+
   it('任务完成后自动保存会话', async () => {
     useAgentStore.getState().init()
     await useAgentStore.getState().start('写一个文件')
@@ -76,6 +101,72 @@ describe('useAgentStore 会话持久化', () => {
     expect(saved[0].task).toBe('写一个文件')
     expect(saved[0].steps[0].kind).toBe('task')
     expect(saved[0].modelId).toBe('deepseek-v4-pro')
+  })
+
+  it('运行中按顺序排队消息，并在上一轮完成后使用编辑后的内容继续发送', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('第一问')
+    await useAgentStore.getState().enqueueMessage('第二问')
+    await useAgentStore.getState().enqueueMessage('第三问')
+
+    const firstQueuedId = useAgentStore.getState().queuedMessages[0].id
+    useAgentStore.getState().updateQueuedMessage(firstQueuedId, '编辑后的第二问')
+    expect(useAgentStore.getState().queuedMessages.map(item => item.text)).toEqual(['编辑后的第二问', '第三问'])
+
+    chunkCb!({
+      runId: startReqs[0].runId,
+      type: 'done',
+      history: [{ role: 'user', content: '第一问' }, { role: 'assistant', content: '第一答' }]
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(startReqs).toHaveLength(2)
+    expect(startReqs[1].task).toBe('编辑后的第二问')
+    expect(useAgentStore.getState().queuedMessages.map(item => item.text)).toEqual(['第三问'])
+
+    chunkCb!({
+      runId: startReqs[1].runId,
+      type: 'done',
+      history: [...(startReqs[1].history ?? []), { role: 'user', content: '编辑后的第二问' }, { role: 'assistant', content: '第二答' }]
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(startReqs).toHaveLength(3)
+    expect(startReqs[2].task).toBe('第三问')
+    expect(useAgentStore.getState().queuedMessages).toEqual([])
+  })
+
+  it('立即发送会中断当前回复并保留其他待发送消息', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('正在回答的问题')
+    chunkCb!({ runId: startReqs[0].runId, type: 'text', text: '已有的部分回答' })
+    await useAgentStore.getState().enqueueMessage('稍后发送')
+    await useAgentStore.getState().enqueueMessage('现在就发')
+
+    const immediateId = useAgentStore.getState().queuedMessages[1].id
+    await useAgentStore.getState().sendQueuedNow(immediateId)
+
+    expect(cancelledRunIds).toEqual([startReqs[0].runId])
+    expect(startReqs).toHaveLength(2)
+    expect(startReqs[1].task).toBe('现在就发')
+    expect(startReqs[1].history).toEqual([
+      { role: 'user', content: '正在回答的问题' },
+      { role: 'assistant', content: '已有的部分回答' }
+    ])
+    expect(useAgentStore.getState().queuedMessages.map(item => item.text)).toEqual(['稍后发送'])
+  })
+
+  it('手动停止后保留待发送队列，不擅自继续下一轮', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('当前任务')
+    await useAgentStore.getState().enqueueMessage('等待中的任务')
+
+    useAgentStore.getState().stop()
+
+    expect(startReqs).toHaveLength(1)
+    expect(useAgentStore.getState().running).toBe(false)
+    expect(useAgentStore.getState().queuedMessages.map(item => item.text)).toEqual(['等待中的任务'])
+    expect(saved[0]?.queuedMessages?.map(item => item.text)).toEqual(['等待中的任务'])
   })
 
   it('启动 Agent 时携带命中的长期记忆上下文', async () => {
@@ -264,6 +355,145 @@ describe('useAgentStore 会话持久化', () => {
     await new Promise(r => setTimeout(r, 60))
     expect(saved.length).toBe(1)
     expect(saved[0].steps.filter(x => x.kind === 'task').length).toBe(2)
+  })
+
+  it('keeps history aligned when saving an edited user task', () => {
+    const seed: AgentSession = {
+      id: 's-edit-save',
+      task: 'original task',
+      workdir: '/w',
+      modelId: 'deepseek-v4-pro',
+      createdAt: 1,
+      updatedAt: 1,
+      steps: [
+        { kind: 'task', text: 'first question' },
+        { kind: 'text', text: 'first answer' },
+        { kind: 'task', text: 'second question' }
+      ],
+      history: [
+        { role: 'user', content: 'first question' },
+        { role: 'assistant', content: 'first answer' },
+        { role: 'user', content: 'second question' }
+      ]
+    }
+    saved = [seed]
+    useAgentStore.setState({
+      sessions: [seed],
+      activeSessionId: seed.id,
+      currentSessionId: seed.id,
+      currentTask: seed.task,
+      currentModelId: seed.modelId,
+      workdir: seed.workdir,
+      steps: seed.steps,
+      history: seed.history
+    })
+
+    useAgentStore.getState().updateStep(2, { text: 'edited second question' })
+
+    const state = useAgentStore.getState()
+    expect(state.steps[2].text).toBe('edited second question')
+    expect(state.history[2].content).toBe('edited second question')
+    expect(saved[0].history[2].content).toBe('edited second question')
+  })
+
+  it('reruns an edited user task from that turn while preserving earlier context', async () => {
+    const seed: AgentSession = {
+      id: 's-edit-rerun',
+      task: 'original task',
+      workdir: '/w',
+      modelId: 'deepseek-v4-pro',
+      createdAt: 1,
+      updatedAt: 1,
+      steps: [
+        { kind: 'task', text: 'old question' },
+        { kind: 'text', text: 'old answer' },
+        { kind: 'task', text: 'later question' },
+        { kind: 'text', text: 'later answer' }
+      ],
+      history: [
+        { role: 'user', content: 'old question' },
+        { role: 'assistant', content: 'old answer' },
+        { role: 'user', content: 'later question' },
+        { role: 'assistant', content: 'later answer' }
+      ]
+    }
+    saved = [seed]
+    useAgentStore.getState().init()
+    useAgentStore.setState({
+      sessions: [seed],
+      activeSessionId: seed.id,
+      currentSessionId: seed.id,
+      currentTask: seed.task,
+      currentModelId: seed.modelId,
+      workdir: seed.workdir,
+      steps: seed.steps,
+      history: seed.history
+    })
+
+    await useAgentStore.getState().rerunTaskFrom(2, 'edited later question')
+
+    expect(startReqs).toHaveLength(1)
+    expect(startReqs[0].task).toBe('edited later question')
+    expect(startReqs[0].history).toEqual([
+      { role: 'user', content: 'old question' },
+      { role: 'assistant', content: 'old answer' }
+    ])
+    expect(useAgentStore.getState().steps).toEqual([
+      { kind: 'task', text: 'old question' },
+      { kind: 'text', text: 'old answer' },
+      { kind: 'task', text: 'edited later question' }
+    ])
+
+    chunkCb!({ runId: startReqs[0].runId, type: 'done', history: [
+      { role: 'user', content: 'old question' },
+      { role: 'assistant', content: 'old answer' },
+      { role: 'user', content: 'edited later question' }
+    ] })
+    await new Promise(r => setTimeout(r, 80))
+  })
+
+  it('regenerates a later assistant turn with earlier context preserved', async () => {
+    const seed: AgentSession = {
+      id: 's-regen-context',
+      task: 'original task',
+      workdir: '/w',
+      modelId: 'deepseek-v4-pro',
+      createdAt: 1,
+      updatedAt: 1,
+      steps: [
+        { kind: 'task', text: 'first question' },
+        { kind: 'text', text: 'first answer' },
+        { kind: 'task', text: 'second question' },
+        { kind: 'text', text: 'second answer' }
+      ],
+      history: [
+        { role: 'user', content: 'first question' },
+        { role: 'assistant', content: 'first answer' },
+        { role: 'user', content: 'second question' },
+        { role: 'assistant', content: 'second answer' }
+      ]
+    }
+    saved = [seed]
+    useAgentStore.getState().init()
+    useAgentStore.setState({
+      sessions: [seed],
+      activeSessionId: seed.id,
+      currentSessionId: seed.id,
+      currentTask: seed.task,
+      currentModelId: seed.modelId,
+      workdir: seed.workdir,
+      steps: seed.steps,
+      history: seed.history
+    })
+
+    await useAgentStore.getState().regenerateFrom(3)
+
+    expect(startReqs).toHaveLength(1)
+    expect(startReqs[0].task).toBe('second question')
+    expect(startReqs[0].history).toEqual([
+      { role: 'user', content: 'first question' },
+      { role: 'assistant', content: 'first answer' }
+    ])
   })
 
   it('renameSession 重命名会话', async () => {

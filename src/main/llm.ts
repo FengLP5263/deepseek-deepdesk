@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { streamOpenAICompatible } from '../shared/llm/openai'
+import { getModelContextWindow, manageContextMessages } from '../shared/context-manager'
 import type { ChatChunkPayload, ChatStartRequest, ProviderConfig, Usage } from '../shared/types'
 
 const controllers = new Map<string, AbortController>()
@@ -15,11 +16,19 @@ export function startChat(win: BrowserWindow, req: ChatStartRequest, provider: P
   void (async () => {
     try {
       let usage: Usage | undefined
+      const managed = manageContextMessages(
+        req.messages.map(message => ({ ...message })),
+        { contextWindow: getModelContextWindow(provider, req.modelId) }
+      )
+      const messages = managed.messages.map(message => ({
+        role: typeof message.role === 'string' ? message.role : 'user',
+        content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')
+      }))
       for await (const chunk of streamOpenAICompatible({
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
         model: req.modelId,
-        messages: req.messages,
+        messages,
         temperature: req.temperature,
         signal: controller.signal
       })) {

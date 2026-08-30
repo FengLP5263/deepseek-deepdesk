@@ -9,7 +9,7 @@ export const windowsPlatformAdapter: PlatformAdapter = {
     frame: false
   },
   quoteArgument: quotePowerShellArgument,
-  executeCommand: (command, cwd, env) => executeShellInvocation(buildPowerShellInvocation(command), cwd, env),
+  executeCommand: (command, cwd, env, signal) => executeShellInvocation(buildPowerShellInvocation(command), cwd, env, signal),
   installApplicationMenu: () => Menu.setApplicationMenu(null),
   shouldQuitWhenAllWindowsClose: () => true
 }
