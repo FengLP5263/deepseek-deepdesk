@@ -2,10 +2,10 @@ import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import QRCode from 'qrcode'
 import type { AppStore } from './store'
-import type { ConnectorActionResult, ConnectorAuthSession, ConnectorAuthState, ConnectorConfig, ConnectorId, ConnectorState, ConnectorStatus } from '../shared/types'
+import type { ConnectorActionResult, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityFeed, ConnectorActivityStatus, ConnectorAuthSession, ConnectorAuthState, ConnectorConfig, ConnectorId, ConnectorOutboundMessage, ConnectorState, ConnectorStatus } from '../shared/types'
 import { getPlatformAdapter } from './platform'
 
 const WECHAT_ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com'
@@ -28,6 +28,27 @@ interface GatewayAuthStartResponse {
 interface GatewayAuthStatusResponse extends GatewayAuthStartResponse {
   state?: unknown
   connected?: unknown
+}
+
+interface GatewayActivityResponse {
+  events?: unknown
+  items?: unknown
+  message?: unknown
+}
+
+interface GatewaySendMessageResponse {
+  ok?: unknown
+  messageId?: unknown
+  id?: unknown
+  message?: unknown
+  detail?: unknown
+}
+
+interface BrowserTargetResponse {
+  id?: unknown
+  type?: unknown
+  title?: unknown
+  url?: unknown
 }
 
 interface ActiveDirectAuthSession {
@@ -59,6 +80,18 @@ interface WeChatStatusResponse {
   redirect_host?: unknown
 }
 
+interface WeChatUpdatesResponse {
+  ret?: unknown
+  errcode?: unknown
+  errmsg?: unknown
+  msgs?: unknown
+  messages?: unknown
+  Msgs?: unknown
+  get_updates_buf?: unknown
+  next_key?: unknown
+  nextKey?: unknown
+}
+
 const directAuthSessions = new Map<string, ActiveDirectAuthSession>()
 
 function connectorStatus(id: ConnectorId, name: string, state: ConnectorState, summary: string, detail: string, primaryAction: string, config: ConnectorConfig, disconnectAction?: string, command?: string): ConnectorStatus {
@@ -74,6 +107,7 @@ function findConfig(configs: ConnectorConfig[], id: ConnectorId): ConnectorConfi
     endpoint: '',
     token: '',
     refreshToken: '',
+    messageCursor: '',
     accountId: '',
     userId: '',
     expiresAt: 0,
@@ -121,6 +155,25 @@ function textFromUnknown(value: unknown): string | undefined {
 
 function numberFromUnknown(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function timestampFromUnknown(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return Date.now()
+}
+
+function directionFromUnknown(value: unknown): ConnectorActivityDirection {
+  if (value === 'outbound' || value === 'system') return value
+  return 'inbound'
+}
+
+function activityStatusFromUnknown(value: unknown): ConnectorActivityStatus {
+  if (value === 'handled' || value === 'failed') return value
+  return 'new'
 }
 
 function errorCodeFromUnknown(value: unknown): string {
@@ -196,6 +249,30 @@ function directSessionResponse(session: ActiveDirectAuthSession): ConnectorAuthS
 
 function jsonHeaders(): Record<string, string> {
   return { 'Content-Type': 'application/json' }
+}
+
+function wechatIlinkHeaders(config: ConnectorConfig): Record<string, string> {
+  const value = randomBytes(4).readUInt32BE(0).toString()
+  return {
+    'Content-Type': 'application/json',
+    'AuthorizationType': 'ilink_bot_token',
+    'Authorization': 'Bearer ' + config.token.trim(),
+    'X-WECHAT-UIN': Buffer.from(value).toString('base64')
+  }
+}
+
+function wechatIlinkBaseInfo(): { base_info: { channel_version: string } } {
+  return { base_info: { channel_version: '1.0.0' } }
+}
+
+function isWechatIlinkDirectConfig(config: ConnectorConfig): boolean {
+  if (!hasText(config.token) || !hasText(config.endpoint)) return false
+  try {
+    const host = new URL(config.endpoint).host
+    return host.includes('weixin.qq.com') || host.includes('ilinkai.weixin.qq.com')
+  } catch {
+    return false
+  }
 }
 
 async function fetchJsonWithTimeout<T>(url: string, init: RequestInit, timeoutMs: number): Promise<T> {
@@ -536,6 +613,357 @@ export async function getConnectorAuthStatus(store: AppStore, id: ConnectorId, s
     return { id, ok: false, state: 'failed', sessionId, message: '无法查询授权状态', detail: e.message || '网络请求失败' }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+function normalizeGatewayActivity(id: ConnectorId, raw: unknown, index: number): ConnectorActivity | null {
+  if (!raw || typeof raw !== 'object') return null
+  const item = raw as Record<string, unknown>
+  const text = textFromUnknown(item['text']) ?? textFromUnknown(item['content']) ?? textFromUnknown(item['message'])
+  if (!text) return null
+  const createdAt = timestampFromUnknown(item['createdAt'] ?? item['timestamp'] ?? item['time'])
+  const sourceName = textFromUnknown(item['sourceName']) ?? textFromUnknown(item['fromName']) ?? textFromUnknown(item['senderName']) ?? (id === 'wechat' ? '微信用户' : '飞书用户')
+  const sourceId = textFromUnknown(item['sourceId']) ?? textFromUnknown(item['fromId']) ?? textFromUnknown(item['senderId']) ?? ''
+  const threadId = textFromUnknown(item['threadId'])
+    ?? textFromUnknown(item['externalThreadId'])
+    ?? textFromUnknown(item['chatId'])
+    ?? textFromUnknown(item['roomId'])
+    ?? textFromUnknown(item['conversationId'])
+    ?? sourceId
+  const rawId = textFromUnknown(item['id']) ?? textFromUnknown(item['messageId'])
+  return {
+    id: rawId ?? `${id}-${createdAt}-${index}`,
+    connectorId: id,
+    direction: directionFromUnknown(item['direction']),
+    sourceName,
+    sourceId,
+    threadId,
+    conversationName: textFromUnknown(item['conversationName']) ?? textFromUnknown(item['chatName']) ?? textFromUnknown(item['roomName']),
+    text,
+    createdAt,
+    status: activityStatusFromUnknown(item['status']),
+    taskId: textFromUnknown(item['taskId'])
+  }
+}
+
+export async function sendConnectorMessage(store: AppStore, id: ConnectorId, message: ConnectorOutboundMessage): Promise<ConnectorActionResult> {
+  if (id === 'browser') return { id, ok: false, message: '浏览器自动化不支持消息回写' }
+  const text = message.text.trim()
+  const threadId = message.threadId.trim()
+  if (!text || !threadId) return { id, ok: false, message: '消息内容或会话标识为空' }
+
+  const config = findConfig(store.getSnapshot().connectors, id)
+  if (!config.enabled) return { id, ok: false, message: id === 'wechat' ? '微信尚未连接' : '飞书尚未连接' }
+  if (!hasText(config.endpoint)) {
+    return {
+      id,
+      ok: false,
+      message: id === 'wechat' ? '缺少微信接入服务地址' : '缺少飞书接入服务地址',
+      detail: '消息同步需要外部接入服务提供发送接口。'
+    }
+  }
+  if (id === 'wechat' && isWechatIlinkDirectConfig(config)) {
+    return sendWechatIlinkMessage(store, config, { ...message, threadId, text })
+  }
+
+  try {
+    const json = await fetchJsonWithTimeout<GatewaySendMessageResponse>(
+      trimBaseUrl(config.endpoint) + '/connectors/' + id + '/messages',
+      {
+        method: 'POST',
+        headers: authHeaders(config),
+        body: JSON.stringify({
+          sessionId: message.sessionId,
+          threadId,
+          text
+        })
+      },
+      8000
+    )
+    const ok = json.ok !== false
+    const messageId = textFromUnknown(json.messageId) ?? textFromUnknown(json.id) ?? `${id}-out-${Date.now()}`
+    store.upsertConnectorActivities([{
+      id: messageId,
+      connectorId: id,
+      direction: 'outbound',
+      sourceName: 'DeepDesk',
+      sourceId: 'deepdesk',
+      threadId,
+      text,
+      createdAt: Date.now(),
+      status: ok ? 'handled' : 'failed',
+      taskId: message.sessionId
+    }])
+    return {
+      id,
+      ok,
+      message: textFromUnknown(json.message) ?? (ok ? '已同步到连接器会话' : '连接器服务返回发送失败'),
+      detail: textFromUnknown(json.detail)
+    }
+  } catch (error) {
+    store.upsertConnectorActivities([{
+      id: `${id}-out-failed-${Date.now()}`,
+      connectorId: id,
+      direction: 'outbound',
+      sourceName: 'DeepDesk',
+      sourceId: 'deepdesk',
+      threadId,
+      text,
+      createdAt: Date.now(),
+      status: 'failed',
+      taskId: message.sessionId
+    }])
+    return {
+      id,
+      ok: false,
+      message: id === 'wechat' ? '同步到微信失败' : '同步到飞书失败',
+      detail: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
+async function sendWechatIlinkMessage(store: AppStore, config: ConnectorConfig, message: ConnectorOutboundMessage): Promise<ConnectorActionResult> {
+  const replyToken = message.replyToken?.trim()
+  if (!replyToken) {
+    return {
+      id: 'wechat',
+      ok: false,
+      message: '缺少微信回复令牌',
+      detail: '请先从微信收到一条消息；DeepDesk 需要使用该消息的 context_token 才能把回复发回原会话。'
+    }
+  }
+  try {
+    const json = await fetchJsonWithTimeout<{ ret?: unknown; errcode?: unknown; errmsg?: unknown }>(
+      trimBaseUrl(config.endpoint) + '/ilink/bot/sendmessage',
+      {
+        method: 'POST',
+        headers: wechatIlinkHeaders(config),
+        body: JSON.stringify({
+          msg: {
+            from_user_id: '',
+            to_user_id: message.threadId,
+            client_id: randomUUID(),
+            message_type: 2,
+            message_state: 2,
+            context_token: replyToken,
+            item_list: [{ type: 1, text_item: { text: message.text } }]
+          },
+          ...wechatIlinkBaseInfo()
+        })
+      },
+      10_000
+    )
+    const ret = numberFromUnknown(json.ret)
+    const errcode = numberFromUnknown(json.errcode)
+    const ok = (ret === undefined || ret === 0) && errcode !== -14
+    if (errcode === -14) store.upsertConnectorConfig({ id: 'wechat', enabled: false })
+    store.upsertConnectorActivities([{
+      id: `wechat-out-${Date.now()}`,
+      connectorId: 'wechat',
+      direction: 'outbound',
+      sourceName: 'DeepDesk',
+      sourceId: 'deepdesk',
+      threadId: message.threadId,
+      text: message.text,
+      replyToken,
+      createdAt: Date.now(),
+      status: ok ? 'handled' : 'failed',
+      taskId: message.sessionId
+    }])
+    return {
+      id: 'wechat',
+      ok,
+      message: ok ? '已同步到微信会话' : '微信发送失败',
+      detail: ok ? undefined : textFromUnknown(json.errmsg)
+    }
+  } catch (error) {
+    return {
+      id: 'wechat',
+      ok: false,
+      message: '同步到微信失败',
+      detail: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
+function normalizeGatewayActivities(id: ConnectorId, json: GatewayActivityResponse): ConnectorActivity[] {
+  const rawItems = Array.isArray(json.events) ? json.events : Array.isArray(json.items) ? json.items : []
+  return rawItems.map((item, index) => normalizeGatewayActivity(id, item, index)).filter((item): item is ConnectorActivity => item !== null)
+}
+
+function objectFromUnknown(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : undefined
+}
+
+function listFromUnknown(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function wechatMessageText(message: Record<string, unknown>): string | undefined {
+  const direct = textFromUnknown(message['text']) ?? textFromUnknown(message['content']) ?? textFromUnknown(message['message'])
+  if (direct) return direct
+  const items = listFromUnknown(message['item_list'] ?? message['itemList'])
+  const parts = items
+    .map(item => {
+      const record = objectFromUnknown(item)
+      if (!record) return undefined
+      const textItem = objectFromUnknown(record['text_item'] ?? record['textItem'])
+      const voiceItem = objectFromUnknown(record['voice_item'] ?? record['voiceItem'])
+      const fileItem = objectFromUnknown(record['file_item'] ?? record['fileItem'])
+      const imageItem = objectFromUnknown(record['image_item'] ?? record['imageItem'])
+      return textFromUnknown(textItem?.['text'])
+        ?? textFromUnknown(voiceItem?.['text'])
+        ?? textFromUnknown(fileItem?.['file_name'])
+        ?? textFromUnknown(imageItem?.['file_name'])
+    })
+    .filter((part): part is string => Boolean(part))
+  return parts.length > 0 ? parts.join('\n') : undefined
+}
+
+function wechatMessageCreatedAt(message: Record<string, unknown>): number {
+  const ms = numberFromUnknown(message['create_time_ms'] ?? message['createTimeMs'])
+  if (ms) return ms
+  return timestampFromUnknown(message['create_time'] ?? message['createTime'] ?? message['timestamp'])
+}
+
+function normalizeWechatIlinkActivity(raw: unknown, index: number): ConnectorActivity | null {
+  const message = objectFromUnknown(raw)
+  if (!message) return null
+  const messageType = message['message_type'] ?? message['messageType']
+  if (messageType !== undefined && messageType !== 1) return null
+  const text = wechatMessageText(message)
+  if (!text) return null
+  const fromUserId = textFromUnknown(message['from_user_id'])
+    ?? textFromUnknown(message['fromUserId'])
+    ?? textFromUnknown(message['senderId'])
+    ?? textFromUnknown(message['sourceId'])
+    ?? ''
+  const threadId = textFromUnknown(message['threadId'])
+    ?? textFromUnknown(message['chatId'])
+    ?? textFromUnknown(message['roomId'])
+    ?? fromUserId
+  const createdAt = wechatMessageCreatedAt(message)
+  const rawId = textFromUnknown(message['message_id']) ?? textFromUnknown(message['messageId']) ?? textFromUnknown(message['id'])
+  return {
+    id: rawId ?? `wechat-${createdAt}-${index}`,
+    connectorId: 'wechat',
+    direction: 'inbound',
+    sourceName: textFromUnknown(message['from_user_name']) ?? textFromUnknown(message['fromUserName']) ?? textFromUnknown(message['senderName']) ?? '微信用户',
+    sourceId: fromUserId,
+    threadId,
+    conversationName: textFromUnknown(message['room_name']) ?? textFromUnknown(message['roomName']) ?? textFromUnknown(message['chatName']) ?? '微信会话',
+    text,
+    replyToken: textFromUnknown(message['context_token']) ?? textFromUnknown(message['contextToken']),
+    createdAt,
+    status: 'new'
+  }
+}
+
+async function syncWechatIlinkActivities(store: AppStore, config: ConnectorConfig): Promise<string | undefined> {
+  try {
+    const json = await fetchJsonWithTimeout<WeChatUpdatesResponse>(
+      trimBaseUrl(config.endpoint) + '/ilink/bot/getupdates',
+      {
+        method: 'POST',
+        headers: wechatIlinkHeaders(config),
+        body: JSON.stringify({
+          get_updates_buf: config.messageCursor,
+          ...wechatIlinkBaseInfo()
+        })
+      },
+      38_000
+    )
+    const ret = numberFromUnknown(json.ret)
+    const errcode = numberFromUnknown(json.errcode)
+    if ((ret !== undefined && ret !== 0) || errcode === -14) {
+      if (errcode === -14) store.upsertConnectorConfig({ id: 'wechat', enabled: false })
+      return '微信连接已失效，请重新扫码接入。'
+    }
+    const rawMessages = Array.isArray(json.msgs) ? json.msgs : Array.isArray(json.messages) ? json.messages : Array.isArray(json.Msgs) ? json.Msgs : []
+    const activities = rawMessages.map((item, index) => normalizeWechatIlinkActivity(item, index)).filter((item): item is ConnectorActivity => item !== null)
+    const nextCursor = textFromUnknown(json.get_updates_buf) ?? textFromUnknown(json.next_key) ?? textFromUnknown(json.nextKey)
+    if (nextCursor && nextCursor !== config.messageCursor) {
+      store.upsertConnectorConfig({ id: 'wechat', messageCursor: nextCursor })
+    }
+    store.upsertConnectorActivities(activities)
+    return activities.length > 0 ? '收到 ' + activities.length + ' 条微信消息。' : undefined
+  } catch (error) {
+    return '暂时无法从微信接入服务拉取消息：' + (error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function syncGatewayActivities(store: AppStore, id: ConnectorId, config: ConnectorConfig): Promise<string | undefined> {
+  if (!config.enabled) return id === 'wechat' ? '微信尚未连接，扫码接入后可接收消息。' : '飞书尚未连接，扫码接入后可接收消息。'
+  if (!hasText(config.endpoint)) return id === 'wechat' ? '微信已连接，但当前没有可拉取消息的接入服务地址。' : '飞书已连接，但当前没有可拉取消息的接入服务地址。'
+  if (id === 'wechat' && isWechatIlinkDirectConfig(config)) return syncWechatIlinkActivities(store, config)
+  const endpoint = trimBaseUrl(config.endpoint)
+  try {
+    const res = await fetchJsonWithTimeout<GatewayActivityResponse>(
+      endpoint + '/connectors/' + id + '/events?limit=20',
+      { headers: authHeaders(config) },
+      6000
+    )
+    const activities = normalizeGatewayActivities(id, res)
+    store.upsertConnectorActivities(activities)
+    const message = textFromUnknown(res.message)
+    if (activities.length > 0) return message
+    return message ?? '接入服务暂时没有返回新的消息。'
+  } catch (error) {
+    return id === 'wechat'
+      ? '暂时无法从微信接入服务拉取消息：' + (error instanceof Error ? error.message : String(error))
+      : '暂时无法从飞书接入服务拉取消息：' + (error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function listBrowserTargets(): Promise<ConnectorActivity[]> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 800)
+  try {
+    const res = await fetch('http://127.0.0.1:9222/json', { signal: controller.signal })
+    if (!res.ok) return []
+    const json = await res.json() as unknown
+    if (!Array.isArray(json)) return []
+    const pages = json
+      .map(item => item as BrowserTargetResponse)
+      .filter(item => item.type === 'page')
+      .slice(0, 5)
+    return pages.map((page, index) => ({
+      id: 'browser-' + String(page.id ?? index),
+      connectorId: 'browser',
+      direction: 'system',
+      sourceName: '浏览器自动化',
+      sourceId: String(page.id ?? ''),
+      conversationName: 'Chrome DevTools',
+      text: (textFromUnknown(page.title) ?? '未命名页面') + (textFromUnknown(page.url) ? ' · ' + textFromUnknown(page.url) : ''),
+      createdAt: Date.now(),
+      status: 'handled'
+    }))
+  } catch {
+    return []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function getConnectorActivityFeed(store: AppStore, id?: ConnectorId): Promise<ConnectorActivityFeed> {
+  const messages: string[] = []
+  const configs = store.getSnapshot().connectors
+  const ids: ConnectorId[] = id ? [id] : ['wechat', 'lark', 'browser']
+  for (const connectorId of ids) {
+    if (connectorId === 'browser') continue
+    const message = await syncGatewayActivities(store, connectorId, findConfig(configs, connectorId))
+    if (message) messages.push(message)
+  }
+  const browserItems = ids.includes('browser') ? await listBrowserTargets() : []
+  const storedItems = store.listConnectorActivities(id).filter(item => item.connectorId !== 'browser')
+  const items = [...browserItems, ...storedItems]
+    .filter(item => !id || item.connectorId === id)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 50)
+  return {
+    items,
+    syncedAt: Date.now(),
+    message: messages[0]
   }
 }
 

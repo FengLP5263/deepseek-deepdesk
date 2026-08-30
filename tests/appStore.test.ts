@@ -33,20 +33,23 @@ describe('AppStore', () => {
     const snap = store.getSnapshot()
     expect(snap.providers.find(p => p.id === 'deepseek')).toBeTruthy()
     expect(snap.settings.defaultModelId).toBe('deepseek-v4-flash')
+    expect(snap.settings.appFont).toBe('default')
     expect(snap.providers.find(p => p.id === 'deepseek')?.models.map(m => m.id).sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
     expect(snap.conversations).toEqual([])
     expect(snap.memories).toEqual([])
+    expect(snap.connectorActivities).toEqual([])
   })
 
   it('设置持久化并可重新加载', async () => {
     const store = createStore()
     await store.init()
-    store.updateSettings({ defaultModelId: 'deepseek-v4-pro', temperature: 0.5 })
+    store.updateSettings({ defaultModelId: 'deepseek-v4-pro', temperature: 0.5, appFont: 'system' })
     await store.flush()
     const store2 = createStore()
     await store2.init()
     expect(store2.getSnapshot().settings.defaultModelId).toBe('deepseek-v4-pro')
     expect(store2.getSnapshot().settings.temperature).toBe(0.5)
+    expect(store2.getSnapshot().settings.appFont).toBe('system')
   })
 
   it('upsert / delete 提供商', async () => {
@@ -73,6 +76,21 @@ describe('AppStore', () => {
 
     store2.upsertConnectorConfig({ id: 'wechat', enabled: false })
     expect(store2.getSnapshot().connectors.find(connector => connector.id === 'wechat')?.enabled).toBe(false)
+  })
+
+  it('连接器活动消息持久化并按时间倒序读取', async () => {
+    const store = createStore()
+    await store.init()
+    store.upsertConnectorActivities([
+      { id: 'msg-1', connectorId: 'wechat', direction: 'inbound', sourceName: '张三', sourceId: 'u1', text: '你好', createdAt: 1, status: 'new' },
+      { id: 'msg-2', connectorId: 'lark', direction: 'inbound', sourceName: '李四', sourceId: 'u2', text: '收到', createdAt: 2, status: 'handled' }
+    ])
+    await store.flush()
+
+    const store2 = createStore()
+    await store2.init()
+    expect(store2.listConnectorActivities().map(item => item.id)).toEqual(['msg-2', 'msg-1'])
+    expect(store2.listConnectorActivities('wechat').map(item => item.text)).toEqual(['你好'])
   })
 
   it('会话增删查', async () => {

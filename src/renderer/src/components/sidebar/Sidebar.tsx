@@ -32,8 +32,11 @@ export default function Sidebar({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameText, setRenameText] = useState('')
   const [tasksOpen, setTasksOpen] = useState(true)
+  const [connectorSessionsOpen, setConnectorSessionsOpen] = useState(true)
   const menuRef = useRef<HTMLDivElement>(null)
   const settingsShortcut = window.api.platform.id === 'macos' ? '⌘,' : 'Ctrl+,'
+  const normalSessions = sessions.filter(session => session.source?.type !== 'connector')
+  const connectorSessions = sessions.filter(session => session.source?.type === 'connector')
 
   useEffect(() => {
     const closeMenu = (event: PointerEvent): void => {
@@ -72,6 +75,58 @@ export default function Sidebar({
     setMenuId(null)
   }
 
+  const connectorLabel = (session: (typeof sessions)[number]): string => {
+    if (session.source?.type !== 'connector') return ''
+    return session.source.connectorId === 'wechat' ? '微信' : '飞书'
+  }
+
+  const renderSessionItem = (s: (typeof sessions)[number]) => (
+    <div key={s.id} className={clsx('conv-item', s.source?.type === 'connector' && 'connector', activeSessionId === s.id && view === 'chat' && 'active', menuId === s.id && 'menu-open')} onClick={() => openSession(s.id)}>
+      {renamingId === s.id ? (
+        <input className='conv-rename-input' aria-label='编辑会话标题' autoFocus value={renameText} onChange={e => setRenameText(e.target.value)} onClick={e => e.stopPropagation()} onBlur={() => commitRename(s.id)} onKeyDown={e => { if (e.key === 'Enter') commitRename(s.id); if (e.key === 'Escape') setRenamingId(null) }} />
+      ) : (
+        <div className='conv-title'>
+          {s.source?.type === 'connector' && <span className='conv-source'>{connectorLabel(s)}</span>}
+          <span>{s.task}</span>
+        </div>
+      )}
+      {renamingId !== s.id && <div className='conv-time'>{formatTime(s.updatedAt)}</div>}
+      {renamingId !== s.id && (
+        <button
+          type='button'
+          className='conv-action'
+          aria-label={'会话操作：' + s.task}
+          aria-expanded={menuId === s.id}
+          onClick={e => {
+            e.stopPropagation()
+            setConfirmId(null)
+            setMenuId(menuId === s.id ? null : s.id)
+          }}
+        >
+          <MoreHorizontal size={15} />
+        </button>
+      )}
+      {menuId === s.id && (
+        <div className='conv-menu' ref={menuRef} role='menu' aria-label='会话操作' onClick={e => e.stopPropagation()}>
+          {confirmId === s.id ? (
+            <>
+              <div className='conv-menu-confirm'>删除这个会话？</div>
+              <div className='conv-menu-actions'>
+                <button type='button' className='conv-menu-button' onClick={() => setConfirmId(null)}>取消</button>
+                <button type='button' className='conv-menu-button danger' onClick={() => void confirmDelete(s.id)}>确认删除</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <button type='button' className='conv-menu-item' role='menuitem' onClick={() => beginRename(s.id, s.task)}>编辑标题</button>
+              <button type='button' className='conv-menu-item danger' role='menuitem' onClick={() => setConfirmId(s.id)}>删除会话</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <aside className={clsx('sidebar', collapsed && 'collapsed')}>
       {!collapsed && (
@@ -92,62 +147,29 @@ export default function Sidebar({
             <button className={clsx('sidebar-nav-item', view === 'more' && 'active')} onClick={() => onNavigate('more')}><MoreHorizontal className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 更多</button>
           </div>
           <button className='sidebar-section-toggle' aria-expanded={tasksOpen} onClick={() => setTasksOpen(open => !open)}>
-            <span>最近任务 ({sessions.length})</span>
+            <span>最近任务 ({normalSessions.length})</span>
             <ChevronDown size={13} className={clsx('section-chevron', !tasksOpen && 'collapsed')} />
           </button>
-          {tasksOpen && (
+          {tasksOpen && (normalSessions.length > 0 || connectorSessions.length === 0) && (
             <div className='sidebar-scroll'>
-              {sessions.length === 0 && (
+              {normalSessions.length === 0 && connectorSessions.length === 0 && (
                 <div className='muted fs-xs' style={{ textAlign: 'center', padding: '24px 8px' }}>
                   还没有任务，点击新建任务开始
                 </div>
               )}
-              {sessions.map(s => (
-                <div key={s.id} className={clsx('conv-item', activeSessionId === s.id && view === 'chat' && 'active', menuId === s.id && 'menu-open')} onClick={() => openSession(s.id)}>
-                  {renamingId === s.id ? (
-                    <input className='conv-rename-input' aria-label='编辑会话标题' autoFocus value={renameText} onChange={e => setRenameText(e.target.value)} onClick={e => e.stopPropagation()} onBlur={() => commitRename(s.id)} onKeyDown={e => { if (e.key === 'Enter') commitRename(s.id); if (e.key === 'Escape') setRenamingId(null) }} />
-                  ) : (
-                    <div className='conv-title'>{s.task}</div>
-                  )}
-                  {renamingId !== s.id && <div className='conv-time'>{formatTime(s.updatedAt)}</div>}
-                  {renamingId !== s.id && (
-                    <button
-                      type='button'
-                      className='conv-action'
-                      aria-label={'会话操作：' + s.task}
-                      aria-expanded={menuId === s.id}
-                      onClick={e => {
-                        e.stopPropagation()
-                        setConfirmId(null)
-                        setMenuId(menuId === s.id ? null : s.id)
-                      }}
-                    >
-                      <MoreHorizontal size={15} />
-                    </button>
-                  )}
-                  {menuId === s.id && (
-                    <div className='conv-menu' ref={menuRef} role='menu' aria-label='会话操作' onClick={e => e.stopPropagation()}>
-                      {confirmId === s.id ? (
-                        <>
-                          <div className='conv-menu-confirm'>删除这个会话？</div>
-                          <div className='conv-menu-actions'>
-                            <button type='button' className='conv-menu-button' onClick={() => setConfirmId(null)}>取消</button>
-                            <button type='button' className='conv-menu-button danger' onClick={() => void confirmDelete(s.id)}>确认删除</button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <button type='button' className='conv-menu-item' role='menuitem' onClick={() => beginRename(s.id, s.task)}>编辑标题</button>
-                          <button type='button' className='conv-menu-item danger' role='menuitem' onClick={() => setConfirmId(s.id)}>删除会话</button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+              {normalSessions.map(renderSessionItem)}
             </div>
           )}
-          {!tasksOpen && <div className='sidebar-spacer' />}
+          {connectorSessions.length > 0 && (
+            <>
+              <button className='sidebar-section-toggle' aria-expanded={connectorSessionsOpen} onClick={() => setConnectorSessionsOpen(open => !open)}>
+                <span>连接器会话 ({connectorSessions.length})</span>
+                <ChevronDown size={13} className={clsx('section-chevron', !connectorSessionsOpen && 'collapsed')} />
+              </button>
+              {connectorSessionsOpen && <div className='sidebar-scroll compact'>{connectorSessions.map(renderSessionItem)}</div>}
+            </>
+          )}
+          {!tasksOpen && !connectorSessionsOpen && <div className='sidebar-spacer' />}
           <div className='sidebar-footer'>
             <div className='account-chip' title='个人账户'>
               <span className='account-avatar'><UserRound size={15} /></span>

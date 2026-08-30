@@ -22,7 +22,7 @@ beforeEach(() => {
   memoryResults = []
   const api = {
     settings: {
-      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', enterToSend: true }),
+      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true }),
       set: async (patch: Record<string, unknown>) => ({ ...patch })
     },
     providers: { list: async () => makeProviders(), upsert: async () => {}, remove: async () => {}, test: async () => ({ ok: true, message: '' }) },
@@ -45,7 +45,7 @@ beforeEach(() => {
     }
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
-  useSettingsStore.setState({ loaded: true, providers: makeProviders(), settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', enterToSend: true } })
+  useSettingsStore.setState({ loaded: true, providers: makeProviders(), settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true } })
   useChatStore.setState({ initialized: false, conversations: [], activeId: null, streaming: null, notice: null, pendingModel: null })
 })
 

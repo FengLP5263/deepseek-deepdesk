@@ -13,12 +13,14 @@ import type { AgentEvent } from '../src/shared/agent-types'
 let dir: string
 let store: AppStore
 let chunkCb: ((ev: AgentEvent) => void) | null = null
+let startedRunId = ''
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'agent-e2e-'))
   store = new AppStore(dir)
   await store.init()
   chunkCb = null
+  startedRunId = ''
   // 用真实 AppStore 的方法作为 window.api.agent 的实现，走真实持久化链路
   const api = {
     platform: { id: 'macos', shellName: 'zsh', nativeWindowControls: true },
@@ -31,7 +33,7 @@ beforeEach(async () => {
     memories: { list: async () => [], upsert: async (memory: never) => memory, remove: async () => {}, search: async () => [] },
     chat: { start: async () => ({ ok: true }), cancel: async () => {}, onChunk: () => () => {} },
     agent: {
-      start: async () => ({ ok: true }),
+      start: async (req: { runId: string }) => { startedRunId = req.runId; return { ok: true } },
       cancel: async () => {},
       approve: async () => {},
       pickDirectory: async () => null,
@@ -47,7 +49,7 @@ beforeEach(async () => {
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
   useSettingsStore.setState({ loaded: true, providers: [{ id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }], settings: { ...store.getSnapshot().settings } })
-  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', draftTask: '', steps: [], history: [], sessions: [], activeSessionId: null, pendingApproval: null, error: null })
+  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', draftTask: '', steps: [], history: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
 })
 
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
@@ -56,8 +58,8 @@ describe('Agent 会话保存真实链路', () => {
   it('done 事件触发 -> 写入真实 store -> 重开仍可读回', async () => {
     useAgentStore.getState().init()
     await useAgentStore.getState().start('帮我写一个冒泡排序')
-    chunkCb!({ runId: 'r1', type: 'text', text: '已完成' })
-    chunkCb!({ runId: 'r1', type: 'done' })
+    chunkCb!({ runId: startedRunId, type: 'text', text: '已完成' })
+    chunkCb!({ runId: startedRunId, type: 'done' })
     await new Promise(r => setTimeout(r, 120))
     // 1) 当前 store 内存里有
     expect(store.getSnapshot().agentSessions.length).toBe(1)

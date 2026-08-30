@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Blocks, Check, ChevronDown, ExternalLink, Globe2, Link2, MoreHorizontal, Plus, PlugZap, QrCode, RefreshCw, Search, Settings, Sparkles, UserRoundCog, type LucideIcon } from 'lucide-react'
+import { Blocks, Check, ChevronDown, ExternalLink, Globe2, Link2, MessageSquare, MoreHorizontal, Plus, PlugZap, QrCode, RefreshCw, Search, Settings, Sparkles, UserRoundCog, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { useAgentStore } from '../../stores/useAgentStore'
 import type { SettingsTab } from '../settings/SettingsView'
-import type { ConnectorActionResult, ConnectorAuthSession, ConnectorConfigPatch, ConnectorId, ConnectorState, ConnectorStatus } from '@shared/types'
+import type { ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfigPatch, ConnectorId, ConnectorState, ConnectorStatus } from '@shared/types'
 import { Modal } from '../ui'
 import feishuIcon from '../../assets/icons/feishu.svg'
 import wechatIcon from '../../assets/icons/wechat.svg'
@@ -50,6 +50,15 @@ const connectorMeta: Record<ConnectorId, { desc: string; icon?: LucideIcon; icon
     desc: '网页操作与信息采集',
     icon: Globe2
   }
+}
+
+function formatActivityTime(value: number): string {
+  const date = new Date(value)
+  const now = new Date()
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
 
 function emptyConnectorDraft(id: ConnectorId): ConnectorConfigPatch {
@@ -183,6 +192,7 @@ const builtInSkills: BuiltInSkill[] = [
 export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSettings }: FeatureHubProps) {
   const clear = useAgentStore(s => s.clear)
   const setDraftTask = useAgentStore(s => s.setDraftTask)
+  const refreshSessions = useAgentStore(s => s.refreshSessions)
   const [skillQuery, setSkillQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('全部')
   const [showInstalledOnly, setShowInstalledOnly] = useState(false)
@@ -196,6 +206,8 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
   const [showConnectorAdvanced, setShowConnectorAdvanced] = useState(false)
   const [connectorAuth, setConnectorAuth] = useState<ConnectorAuthSession | null>(null)
   const [connectorAuthLoading, setConnectorAuthLoading] = useState(false)
+  const [connectorFeed, setConnectorFeed] = useState<ConnectorActivityFeed | null>(null)
+  const [connectorFeedLoading, setConnectorFeedLoading] = useState(false)
   const [connectorDrafts, setConnectorDrafts] = useState<Record<ConnectorId, ConnectorConfigPatch>>({
     lark: emptyConnectorDraft('lark'),
     wechat: emptyConnectorDraft('wechat'),
@@ -226,10 +238,28 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
     }
   }, [])
 
+  const refreshConnectorActivities = useCallback(async (): Promise<void> => {
+    setConnectorFeedLoading(true)
+    try {
+      const feed = await window.api.connectors.activities()
+      setConnectorFeed(feed)
+      await refreshSessions()
+    } catch (error) {
+      setConnectorFeed({
+        items: [],
+        syncedAt: Date.now(),
+        message: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      setConnectorFeedLoading(false)
+    }
+  }, [refreshSessions])
+
   useEffect(() => {
     if (view !== 'connectors') return
     void refreshConnectors()
-  }, [refreshConnectors, view])
+    void refreshConnectorActivities()
+  }, [refreshConnectorActivities, refreshConnectors, view])
 
   const startWithDraft = (task: string): void => {
     clear()
@@ -252,6 +282,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
       const result = await window.api.connectors.connect(id)
       setConnectorAction(result)
       setConnectors(await window.api.connectors.list())
+      await refreshConnectorActivities()
     } catch (error) {
       setConnectorAction({
         id,
@@ -289,6 +320,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
       const result = await window.api.connectors.disconnect(id)
       setConnectorAction(result)
       await refreshConnectors()
+      await refreshConnectorActivities()
     } catch (error) {
       setConnectorAction({
         id,
@@ -419,6 +451,9 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
           <p>连接消息工具和浏览器能力。</p>
         </div>
         <div className='connector-toolbar'>
+          <button className='btn btn-ghost btn-sm' onClick={() => void refreshConnectorActivities()} disabled={connectorFeedLoading}>
+            <MessageSquare size={14} /> {connectorFeedLoading ? '刷新中' : '刷新消息'}
+          </button>
           <button className='btn btn-ghost btn-sm' onClick={() => void refreshConnectors()} disabled={connectorsLoading}>
             <RefreshCw size={14} /> {connectorsLoading ? '检测中' : '重新检测'}
           </button>
@@ -465,6 +500,40 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
             <div className='connector-empty'>暂时没有可展示的连接器。</div>
           )}
         </div>
+        <section className='connector-activity-panel'>
+          <div className='connector-activity-head'>
+            <div>
+              <h2>连接器消息</h2>
+              <p>微信和飞书接入服务收到的消息会显示在这里；浏览器连接后会显示可自动化页面。</p>
+            </div>
+            <span>{connectorFeed ? '更新于 ' + formatActivityTime(connectorFeed.syncedAt) : '未刷新'}</span>
+          </div>
+          {connectorFeed?.message && <div className='connector-activity-hint'>{connectorFeed.message}</div>}
+          <div className='connector-activity-list'>
+            {connectorFeedLoading && !connectorFeed && <div className='connector-activity-empty'>正在读取连接器消息…</div>}
+            {connectorFeed && connectorFeed.items.length === 0 && <div className='connector-activity-empty'>还没有收到连接器消息。微信或飞书扫码接入后，请确认接入服务已开启消息事件转发。</div>}
+            {connectorFeed?.items.map(item => {
+              const meta = connectorMeta[item.connectorId]
+              const Icon = meta.icon
+              return (
+                <article key={item.id} className='connector-activity-item'>
+                  <div className={clsx('connector-activity-icon', `brand-${item.connectorId}`)}>
+                    {meta.iconSrc ? <img src={meta.iconSrc} alt='' /> : Icon ? <Icon width={16} height={16} /> : null}
+                  </div>
+                  <div className='connector-activity-main'>
+                    <div className='connector-activity-meta'>
+                      <strong>{item.sourceName || connectorStateLabels.connected}</strong>
+                      {item.conversationName && <span>{item.conversationName}</span>}
+                      <time>{formatActivityTime(item.createdAt)}</time>
+                    </div>
+                    <div className='connector-activity-text'>{item.text}</div>
+                  </div>
+                  <span className={clsx('connector-activity-status', item.status)}>{item.status === 'handled' ? '已处理' : item.status === 'failed' ? '失败' : '新消息'}</span>
+                </article>
+              )
+            })}
+          </div>
+        </section>
         {connectorAction && !qrConnector && (
           <div className={clsx('connector-result', connectorAction.ok ? 'ok' : 'warn')}>
             <div>

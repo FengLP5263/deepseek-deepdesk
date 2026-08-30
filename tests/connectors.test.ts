@@ -20,7 +20,7 @@ vi.mock('@larksuiteoapi/node-sdk', () => ({
 }))
 
 import { AppStore } from '../src/main/store'
-import { closeConnectorAuthSessionsForTest, getConnectorAuthStatus, startConnectorAuth } from '../src/main/connectors'
+import { closeConnectorAuthSessionsForTest, getConnectorActivityFeed, getConnectorAuthStatus, sendConnectorMessage, startConnectorAuth } from '../src/main/connectors'
 
 let dir: string
 let stores: AppStore[]
@@ -110,6 +110,186 @@ describe('connectors auth gateway', () => {
     } finally {
       await server.close()
     }
+  })
+})
+
+describe('connectors activity feed', () => {
+  it('从接入服务拉取微信消息并写入本地活动流', async () => {
+    const seen: Array<{ url: string; authorization?: string }> = []
+    const server = await listen((req, res) => {
+      seen.push({ url: req.url ?? '', authorization: req.headers.authorization })
+      if (req.url === '/connectors/wechat/events?limit=20') {
+        sendJson(res, {
+          events: [{
+            id: 'wx-msg-1',
+            text: '请帮我总结这个文件',
+            fromName: '王小明',
+            fromId: 'wx-user-1',
+            chatId: 'wx-room-1',
+            chatName: '项目群',
+            createdAt: 10
+          }]
+        })
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+    try {
+      const store = createStore()
+      await store.init()
+      store.upsertConnectorConfig({ id: 'wechat', enabled: true, endpoint: server.baseUrl, token: 'token-1' })
+
+      const feed = await getConnectorActivityFeed(store, 'wechat')
+      expect(feed.items).toHaveLength(1)
+      expect(feed.items[0]).toMatchObject({
+        id: 'wx-msg-1',
+        connectorId: 'wechat',
+        sourceName: '王小明',
+        conversationName: '项目群',
+        threadId: 'wx-room-1',
+        text: '请帮我总结这个文件',
+        status: 'new'
+      })
+      expect(store.listConnectorActivities('wechat')[0].id).toBe('wx-msg-1')
+      const session = store.getSnapshot().agentSessions.find(item => item.id === 'connector-wechat-wx-room-1')
+      expect(session?.task).toBe('项目群')
+      expect(session?.source).toMatchObject({ type: 'connector', connectorId: 'wechat', externalThreadId: 'wx-room-1' })
+      expect(session?.steps[0]).toMatchObject({ kind: 'task', text: '请帮我总结这个文件', sourceActivityId: 'wx-msg-1' })
+      expect(seen).toEqual([{ url: '/connectors/wechat/events?limit=20', authorization: 'Bearer token-1' }])
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('向接入服务发送桌面端回复并记录出站活动', async () => {
+    const seen: Array<{ url: string; body: string }> = []
+    const server = await listen((req, res) => {
+      if (req.url === '/connectors/lark/messages' && req.method === 'POST') {
+        let body = ''
+        req.on('data', chunk => { body += String(chunk) })
+        req.on('end', () => {
+          seen.push({ url: req.url ?? '', body })
+          sendJson(res, { ok: true, messageId: 'lark-out-1', message: '已发送' })
+        })
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+    try {
+      const store = createStore()
+      await store.init()
+      store.upsertConnectorConfig({ id: 'lark', enabled: true, endpoint: server.baseUrl, token: 'token-1' })
+
+      const result = await sendConnectorMessage(store, 'lark', {
+        sessionId: 'connector-lark-chat-1',
+        threadId: 'chat-1',
+        text: '这是 DeepDesk 的回复'
+      })
+
+      expect(result.ok).toBe(true)
+      expect(seen).toHaveLength(1)
+      expect(JSON.parse(seen[0].body) as Record<string, unknown>).toMatchObject({
+        sessionId: 'connector-lark-chat-1',
+        threadId: 'chat-1',
+        text: '这是 DeepDesk 的回复'
+      })
+      expect(store.listConnectorActivities('lark')[0]).toMatchObject({
+        id: 'lark-out-1',
+        direction: 'outbound',
+        threadId: 'chat-1',
+        text: '这是 DeepDesk 的回复',
+        status: 'handled',
+        taskId: 'connector-lark-chat-1'
+      })
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('直连微信 iLink 时通过 getupdates 拉取手机消息并生成连接器会话', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === 'https://ilinkai.weixin.qq.com/ilink/bot/getupdates') {
+        expect(init?.method).toBe('POST')
+        const headers = init?.headers as Record<string, string> | undefined
+        expect(headers?.['AuthorizationType']).toBe('ilink_bot_token')
+        expect(JSON.parse(String(init?.body)) as Record<string, unknown>).toMatchObject({ get_updates_buf: 'cursor-1' })
+        return new Response(JSON.stringify({
+          ret: 0,
+          get_updates_buf: 'cursor-2',
+          msgs: [{
+            message_type: 1,
+            message_id: 'wx-in-1',
+            from_user_id: 'wx-user-1',
+            context_token: 'ctx-1',
+            create_time_ms: 1234,
+            item_list: [{ type: 1, text_item: { text: '手机上发来的消息' } }]
+          }]
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response('{}', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const store = createStore()
+    await store.init()
+    store.upsertConnectorConfig({ id: 'wechat', enabled: true, endpoint: 'https://ilinkai.weixin.qq.com', token: 'bot-token-1', messageCursor: 'cursor-1' })
+
+    const feed = await getConnectorActivityFeed(store, 'wechat')
+
+    expect(feed.items[0]).toMatchObject({
+      id: 'wx-in-1',
+      connectorId: 'wechat',
+      text: '手机上发来的消息',
+      threadId: 'wx-user-1',
+      replyToken: 'ctx-1'
+    })
+    expect(store.getSnapshot().connectors.find(connector => connector.id === 'wechat')?.messageCursor).toBe('cursor-2')
+    expect(store.getSnapshot().agentSessions[0].source).toMatchObject({
+      type: 'connector',
+      connectorId: 'wechat',
+      externalThreadId: 'wx-user-1',
+      externalReplyToken: 'ctx-1'
+    })
+  })
+
+  it('直连微信 iLink 时通过 sendmessage 携带 context_token 回复', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === 'https://ilinkai.weixin.qq.com/ilink/bot/sendmessage') {
+        const body = JSON.parse(String(init?.body)) as { msg?: Record<string, unknown> }
+        expect(body.msg).toMatchObject({
+          to_user_id: 'wx-user-1',
+          message_type: 2,
+          message_state: 2,
+          context_token: 'ctx-1'
+        })
+        expect(JSON.stringify(body)).toContain('桌面端回复')
+        return new Response(JSON.stringify({ ret: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response('{}', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const store = createStore()
+    await store.init()
+    store.upsertConnectorConfig({ id: 'wechat', enabled: true, endpoint: 'https://ilinkai.weixin.qq.com', token: 'bot-token-1' })
+
+    const result = await sendConnectorMessage(store, 'wechat', {
+      sessionId: 'connector-wechat-wx-user-1',
+      threadId: 'wx-user-1',
+      replyToken: 'ctx-1',
+      text: '桌面端回复'
+    })
+
+    expect(result.ok).toBe(true)
+    expect(store.listConnectorActivities('wechat')[0]).toMatchObject({
+      direction: 'outbound',
+      threadId: 'wx-user-1',
+      replyToken: 'ctx-1',
+      text: '桌面端回复',
+      status: 'handled'
+    })
   })
 })
 

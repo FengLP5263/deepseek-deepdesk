@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, ConnectorConfig, ConnectorConfigPatch, ConnectorId } from '../shared/types'
+import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityStatus, ConnectorConfig, ConnectorConfigPatch, ConnectorId } from '../shared/types'
 import type { AgentSession } from '../shared/agent-types'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
 import { searchMemories } from '../shared/memory'
@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultModelId: 'deepseek-v4-flash',
   temperature: 1,
   theme: 'dark',
+  appFont: 'default',
   enterToSend: true,
   agentWorkdir: '',
   agentPermissionMode: 'ask'
@@ -31,6 +32,7 @@ function createConnectorConfig(id: ConnectorId): ConnectorConfig {
     endpoint: '',
     token: '',
     refreshToken: '',
+    messageCursor: '',
     accountId: '',
     userId: '',
     expiresAt: 0,
@@ -50,6 +52,32 @@ function normalizeConnectors(connectors: unknown): ConnectorConfig[] {
   })
 }
 
+function normalizeConnectorActivities(activities: unknown): ConnectorActivity[] {
+  const incoming = Array.isArray(activities) ? activities as Partial<ConnectorActivity>[] : []
+  return incoming
+    .filter(item => item.id && item.connectorId && item.text && item.createdAt)
+    .map(item => {
+      const direction: ConnectorActivityDirection = item.direction === 'outbound' || item.direction === 'system' ? item.direction : 'inbound'
+      const status: ConnectorActivityStatus = item.status === 'handled' || item.status === 'failed' ? item.status : 'new'
+      return {
+        id: String(item.id),
+        connectorId: item.connectorId === 'lark' || item.connectorId === 'wechat' || item.connectorId === 'browser' ? item.connectorId : 'wechat',
+        direction,
+        sourceName: String(item.sourceName ?? ''),
+        sourceId: String(item.sourceId ?? ''),
+        threadId: typeof item.threadId === 'string' ? item.threadId : undefined,
+        conversationName: typeof item.conversationName === 'string' ? item.conversationName : undefined,
+        text: String(item.text),
+        replyToken: typeof item.replyToken === 'string' ? item.replyToken : undefined,
+        createdAt: Number(item.createdAt),
+        status,
+        taskId: typeof item.taskId === 'string' ? item.taskId : undefined
+      }
+    })
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 200)
+}
+
 export class AppStore {
   private file: string
   private data: AppState
@@ -62,6 +90,7 @@ export class AppStore {
       settings: { ...DEFAULT_SETTINGS },
       providers: cloneProviders(),
       connectors: normalizeConnectors([]),
+      connectorActivities: [],
       conversations: [],
       agentSessions: [],
       memories: []
@@ -84,6 +113,7 @@ export class AppStore {
     if (!this.data.conversations) this.data.conversations = []
     if (!this.data.agentSessions) this.data.agentSessions = []
     if (!this.data.memories) this.data.memories = []
+    this.data.connectorActivities = normalizeConnectorActivities(this.data.connectorActivities)
     this.migrateDeepSeekV4()
     this.hydrateBuiltInProviderModels()
     await this.persist()
@@ -97,10 +127,11 @@ export class AppStore {
     }
     const providers = Array.isArray(parsed.providers) ? parsed.providers : []
     const connectors = normalizeConnectors(parsed.connectors)
+    const connectorActivities = normalizeConnectorActivities(parsed.connectorActivities)
     const conversations = Array.isArray(parsed.conversations) ? parsed.conversations : []
     const agentSessions = Array.isArray(parsed.agentSessions) ? parsed.agentSessions : []
     const memories = Array.isArray(parsed.memories) ? parsed.memories : []
-    return { settings, providers, connectors, conversations, agentSessions, memories }
+    return { settings, providers, connectors, connectorActivities, conversations, agentSessions, memories }
   }
 
   private migrateDeepSeekV4(): void {
@@ -180,6 +211,69 @@ export class AppStore {
     this.data.connectors = normalizeConnectors(this.data.connectors)
     this.persist()
     return structuredClone(next)
+  }
+
+  listConnectorActivities(id?: ConnectorId): ConnectorActivity[] {
+    const items = id ? this.data.connectorActivities.filter(item => item.connectorId === id) : this.data.connectorActivities
+    return structuredClone(items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 100))
+  }
+
+  upsertConnectorActivities(items: ConnectorActivity[]): void {
+    if (items.length === 0) return
+    const byId = new Map(this.data.connectorActivities.map(item => [item.id, item]))
+    for (const item of items) {
+      byId.set(item.id, structuredClone(item))
+      this.upsertConnectorSessionFromActivity(item)
+    }
+    this.data.connectorActivities = Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, 200)
+    this.persist()
+  }
+
+  private upsertConnectorSessionFromActivity(activity: ConnectorActivity): void {
+    if (activity.connectorId === 'browser' || activity.direction !== 'inbound') return
+    const externalThreadId = activity.threadId || activity.sourceId || activity.id
+    const id = `connector-${activity.connectorId}-${externalThreadId}`
+    const existing = this.data.agentSessions.find(session => session.id === id)
+    const alreadyAdded = existing?.steps.some(step => step.sourceActivityId === activity.id) ?? false
+    if (alreadyAdded) return
+
+    const title = activity.conversationName || activity.sourceName || (activity.connectorId === 'wechat' ? '微信会话' : '飞书会话')
+    const step = {
+      kind: 'task' as const,
+      text: activity.text,
+      sourceActivityId: activity.id,
+      sourceConnectorId: activity.connectorId
+    }
+    const historyItem = { role: 'user', content: activity.text }
+    const source = {
+      type: 'connector' as const,
+      connectorId: activity.connectorId,
+      externalThreadId,
+      externalUserName: activity.sourceName || undefined,
+      externalConversationName: activity.conversationName,
+      externalReplyToken: activity.replyToken,
+      lastSyncAt: Date.now()
+    }
+
+    if (existing) {
+      existing.steps.push(step)
+      existing.history.push(historyItem)
+      existing.updatedAt = Math.max(existing.updatedAt, activity.createdAt)
+      existing.source = source
+      return
+    }
+
+    this.data.agentSessions.push({
+      id,
+      task: title,
+      workdir: this.data.settings.agentWorkdir,
+      modelId: this.data.settings.defaultModelId,
+      createdAt: activity.createdAt,
+      updatedAt: activity.createdAt,
+      steps: [step],
+      history: [historyItem],
+      source
+    })
   }
 
   getConversation(id: string): Conversation | null {

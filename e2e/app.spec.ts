@@ -6,6 +6,7 @@ import type { DeepDeskE2EApp } from './helpers'
 import {
   closeDeepDesk,
   closeDeepDeskWithoutRemovingData,
+  createConnectorSessionUserData,
   createLongAgentSessionUserData,
   createMemoryUserData,
   createMessageActionsUserData,
@@ -221,6 +222,8 @@ test('opens sidebar feature pages and applies a skill template', async () => {
   await expect(page.locator('.connector-card', { hasText: '飞书' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '微信' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '浏览器自动化' })).toBeVisible()
+  await expect(page.locator('.connector-activity-panel', { hasText: '连接器消息' })).toBeVisible()
+  await expect(page.locator('.connector-activity-empty')).toContainText('还没有收到连接器消息')
   await expect(page.locator('.connector-card', { hasText: '飞书' }).getByAltText('飞书 图标')).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '微信' }).getByAltText('微信 图标')).toBeVisible()
   const connectorIconSizes = await page.locator('.connector-card', { hasText: /飞书|微信/ }).locator('.connector-icon img').evaluateAll(images => {
@@ -418,6 +421,12 @@ test('updates general settings without calling external services', async () => {
   await page.getByRole('button', { name: '深色' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
+  await page.getByRole('button', { name: '系统字体' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-font', 'system')
+
+  await page.getByRole('button', { name: '默认字体' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-font', 'default')
+
   await page.getByRole('button', { name: '替我审批' }).click()
   await page.getByTitle('返回').click()
 
@@ -544,6 +553,7 @@ test('persists general settings after app restart with the same user data direct
   await openSettings(page)
   await page.getByRole('button', { name: '常规' }).click()
   await page.getByRole('button', { name: '浅色' }).click()
+  await page.getByRole('button', { name: '系统字体' }).click()
   await page.getByRole('button', { name: '完全访问' }).click()
 
   const userDataDir = ctx!.userDataDir
@@ -553,7 +563,39 @@ test('persists general settings after app restart with the same user data direct
   page = ctx.page
 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.locator('html')).toHaveAttribute('data-font', 'system')
   await expect(page.getByTitle('选择权限模式')).toContainText('完全访问')
+})
+
+test('groups connector sessions separately from recent tasks', async () => {
+  await closeDeepDesk(ctx)
+  ctx = await launchDeepDesk(createConnectorSessionUserData())
+  app = ctx.app
+  page = ctx.page
+
+  await expect(page.getByRole('button', { name: /最近任务 \(1\)/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /连接器会话 \(1\)/ })).toBeVisible()
+  await expect(page.locator('.conv-item').filter({ hasText: '普通本地任务' })).toBeVisible()
+
+  const connectorItem = page.locator('.conv-item.connector').filter({ hasText: '项目微信群' })
+  await expect(connectorItem).toContainText('微信')
+
+  await page.getByRole('button', { name: /最近任务 \(1\)/ }).click()
+  const footerLayout = await page.evaluate(() => {
+    const sidebar = document.querySelector('.sidebar')
+    const footer = document.querySelector('.sidebar-footer')
+    if (!sidebar || !footer) return null
+    return {
+      sidebarBottom: Math.round(sidebar.getBoundingClientRect().bottom),
+      footerBottom: Math.round(footer.getBoundingClientRect().bottom)
+    }
+  })
+  expect(footerLayout).not.toBeNull()
+  expect(Math.abs(footerLayout!.sidebarBottom - footerLayout!.footerBottom)).toBeLessThanOrEqual(1)
+
+  await connectorItem.click()
+  await expect(page.getByText('帮我同步这条微信消息')).toBeVisible()
+  await expect(page.getByText('已同步到 DeepDesk 桌面端。')).toBeVisible()
 })
 
 test('persists memory settings and injects matching memory into an agent request', async () => {

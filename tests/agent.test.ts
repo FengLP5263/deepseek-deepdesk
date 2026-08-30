@@ -21,7 +21,7 @@ import type { AgentEvent } from '../src/shared/agent-types'
 import type { AppSettings, ProviderConfig } from '../src/shared/types'
 
 const provider: ProviderConfig = { id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }
-const baseSettings: AppSettings = { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }
+const baseSettings: AppSettings = { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }
 const outputCommand = (text: string): string => process.platform === 'win32' ? 'Write-Output ' + text : "printf '%s\\n' " + text
 
 function makeWin() {
@@ -37,6 +37,13 @@ async function runUntilDone(events: AgentEvent[]): Promise<void> {
   }
 }
 
+async function runUntilDoneById(events: AgentEvent[], runId: string): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    if (events.some(e => e.runId === runId && (e.type === 'done' || e.type === 'error'))) return
+    await new Promise(r => setTimeout(r, 10))
+  }
+}
+
 async function waitForApproval(events: AgentEvent[]): Promise<AgentEvent | undefined> {
   for (let i = 0; i < 100; i++) {
     const a = events.find(e => e.type === 'approval_request')
@@ -44,6 +51,15 @@ async function waitForApproval(events: AgentEvent[]): Promise<AgentEvent | undef
     await new Promise(r => setTimeout(r, 10))
   }
   return undefined
+}
+
+async function waitForApprovalCount(events: AgentEvent[], count: number): Promise<AgentEvent[]> {
+  for (let i = 0; i < 100; i++) {
+    const approvals = events.filter(e => e.type === 'approval_request')
+    if (approvals.length >= count) return approvals
+    await new Promise(r => setTimeout(r, 10))
+  }
+  return events.filter(e => e.type === 'approval_request')
 }
 
 let dir: string
@@ -78,6 +94,31 @@ describe('startAgent', () => {
     const tr = events.find(e => e.type === 'tool_result')
     expect(tr?.ok).toBe(false)
     expect(tr?.summary).toContain('拒绝')
+  })
+
+  it('并发运行时一个 run 结束不会清理另一个 run 的待审批', async () => {
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'c9', name: 'run_command', args: { command: 'Write-Output one' } }] })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'c10', name: 'run_command', args: { command: 'Write-Output two' } }] })
+    mocks.responses.push({ content: 'run one done', toolCalls: [] })
+    mocks.responses.push({ content: 'run two done', toolCalls: [] })
+    const { events, win } = makeWin()
+
+    startAgent(win as never, { runId: 'r9', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: 'run one', temperature: 1 }, provider, baseSettings)
+    startAgent(win as never, { runId: 'r10', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: 'run two', temperature: 1 }, provider, baseSettings)
+    const approvals = await waitForApprovalCount(events, 2)
+    expect(approvals.map(e => e.callId).sort()).toEqual(['c10', 'c9'])
+
+    approveCommand('c9', false)
+    for (let i = 0; i < 100; i++) {
+      if (events.some(e => e.runId === 'r9' && e.type === 'done')) break
+      await new Promise(r => setTimeout(r, 10))
+    }
+    await new Promise(r => setTimeout(r, 80))
+    expect(events.some(e => e.runId === 'r10' && e.type === 'tool_result')).toBe(false)
+
+    approveCommand('c10', false)
+    await runUntilDoneById(events, 'r10')
+    expect(events.some(e => e.runId === 'r10' && e.type === 'done')).toBe(true)
   })
 
   it('full 模式：命令直接执行，无需批准', async () => {

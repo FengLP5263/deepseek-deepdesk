@@ -1,7 +1,32 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentSession, AgentStep } from '@shared/agent-types'
+import type { AgentEvent, AgentSession, AgentSessionSource, AgentStep } from '@shared/agent-types'
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
+
+interface PendingApprovalState {
+  callId: string
+  command: string
+  cwd: string
+  target: string
+  reason: string
+}
+
+interface RunningAgentSession {
+  runId: string
+  sessionId: string
+  task: string
+  workdir: string
+  modelId: string
+  source?: AgentSessionSource
+  createdAt: number
+  steps: AgentStep[]
+  history: Array<Record<string, unknown>>
+}
+
+interface TextBufferState {
+  text: string
+  timer: number | null
+}
 
 interface AgentState {
   initialized: boolean
@@ -11,18 +36,23 @@ interface AgentState {
   currentTask: string
   currentModelId: string
   currentSessionId: string
+  currentSource?: AgentSessionSource
   draftTask: string
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
   sessions: AgentSession[]
   activeSessionId: string | null
-  pendingApproval: { callId: string; command: string; cwd: string; target: string; reason: string } | null
+  runningSessions: Record<string, string>
+  pendingApprovalsBySessionId: Record<string, PendingApprovalState>
+  pendingApproval: PendingApprovalState | null
   error: string | null
   init: () => void
   start: (task: string) => Promise<void>
   stop: () => void
   approve: (approved: boolean) => void
   pickDirectory: () => Promise<void>
+  refreshSessions: () => Promise<void>
+  processPendingConnectorSession: () => Promise<void>
   loadSession: (id: string) => void
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
@@ -34,19 +64,162 @@ interface AgentState {
   clear: () => void
 }
 
-let textBuffer = ''
-let textTimer: number | null = null
+const MAX_BACKGROUND_AGENT_RUNS = 3
 
-function flushTextBuffer(): void {
-  if (textTimer !== null) {
-    clearTimeout(textTimer)
-    textTimer = null
+const runContexts = new Map<string, RunningAgentSession>()
+const runIdBySessionId = new Map<string, string>()
+const textBuffers = new Map<string, TextBufferState>()
+const connectorStatusTimers = new Map<string, number>()
+
+function makeId(prefix: string): string {
+  return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
+}
+
+function latestTask(steps: AgentStep[]): string {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index]
+    if (step.kind === 'task') return step.text?.trim() ?? ''
   }
-  if (!textBuffer) return
-  const delta = textBuffer
-  textBuffer = ''
-  useAgentStore.setState(s => {
-    const steps = [...s.steps]
+  return ''
+}
+
+function latestAssistantText(steps: AgentStep[]): string {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index]
+    if (step.kind === 'text' && step.text?.trim()) return step.text.trim()
+    if (step.kind === 'task') break
+  }
+  return ''
+}
+
+function canReusePendingTask(steps: AgentStep[], task: string): boolean {
+  let lastTaskIndex = -1
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    if (steps[index].kind === 'task') {
+      lastTaskIndex = index
+      break
+    }
+  }
+  if (lastTaskIndex < 0 || steps[lastTaskIndex].text?.trim() !== task) return false
+  return !steps.slice(lastTaskIndex + 1).some(step => step.kind === 'text' || step.kind === 'error')
+}
+
+function hasReplyAfterLastTask(session: AgentSession): boolean {
+  let lastTaskIndex = -1
+  for (let index = session.steps.length - 1; index >= 0; index -= 1) {
+    if (session.steps[index].kind === 'task') {
+      lastTaskIndex = index
+      break
+    }
+  }
+  if (lastTaskIndex < 0) return true
+  return session.steps.slice(lastTaskIndex + 1).some(step => step.kind === 'text' || step.kind === 'error')
+}
+
+function removeRunFromState(
+  runningSessions: Record<string, string>,
+  pendingApprovalsBySessionId: Record<string, PendingApprovalState>,
+  sessionId: string
+): { runningSessions: Record<string, string>; pendingApprovalsBySessionId: Record<string, PendingApprovalState> } {
+  const nextRunning = { ...runningSessions }
+  const nextApprovals = { ...pendingApprovalsBySessionId }
+  delete nextRunning[sessionId]
+  delete nextApprovals[sessionId]
+  return { runningSessions: nextRunning, pendingApprovalsBySessionId: nextApprovals }
+}
+
+function sessionFromContext(ctx: RunningAgentSession): AgentSession {
+  return {
+    id: ctx.sessionId,
+    task: ctx.task,
+    workdir: ctx.workdir,
+    modelId: ctx.modelId,
+    createdAt: ctx.createdAt,
+    updatedAt: Date.now(),
+    steps: ctx.steps,
+    history: ctx.history,
+    source: ctx.source
+  }
+}
+
+function mergeLiveSessions(sessions: AgentSession[]): AgentSession[] {
+  const seen = new Set(sessions.map(session => session.id))
+  const merged = sessions.map(session => {
+    const runId = runIdBySessionId.get(session.id)
+    const ctx = runId ? runContexts.get(runId) : undefined
+    return ctx ? { ...session, steps: ctx.steps, history: ctx.history, updatedAt: Date.now() } : session
+  })
+  for (const ctx of runContexts.values()) {
+    if (!seen.has(ctx.sessionId)) merged.unshift(sessionFromContext(ctx))
+  }
+  return merged
+}
+
+function clearTextBuffer(runId: string): void {
+  const buffer = textBuffers.get(runId)
+  if (!buffer) return
+  if (buffer.timer !== null) clearTimeout(buffer.timer)
+  textBuffers.delete(runId)
+}
+
+function resetRuntimeState(): void {
+  for (const runId of textBuffers.keys()) clearTextBuffer(runId)
+  for (const timer of connectorStatusTimers.values()) clearTimeout(timer)
+  runContexts.clear()
+  runIdBySessionId.clear()
+  connectorStatusTimers.clear()
+}
+
+function activeRunState(sessionId: string | null): { running: boolean; currentRunId: string | null } {
+  if (!sessionId) return { running: false, currentRunId: null }
+  const runId = runIdBySessionId.get(sessionId) ?? null
+  return { running: runId !== null, currentRunId: runId }
+}
+
+export const useAgentStore = create<AgentState>()((set, get) => {
+  function commitContext(ctx: RunningAgentSession): void {
+    set(s => {
+      const exists = s.sessions.some(item => item.id === ctx.sessionId)
+      const liveSession: AgentSession = {
+        id: ctx.sessionId,
+        task: ctx.task,
+        workdir: ctx.workdir,
+        modelId: ctx.modelId,
+        createdAt: ctx.createdAt,
+        updatedAt: Date.now(),
+        steps: ctx.steps,
+        history: ctx.history,
+        source: ctx.source
+      }
+      const sessions = exists
+        ? s.sessions.map(item => (item.id === ctx.sessionId ? { ...item, ...liveSession } : item))
+        : [liveSession, ...s.sessions]
+      const active = s.activeSessionId === ctx.sessionId
+      return {
+        sessions,
+        steps: active ? ctx.steps : s.steps,
+        history: active ? ctx.history : s.history,
+        currentTask: active ? ctx.task : s.currentTask,
+        currentModelId: active ? ctx.modelId : s.currentModelId,
+        currentSource: active ? ctx.source : s.currentSource,
+        workdir: active ? ctx.workdir : s.workdir
+      }
+    })
+  }
+
+  function flushTextBuffer(runId: string): void {
+    const buffer = textBuffers.get(runId)
+    if (!buffer) return
+    if (buffer.timer !== null) {
+      clearTimeout(buffer.timer)
+      buffer.timer = null
+    }
+    if (!buffer.text) return
+    const delta = buffer.text
+    buffer.text = ''
+    const ctx = runContexts.get(runId)
+    if (!ctx) return
+    const steps = [...ctx.steps]
     if (steps.length > 0 && steps[steps.length - 1].kind === 'thinking') steps.pop()
     const last = steps[steps.length - 1]
     if (last && last.kind === 'text') {
@@ -54,35 +227,43 @@ function flushTextBuffer(): void {
     } else {
       steps.push({ kind: 'text', text: delta })
     }
-    return { steps }
-  })
-}
+    ctx.steps = steps
+    commitContext(ctx)
+  }
 
-function scheduleTextFlush(): void {
-  if (textTimer !== null) return
-  textTimer = window.setTimeout(() => {
-    textTimer = null
-    flushTextBuffer()
-  }, 50)
-}
+  function scheduleTextFlush(runId: string): void {
+    const existing = textBuffers.get(runId)
+    if (existing?.timer !== null && existing?.timer !== undefined) return
+    const buffer = existing ?? { text: '', timer: null }
+    buffer.timer = window.setTimeout(() => {
+      buffer.timer = null
+      flushTextBuffer(runId)
+    }, 50)
+    textBuffers.set(runId, buffer)
+  }
 
-export const useAgentStore = create<AgentState>()((set, get) => {
-  function append(step: AgentStep): void {
-    set(s => {
-      const steps = [...s.steps]
-      if (step.kind !== 'thinking' && steps.length > 0 && steps[steps.length - 1].kind === 'thinking') {
-        steps.pop()
-      }
-      if (step.kind === 'thinking' && steps.length > 0 && steps[steps.length - 1].kind === 'thinking') {
-        return { steps }
-      }
-      steps.push(step)
-      return { steps }
+  function append(ctx: RunningAgentSession, step: AgentStep): void {
+    const steps = [...ctx.steps]
+    if (step.kind !== 'thinking' && steps.length > 0 && steps[steps.length - 1].kind === 'thinking') {
+      steps.pop()
+    }
+    if (step.kind === 'thinking' && steps.length > 0 && steps[steps.length - 1].kind === 'thinking') return
+    steps.push(step)
+    ctx.steps = steps
+    commitContext(ctx)
+  }
+
+  function updateTool(ctx: RunningAgentSession, callId: string, patch: Partial<AgentStep>): void {
+    ctx.steps = ctx.steps.map(st => (st.callId === callId ? { ...st, ...patch } : st))
+    commitContext(ctx)
+  }
+
+  function saveSession(session: AgentSession): void {
+    void window.api.agent.saveSession(session).then(() => {
+      void window.api.agent.listSessions().then(sessions => set({ sessions: mergeLiveSessions(sessions) }))
     })
   }
-  function updateTool(callId: string, patch: Partial<AgentStep>): void {
-    set(s => ({ steps: s.steps.map(st => (st.callId === callId ? { ...st, ...patch } : st)) }))
-  }
+
   function saveCurrentSession(): void {
     const s = get()
     if (!s.currentTask || s.steps.length === 0) return
@@ -95,23 +276,186 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       createdAt: s.sessions.find(item => item.id === s.currentSessionId)?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
       steps: s.steps,
-      history: s.history
+      history: s.history,
+      source: s.currentSource
     }
-    void window.api.agent.saveSession(session).then(() => {
-      void window.api.agent.listSessions().then(sessions => set({ sessions }))
+    saveSession(session)
+  }
+
+  function syncConnectorReply(session: AgentSession): void {
+    const source = session.source
+    if (source?.type !== 'connector') return
+    const text = latestAssistantText(session.steps)
+    if (!text) return
+    void window.api.connectors.sendMessage(source.connectorId, {
+      sessionId: session.id,
+      threadId: source.externalThreadId,
+      text,
+      replyToken: source.externalReplyToken
+    }).then(() => {
+      void get().refreshSessions()
+    }).catch(error => {
+      console.warn('Failed to sync connector reply', error)
     })
   }
+
+  function scheduleConnectorStatusMessage(ctx: RunningAgentSession): void {
+    const source = ctx.source
+    if (source?.type !== 'connector') return
+    const timer = window.setTimeout(() => {
+      connectorStatusTimers.delete(ctx.runId)
+      if (!runContexts.has(ctx.runId)) return
+      void window.api.connectors.sendMessage(source.connectorId, {
+        sessionId: ctx.sessionId,
+        threadId: source.externalThreadId,
+        text: '收到，我正在处理。',
+        replyToken: source.externalReplyToken
+      }).catch(error => {
+        console.warn('Failed to send connector status message', error)
+      })
+    }, 3000)
+    connectorStatusTimers.set(ctx.runId, timer)
+  }
+
+  async function startSession(session: AgentSession | null, task: string, activate: boolean): Promise<boolean> {
+    const t = task.trim()
+    if (!t) return false
+
+    const ss = useSettingsStore.getState()
+    const providerId = ss.settings?.defaultProviderId ?? 'deepseek'
+    const provider = ss.providers.find(p => p.id === providerId)
+    if (!provider || !provider.apiKey) {
+      if (activate) set({ error: '请先在「设置 → 模型服务」中配置 API Key' })
+      return false
+    }
+
+    const activeState = get()
+    const defaultModelId = ss.settings?.defaultModelId ?? 'deepseek-v4-pro'
+    const sessionId = session?.id || activeState.currentSessionId || makeId('sess')
+    if (runIdBySessionId.has(sessionId)) return false
+
+    const workdir = session?.workdir ?? activeState.workdir
+    const modelId = session?.modelId || activeState.currentModelId || defaultModelId
+    const source = session?.source ?? activeState.currentSource
+    const previousSteps = session?.steps ?? activeState.steps
+    const previousHistory = session?.history ?? activeState.history
+    const title = session?.task || activeState.currentTask || t
+    const createdAt = session?.createdAt ?? activeState.sessions.find(item => item.id === sessionId)?.createdAt ?? Date.now()
+    const nextTaskStep: AgentStep = { kind: 'task', text: t }
+    const steps = source?.type === 'connector' && canReusePendingTask(previousSteps, t) ? previousSteps : [...previousSteps, nextTaskStep]
+    const runId = makeId('agent')
+    const ctx: RunningAgentSession = {
+      runId,
+      sessionId,
+      task: title,
+      workdir,
+      modelId,
+      source,
+      createdAt,
+      steps,
+      history: previousHistory
+    }
+
+    runContexts.set(runId, ctx)
+    runIdBySessionId.set(sessionId, runId)
+    set(s => ({
+      runningSessions: { ...s.runningSessions, [sessionId]: runId },
+      activeSessionId: activate ? sessionId : s.activeSessionId,
+      currentSessionId: activate ? sessionId : s.currentSessionId,
+      currentTask: activate ? title : s.currentTask,
+      currentModelId: activate ? modelId : s.currentModelId,
+      currentSource: activate ? source : s.currentSource,
+      workdir: activate ? workdir : s.workdir,
+      steps: activate ? steps : s.steps,
+      history: activate ? previousHistory : s.history,
+      pendingApproval: activate ? null : s.pendingApproval,
+      error: activate ? null : s.error,
+      ...activeRunState(activate ? sessionId : s.activeSessionId)
+    }))
+    commitContext(ctx)
+
+    const memories = await window.api.memories.search({ query: [t, workdir].filter(Boolean).join(' '), scopes: ['user', 'project', 'agent'], limit: 8 })
+    const memoryContext = formatMemoryContext(memories)
+    const res = await window.api.agent.start({ runId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, history: previousHistory, memoryContext })
+    if (!res.ok) {
+      append(ctx, { kind: 'error', message: res.message ?? '启动失败' })
+      finishRun(ctx, ctx.history, false)
+      return false
+    }
+    if (!activate) scheduleConnectorStatusMessage(ctx)
+    return true
+  }
+
+  function finishRun(ctx: RunningAgentSession, history: Array<Record<string, unknown>> | undefined, shouldSyncReply: boolean): void {
+    flushTextBuffer(ctx.runId)
+    ctx.history = history ?? ctx.history
+    const session = sessionFromContext(ctx)
+    runContexts.delete(ctx.runId)
+    runIdBySessionId.delete(ctx.sessionId)
+    clearTextBuffer(ctx.runId)
+    const statusTimer = connectorStatusTimers.get(ctx.runId)
+    if (statusTimer !== undefined) {
+      clearTimeout(statusTimer)
+      connectorStatusTimers.delete(ctx.runId)
+    }
+    set(s => {
+      const cleared = removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, ctx.sessionId)
+      const active = s.activeSessionId === ctx.sessionId
+      return {
+        ...cleared,
+        ...activeRunState(s.activeSessionId),
+        pendingApproval: active ? null : s.pendingApproval,
+        history: active ? ctx.history : s.history,
+        steps: active ? ctx.steps : s.steps
+      }
+    })
+    saveSession(session)
+    if (shouldSyncReply) syncConnectorReply(session)
+  }
+
   function handleEvent(ev: AgentEvent): void {
+    const ctx = runContexts.get(ev.runId)
+    if (!ctx) return
     switch (ev.type) {
-      case 'thinking': flushTextBuffer(); append({ kind: 'thinking' }); break
-      case 'text': textBuffer += ev.text ?? ''; scheduleTextFlush(); break
-      case 'tool_call': flushTextBuffer(); append({ kind: 'tool', callId: ev.call?.id, name: ev.call?.name, args: JSON.stringify(ev.call?.args ?? {}, null, 2), status: 'running' }); break
-      case 'approval_request': flushTextBuffer(); set({ pendingApproval: { callId: ev.callId ?? '', command: ev.command ?? '', cwd: ev.cwd ?? '', target: ev.target ?? '', reason: ev.reason ?? '' } }); break
-      case 'tool_result': updateTool(ev.callId ?? '', { status: ev.ok ? 'ok' : 'error', summary: ev.summary ?? '', result: ev.output ?? '' }); break
-      case 'done': flushTextBuffer(); set({ running: false, currentRunId: null, pendingApproval: null, history: ev.history ?? get().history }); saveCurrentSession(); break
-      case 'error': flushTextBuffer(); append({ kind: 'error', message: ev.message ?? '未知错误' }); set({ running: false, currentRunId: null, pendingApproval: null, history: ev.history ?? get().history }); saveCurrentSession(); break
+      case 'thinking':
+        flushTextBuffer(ev.runId)
+        append(ctx, { kind: 'thinking' })
+        break
+      case 'text': {
+        const buffer = textBuffers.get(ev.runId) ?? { text: '', timer: null }
+        buffer.text += ev.text ?? ''
+        textBuffers.set(ev.runId, buffer)
+        scheduleTextFlush(ev.runId)
+        break
+      }
+      case 'tool_call':
+        flushTextBuffer(ev.runId)
+        append(ctx, { kind: 'tool', callId: ev.call?.id, name: ev.call?.name, args: JSON.stringify(ev.call?.args ?? {}, null, 2), status: 'running' })
+        break
+      case 'approval_request': {
+        flushTextBuffer(ev.runId)
+        const pendingApproval = { callId: ev.callId ?? '', command: ev.command ?? '', cwd: ev.cwd ?? '', target: ev.target ?? '', reason: ev.reason ?? '' }
+        set(s => ({
+          pendingApprovalsBySessionId: { ...s.pendingApprovalsBySessionId, [ctx.sessionId]: pendingApproval },
+          pendingApproval: s.activeSessionId === ctx.sessionId ? pendingApproval : s.pendingApproval
+        }))
+        break
+      }
+      case 'tool_result':
+        flushTextBuffer(ev.runId)
+        updateTool(ctx, ev.callId ?? '', { status: ev.ok ? 'ok' : 'error', summary: ev.summary ?? '', result: ev.output ?? '' })
+        break
+      case 'done':
+        finishRun(ctx, ev.history, true)
+        break
+      case 'error':
+        flushTextBuffer(ev.runId)
+        append(ctx, { kind: 'error', message: ev.message ?? '未知错误' })
+        finishRun(ctx, ev.history, false)
+        break
     }
   }
+
   return {
     initialized: false,
     workdir: '',
@@ -120,45 +464,26 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     currentTask: '',
     currentModelId: '',
     currentSessionId: '',
+    currentSource: undefined,
     draftTask: '',
     steps: [],
     history: [],
     sessions: [],
     activeSessionId: null,
+    runningSessions: {},
+    pendingApprovalsBySessionId: {},
     pendingApproval: null,
     error: null,
     init: () => {
       if (get().initialized) return
+      resetRuntimeState()
       window.api.agent.onChunk(handleEvent)
       const settings = useSettingsStore.getState().settings
-      set({ initialized: true, workdir: settings?.agentWorkdir ?? '' })
+      set({ initialized: true, workdir: settings?.agentWorkdir ?? '', runningSessions: {}, pendingApprovalsBySessionId: {}, running: false, currentRunId: null, pendingApproval: null })
       void window.api.agent.listSessions().then(sessions => set({ sessions }))
     },
     start: async (task) => {
-      const t = task.trim()
-      if (!t || get().running) return
-      const ss = useSettingsStore.getState()
-      const providerId = ss.settings?.defaultProviderId ?? 'deepseek'
-      const modelId = get().currentModelId || (ss.settings?.defaultModelId ?? 'deepseek-v4-pro')
-      const provider = ss.providers.find(p => p.id === providerId)
-      if (!provider || !provider.apiKey) {
-        set({ error: '请先在「设置 → 模型服务」中配置 API Key' })
-        return
-      }
-      let sessionId = get().currentSessionId
-      if (!sessionId) sessionId = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
-      const runId = 'agent-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
-      const prevSteps = get().steps
-      const prevHistory = get().history
-      const title = get().currentTask || t
-      set({ running: true, currentRunId: runId, currentTask: title, currentModelId: modelId, currentSessionId: sessionId, activeSessionId: sessionId, error: null, steps: [...prevSteps, { kind: 'task', text: t }], pendingApproval: null })
-      const memories = await window.api.memories.search({ query: [t, get().workdir].filter(Boolean).join(' '), scopes: ['user', 'project', 'agent'], limit: 8 })
-      const memoryContext = formatMemoryContext(memories)
-      const res = await window.api.agent.start({ runId, providerId, modelId, workdir: get().workdir, task: t, temperature: ss.settings?.temperature ?? 1, history: prevHistory, memoryContext })
-      if (!res.ok) {
-        append({ kind: 'error', message: res.message ?? '启动失败' })
-        set({ running: false, currentRunId: null })
-      }
+      await startSession(null, task, true)
     },
     stop: () => {
       const id = get().currentRunId
@@ -168,7 +493,11 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       const p = get().pendingApproval
       if (!p) return
       void window.api.agent.approve(p.callId, approved)
-      set({ pendingApproval: null })
+      set(s => {
+        const nextApprovals = { ...s.pendingApprovalsBySessionId }
+        if (s.activeSessionId) delete nextApprovals[s.activeSessionId]
+        return { pendingApprovalsBySessionId: nextApprovals, pendingApproval: null }
+      })
     },
     pickDirectory: async () => {
       const dir = await window.api.agent.pickDirectory()
@@ -177,24 +506,71 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         await useSettingsStore.getState().updateSettings({ agentWorkdir: dir })
       }
     },
+    refreshSessions: async () => {
+      const sessions = await window.api.agent.listSessions()
+      set({ sessions: mergeLiveSessions(sessions) })
+    },
+    processPendingConnectorSession: async () => {
+      const sessions = await window.api.agent.listSessions()
+      set({ sessions: mergeLiveSessions(sessions) })
+      const runningCount = Object.keys(get().runningSessions).length
+      const capacity = Math.max(0, MAX_BACKGROUND_AGENT_RUNS - runningCount)
+      if (capacity <= 0) return
+      const pending = sessions
+        .filter(session => session.source?.type === 'connector' && !runIdBySessionId.has(session.id) && !hasReplyAfterLastTask(session))
+        .sort((a, b) => a.updatedAt - b.updatedAt)
+        .slice(0, capacity)
+      for (const session of pending) {
+        const task = latestTask(session.steps)
+        if (task) await startSession(session, task, false)
+      }
+    },
     loadSession: (id) => {
       const s = get().sessions.find(x => x.id === id)
       if (!s) return
-      set({ steps: s.steps, currentTask: s.task, currentModelId: s.modelId, workdir: s.workdir, history: s.history ?? [], currentSessionId: id, activeSessionId: id, running: false, currentRunId: null, pendingApproval: null, error: null })
+      const runId = runIdBySessionId.get(id)
+      const ctx = runId ? runContexts.get(runId) : undefined
+      const active = activeRunState(id)
+      set(state => ({
+        steps: ctx?.steps ?? s.steps,
+        currentTask: ctx?.task ?? s.task,
+        currentModelId: ctx?.modelId ?? s.modelId,
+        currentSource: ctx?.source ?? s.source,
+        workdir: ctx?.workdir ?? s.workdir,
+        history: ctx?.history ?? s.history ?? [],
+        currentSessionId: id,
+        activeSessionId: id,
+        running: active.running,
+        currentRunId: active.currentRunId,
+        pendingApproval: state.pendingApprovalsBySessionId[id] ?? null,
+        error: null
+      }))
     },
     deleteSession: async (id) => {
+      const runId = runIdBySessionId.get(id)
+      if (runId) {
+        void window.api.agent.cancel(runId)
+        runContexts.delete(runId)
+        runIdBySessionId.delete(id)
+        clearTextBuffer(runId)
+      }
       await window.api.agent.deleteSession(id)
       set(s => {
         const nextSessions = s.sessions.filter(x => x.id !== id)
-        if (s.activeSessionId !== id && s.currentSessionId !== id) return { sessions: nextSessions }
+        const cleared = removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, id)
+        if (s.activeSessionId !== id && s.currentSessionId !== id) return { sessions: nextSessions, ...cleared }
         return {
           sessions: nextSessions,
+          ...cleared,
           activeSessionId: null,
           currentSessionId: '',
+          currentSource: undefined,
           currentTask: '',
           currentModelId: '',
           steps: [],
           history: [],
+          running: false,
+          currentRunId: null,
           pendingApproval: null,
           error: null
         }
@@ -204,6 +580,9 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       const t = title.trim()
       if (!t) return
       await window.api.agent.renameSession(id, t)
+      const runId = runIdBySessionId.get(id)
+      const ctx = runId ? runContexts.get(runId) : undefined
+      if (ctx) ctx.task = t
       set(s => ({
         sessions: s.sessions.map(item => (item.id === id ? { ...item, task: t } : item)),
         currentTask: s.currentSessionId === id ? t : s.currentTask
@@ -211,6 +590,9 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     },
     updateStep: (index, patch) => {
       set(s => ({ steps: s.steps.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step) }))
+      const runId = get().currentRunId
+      const ctx = runId ? runContexts.get(runId) : undefined
+      if (ctx) ctx.steps = get().steps
       saveCurrentSession()
     },
     setStepFeedback: (index, feedback) => {
@@ -242,7 +624,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     },
     clear: () => {
       if (get().running) get().stop()
-      set({ steps: [], history: [], error: null, pendingApproval: null, currentTask: '', currentModelId: '', currentSessionId: '', activeSessionId: null })
+      set({ steps: [], history: [], error: null, pendingApproval: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, activeSessionId: null, running: false, currentRunId: null })
     }
   }
 })

@@ -19,6 +19,8 @@ export const IPC = {
   ConnectorAuthStatus: 'connectors:auth:status',
   ConnectorConnect: 'connectors:connect',
   ConnectorDisconnect: 'connectors:disconnect',
+  ConnectorActivities: 'connectors:activities',
+  ConnectorMessageSend: 'connectors:message:send',
   ChatStart: 'chat:start',
   ChatCancel: 'chat:cancel',
   ChatChunk: 'chat:chunk',

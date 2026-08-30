@@ -1,7 +1,7 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useSettingsStore } from '../../stores/useSettingsStore'
-import type { AgentPermissionMode } from '@shared/types'
+import type { AgentPermissionMode, AppFont } from '@shared/types'
 import { Button, Select, Switch } from '../ui'
 import { useChatStore } from '../../stores/useChatStore'
 import clsx from 'clsx'
@@ -22,6 +22,13 @@ export default function GeneralTab() {
     { key: 'dark', label: '深色', icon: Moon },
     { key: 'light', label: '浅色', icon: Sun },
     { key: 'system', label: '跟随系统', icon: Monitor }
+  ]
+  const fonts: Array<{ key: AppFont; label: string; desc: string }> = [
+    { key: 'default', label: '默认字体', desc: '当前 UI 风格' },
+    { key: 'system', label: '系统字体', desc: '跟随系统界面' },
+    { key: 'microsoft', label: '微软雅黑', desc: 'Windows 常用' },
+    { key: 'serif', label: '宋体', desc: '文档阅读' },
+    { key: 'mono', label: '等宽字体', desc: '代码优先' }
   ]
 
   return (
@@ -74,6 +81,20 @@ export default function GeneralTab() {
             {themes.map(t => (
               <button key={t.key} className={clsx('tab', settings.theme === t.key && 'active')} onClick={() => void updateSettings({ theme: t.key })}>
                 <t.icon size={13} style={{ marginRight: 4, verticalAlign: -2 }} />{t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className='settings-row'>
+          <div>
+            <div className='settings-row-label'>界面字体</div>
+            <div className='settings-row-desc'>默认使用当前 DeepDesk 风格字体，也可以切换成系统、微软雅黑、宋体或等宽字体</div>
+          </div>
+          <div className='font-options' aria-label='界面字体'>
+            {fonts.map(font => (
+              <button key={font.key} type='button' className={clsx('font-option', settings.appFont === font.key && 'active')} onClick={() => void updateSettings({ appFont: font.key })}>
+                <span>{font.label}</span>
+                <small>{font.desc}</small>
               </button>
             ))}
           </div>

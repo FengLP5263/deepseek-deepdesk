@@ -1,5 +1,17 @@
 export type AgentToolName = 'run_command' | 'read_file' | 'write_file' | 'edit_file' | 'list_files' | 'search_content' | 'search_feishu_user' | 'send_feishu_message'
 
+export type AgentSessionSource =
+  | { type: 'desktop' }
+  | {
+    type: 'connector'
+    connectorId: 'lark' | 'wechat'
+    externalThreadId: string
+    externalUserName?: string
+    externalConversationName?: string
+    externalReplyToken?: string
+    lastSyncAt?: number
+  }
+
 export interface AgentToolCall {
   id: string
   name: AgentToolName
@@ -56,6 +68,8 @@ export interface AgentStep {
   result?: string
   message?: string
   feedback?: 'positive' | 'negative'
+  sourceActivityId?: string
+  sourceConnectorId?: 'lark' | 'wechat'
 }
 
 export interface AgentSession {
@@ -67,4 +81,5 @@ export interface AgentSession {
   updatedAt: number
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
+  source?: AgentSessionSource
 }

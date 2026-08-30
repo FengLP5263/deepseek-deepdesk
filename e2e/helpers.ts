@@ -140,6 +140,7 @@ export function createMemoryUserData(baseUrl: string): string {
       defaultModelId: 'mock-chat',
       temperature: 1,
       theme: 'light',
+      appFont: 'default',
       enterToSend: true,
       agentWorkdir: '',
       agentPermissionMode: 'ask'
@@ -171,6 +172,7 @@ export function createLongAgentSessionUserData(): string {
       defaultModelId: 'deepseek-v4-flash',
       temperature: 1,
       theme: 'light',
+      appFont: 'default',
       enterToSend: true,
       agentWorkdir: '',
       agentPermissionMode: 'ask'
@@ -204,6 +206,7 @@ export function createMessageActionsUserData(): string {
       defaultModelId: 'deepseek-v4-flash',
       temperature: 1,
       theme: 'light',
+      appFont: 'default',
       enterToSend: true,
       agentWorkdir: '',
       agentPermissionMode: 'ask'
@@ -224,6 +227,61 @@ export function createMessageActionsUserData(): string {
       ],
       history: []
     }]
+  }
+  writeFileSync(join(userDataDir, 'deepdesk.json'), JSON.stringify(state), 'utf8')
+  return userDataDir
+}
+
+export function createConnectorSessionUserData(): string {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
+  const state = {
+    settings: {
+      version: 1,
+      defaultProviderId: 'deepseek',
+      defaultModelId: 'deepseek-v4-flash',
+      temperature: 1,
+      theme: 'light',
+      appFont: 'default',
+      enterToSend: true,
+      agentWorkdir: '',
+      agentPermissionMode: 'ask'
+    },
+    providers: [],
+    conversations: [],
+    connectors: [],
+    connectorActivities: [],
+    agentSessions: [
+      {
+        id: 'normal-task',
+        task: '普通本地任务',
+        workdir: '',
+        modelId: 'deepseek-v4-flash',
+        createdAt: 1,
+        updatedAt: 2,
+        steps: [{ kind: 'task', text: '普通本地任务' }],
+        history: []
+      },
+      {
+        id: 'connector-wechat-room-1',
+        task: '项目微信群',
+        workdir: '',
+        modelId: 'deepseek-v4-flash',
+        createdAt: 1,
+        updatedAt: 3,
+        steps: [
+          { kind: 'task', text: '帮我同步这条微信消息', sourceActivityId: 'wx-1', sourceConnectorId: 'wechat' },
+          { kind: 'text', text: '已同步到 DeepDesk 桌面端。' }
+        ],
+        history: [],
+        source: {
+          type: 'connector',
+          connectorId: 'wechat',
+          externalThreadId: 'room-1',
+          externalConversationName: '项目微信群'
+        }
+      }
+    ],
+    memories: []
   }
   writeFileSync(join(userDataDir, 'deepdesk.json'), JSON.stringify(state), 'utf8')
   return userDataDir

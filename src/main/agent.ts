@@ -11,6 +11,7 @@ import { getPlatformAdapter } from './platform'
 
 const MAX_TURNS = 25
 const pendingApprovals = new Map<string, { resolve: (v: boolean) => void }>()
+const approvalIdsByRunId = new Map<string, Set<string>>()
 const controllers = new Map<string, AbortController>()
 
 export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode, memoryContext?: string): string {
@@ -68,18 +69,36 @@ function evaluatePermission(call: AgentToolCall, workdir: string, mode: AgentPer
   return { needsApproval, reason: '访问工作目录外的文件', allowOutside: outside }
 }
 
-function waitApproval(callId: string): Promise<boolean> {
+function waitApproval(runId: string, callId: string): Promise<boolean> {
+  let ids = approvalIdsByRunId.get(runId)
+  if (!ids) {
+    ids = new Set<string>()
+    approvalIdsByRunId.set(runId, ids)
+  }
+  ids.add(callId)
   return new Promise(resolve => pendingApprovals.set(callId, { resolve }))
 }
 
 export function approveCommand(callId: string, approved: boolean): void {
   const p = pendingApprovals.get(callId)
-  if (p) { pendingApprovals.delete(callId); p.resolve(approved) }
+  if (p) {
+    pendingApprovals.delete(callId)
+    for (const [, ids] of approvalIdsByRunId) ids.delete(callId)
+    p.resolve(approved)
+  }
 }
 
-function clearPendingApprovals(value: boolean): void {
-  for (const [, p] of pendingApprovals) p.resolve(value)
-  pendingApprovals.clear()
+function clearPendingApprovalsForRun(runId: string, value: boolean): void {
+  const ids = approvalIdsByRunId.get(runId)
+  if (!ids) return
+  for (const callId of ids) {
+    const p = pendingApprovals.get(callId)
+    if (p) {
+      pendingApprovals.delete(callId)
+      p.resolve(value)
+    }
+  }
+  approvalIdsByRunId.delete(runId)
 }
 
 export function cancelAgent(runId: string): void {
@@ -146,7 +165,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
                 approval.target = String(call.args.path ?? '')
               }
               send(approval)
-              const approved = await waitApproval(call.id)
+              const approved = await waitApproval(req.runId, call.id)
               if (!approved) {
                 result = { ok: false, content: '用户拒绝了该操作', summary: '已拒绝: ' + (approval.command ?? approval.target ?? '') }
               } else {
@@ -174,7 +193,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
       }
     } finally {
       controllers.delete(req.runId)
-      clearPendingApprovals(false)
+      clearPendingApprovalsForRun(req.runId, false)
     }
   })()
 }

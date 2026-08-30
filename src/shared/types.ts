@@ -4,6 +4,8 @@ export type Theme = 'dark' | 'light' | 'system'
 
 export type AgentPermissionMode = 'ask' | 'auto' | 'full'
 
+export type AppFont = 'default' | 'system' | 'microsoft' | 'serif' | 'mono'
+
 export type ProviderType = 'openai'
 
 export interface ModelConfig {
@@ -82,6 +84,7 @@ export interface ConnectorConfig {
   endpoint: string
   token: string
   refreshToken: string
+  messageCursor: string
   accountId: string
   userId: string
   expiresAt: number
@@ -128,12 +131,45 @@ export interface ConnectorActionResult {
   command?: string
 }
 
+export type ConnectorActivityDirection = 'inbound' | 'outbound' | 'system'
+
+export type ConnectorActivityStatus = 'new' | 'handled' | 'failed'
+
+export interface ConnectorActivity {
+  id: string
+  connectorId: ConnectorId
+  direction: ConnectorActivityDirection
+  sourceName: string
+  sourceId: string
+  threadId?: string
+  conversationName?: string
+  text: string
+  replyToken?: string
+  createdAt: number
+  status: ConnectorActivityStatus
+  taskId?: string
+}
+
+export interface ConnectorActivityFeed {
+  items: ConnectorActivity[]
+  syncedAt: number
+  message?: string
+}
+
+export interface ConnectorOutboundMessage {
+  sessionId: string
+  threadId: string
+  text: string
+  replyToken?: string
+}
+
 export interface AppSettings {
   version: number
   defaultProviderId: string
   defaultModelId: string
   temperature: number
   theme: Theme
+  appFont: AppFont
   enterToSend: boolean
   agentWorkdir: string
   agentPermissionMode: AgentPermissionMode
@@ -143,6 +179,7 @@ export interface AppState {
   settings: AppSettings
   providers: ProviderConfig[]
   connectors: ConnectorConfig[]
+  connectorActivities: ConnectorActivity[]
   conversations: Conversation[]
   agentSessions: AgentSession[]
   memories: MemoryItem[]

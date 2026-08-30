@@ -27,13 +27,42 @@ export default function App() {
   }, [ready])
 
   useEffect(() => {
-    const applyTheme = (): void => {
-      const t = useSettingsStore.getState().settings?.theme ?? 'dark'
+    if (!ready) return
+    let disposed = false
+    const wait = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms))
+    const syncConnectorSessions = async (): Promise<boolean> => {
+      try {
+        const startedAt = Date.now()
+        const feed = await window.api.connectors.activities('wechat')
+        await useAgentStore.getState().refreshSessions()
+        await useAgentStore.getState().processPendingConnectorSession()
+        return Date.now() - startedAt > 1000 || (feed.message ?? '').startsWith('收到 ')
+      } catch (error) {
+        console.warn('Failed to sync connector sessions', error)
+        return false
+      }
+    }
+    void (async () => {
+      while (!disposed) {
+        const activeLongPoll = await syncConnectorSessions()
+        await wait(activeLongPoll ? 250 : 10_000)
+      }
+    })()
+    return () => {
+      disposed = true
+    }
+  }, [ready])
+
+  useEffect(() => {
+    const applyAppearance = (): void => {
+      const settings = useSettingsStore.getState().settings
+      const t = settings?.theme ?? 'dark'
       const real = t === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t
       document.documentElement.setAttribute('data-theme', real)
+      document.documentElement.setAttribute('data-font', settings?.appFont ?? 'default')
     }
-    applyTheme()
-    return useSettingsStore.subscribe(applyTheme)
+    applyAppearance()
+    return useSettingsStore.subscribe(applyAppearance)
   }, [])
 
   useEffect(() => {
