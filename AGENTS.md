@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-DeepDesk 是一款对标 Codex / Claude 的桌面 AI 客户端，包含两块核心能力：
+DeepDesk 是一个基于 Electron、React 和 TypeScript 的开源桌面 AI 客户端，包含两块核心能力：
 
 - **聊天**：流式对话、Markdown 渲染、多模型服务管理、会话持久化
 - **编码 Agent**：工具调用循环（执行命令 / 读写编辑文件 / 列目录 / 搜索 / 飞书消息），三档权限模式
@@ -82,6 +82,14 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 - 功能、修复和普通工程改动以 `develop` 为 PR 目标；只有发布 PR 才允许从 `develop` 合入 `main`。
 - 发布前在 `develop` 完成版本更新和完整门禁；合入 `main` 后创建与 `package.json` 一致的 `vX.Y.Z` 注解标签，并将 `main` 与标签同步到 Gitee、GitHub。
 - 详细流程见 `docs/git-flow.md`。分支、合并或发布规则变化时，同步更新 `CONTRIBUTING.md`、`docs/ci.md`、`docs/release.md` 和项目工程化 Skill。
+
+## 文档同步
+
+- 架构、目录职责或跨进程数据流变化时，同步更新 `docs/architecture.md` 和 `docs/folder-map.md`。
+- 用户可见功能、配置方式、平台支持范围或安全边界变化时，同步更新 `README.md` 及对应专项文档。
+- 开发命令、测试策略、CI、Git Flow 或发布流程变化时，同步更新 `AGENTS.md`、`CONTRIBUTING.md`、`docs/` 和项目工程化 Skill 中受影响的内容。
+- 文档必须描述当前已经实现的行为；不得保留与代码冲突的旧说明，也不得把尚未实现的计划写成现有能力。
+- 功能、修复和重构应在同一 PR 中完成相关文档更新；确认无需更新时，在 PR 描述中说明原因。
 
 ## 测试
 

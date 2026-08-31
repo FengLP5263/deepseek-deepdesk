@@ -51,6 +51,7 @@ Common commands:
 - macOS packages must be built on macOS.
 - DeepDesk currently supports Windows x64 and macOS arm64; Linux is out of scope.
 - Playwright Electron E2E is installed; run isolated mode for CI and session mode for local visual acceptance.
+- Documentation changes ship with the behavior they describe: update `README.md` for user-visible capabilities or support changes, architecture documents for boundaries and data-flow changes, and engineering documents plus this skill for workflow changes. If no documentation changes are needed, state why in the PR description.
 
 ## Architecture guardrails
 
@@ -60,6 +61,7 @@ Common commands:
 - Agent tool changes follow: tool schema -> executor branch -> permission evaluation -> tests.
 - Shared code belongs in `src/shared`; do not import Electron across layers.
 - Tests must not call real model services, send real Feishu messages, or execute dangerous commands.
+- Documentation must describe implemented behavior and must not present planned work as an existing capability.
 
 ## References
 

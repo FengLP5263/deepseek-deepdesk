@@ -32,7 +32,7 @@ DeepDesk 使用 `main` 与 `develop` 两个常驻分支。日常开发集成在 
    ```
 
 3. 创建 `develop` → `main` 的发布 PR 并完成 Code Review。
-4. 发布 PR使用 Merge Commit 或 Fast-forward，不能 Squash Merge，以保持两个常驻分支的共同祖先关系。
+4. 发布 PR 使用 Merge Commit 或 Fast-forward，不能 Squash Merge，以保持两个常驻分支的共同祖先关系。
 5. 在合并后的 `main` 提交上创建与 `package.json` 一致的注解标签：
 
    ```sh
