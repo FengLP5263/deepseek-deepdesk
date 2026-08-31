@@ -7,7 +7,7 @@ CI 负责把本地工程化脚本放到远端执行，确保 PR 和发版不依�
 | 文件 | 触发 | 作用 |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | push / PR / 手动 | Windows/macOS 的 typecheck、lint、test、build、smoke 与 E2E |
-| `.github/workflows/release.yml` | 手动 | 按平台打包并上传 artifact |
+| `.github/workflows/release.yml` | `v*` 标签 / 手动 | 仅从 `main` 或版本标签按平台打包并上传 artifact |
 
 ## 设计原则
 
@@ -35,7 +35,7 @@ pnpm flow -- release --target mac
 
 ## PR 合并门禁
 
-所有外部贡献和协作分支都应通过 PR 合并，不直接向 `main` 推送功能代码。合并前必须满足：
+所有外部贡献和协作分支都应通过 PR 合入 `develop`；`main` 只接受 `develop` 发起的发布 PR。合并前必须满足：
 
 - CI 全绿：`quality`、`smoke`、`e2e` 均通过。
 - 至少 1 名维护者完成 Code Review 并批准。
@@ -44,10 +44,12 @@ pnpm flow -- release --target mac
 - 版本号遵循 `docs/engineering.md` 的 `0.x.y` 规则，且 `package.json` 与 `src/shared/app-meta.ts` 保持一致。
 - 不包含 API Key、token、私有文档、构建产物、测试产物或用户本地数据。
 
-建议在 GitHub / Gitee 开启 `main` 保护分支：
+建议在 GitHub / Gitee 同时保护 `main` 与 `develop`：
 
 - Require pull request before merging。
 - Require status checks to pass before merging。
 - Require at least 1 approval。
 - Dismiss stale approvals when new commits are pushed。
 - Restrict force pushes；只有维护者在历史清理等明确场景下临时执行。
+
+`main` 还应限制为仅接受来自 `develop` 的发布 PR。详细分支策略见 `docs/git-flow.md`。

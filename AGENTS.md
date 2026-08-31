@@ -75,6 +75,14 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 - 提交信息用 Conventional Commits：`feat` / `fix` / `chore` / `docs` / `refactor` / `test`。
 - 功能和修复必须同步更新语义化版本号；正式稳定版发布前主版本号固定为 `0`：`feat` 升 minor，`fix` 升 patch，破坏性变更升 minor 并在 PR / Release notes 标明。第一个稳定对外版本才允许升到 `1.0.0`；`package.json` 与 `src/shared/app-meta.ts` 必须保持一致。
 
+## Git Flow
+
+- `main` 与 `develop` 是两个常驻分支。`main` 只保存已发布或可立即发布的稳定版本，`develop` 用于日常开发集成。
+- 开始普通开发前必须确认当前位于 `develop`，或从 `develop` 创建的短期分支；除明确执行发布流程外，禁止在 `main` 上修改或提交代码。
+- 功能、修复和普通工程改动以 `develop` 为 PR 目标；只有发布 PR 才允许从 `develop` 合入 `main`。
+- 发布前在 `develop` 完成版本更新和完整门禁；合入 `main` 后创建与 `package.json` 一致的 `vX.Y.Z` 注解标签，并将 `main` 与标签同步到 Gitee、GitHub。
+- 详细流程见 `docs/git-flow.md`。分支、合并或发布规则变化时，同步更新 `CONTRIBUTING.md`、`docs/ci.md`、`docs/release.md` 和项目工程化 Skill。
+
 ## 测试
 
 - 核心逻辑都有 vitest 测试；改行为必须同步改测试。
@@ -82,6 +90,7 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 - `pnpm test` 全绿才能提交。
 - 提交前建议跑 `pnpm quality`；发版前跑 `pnpm release:win`。
 - PR / CI 规则见 `docs/ci.md`；E2E 模式见 `docs/e2e.md`；发布流程见 `docs/release.md`。
+- 分支与标签规则见 `docs/git-flow.md`。
 - 外部贡献、Code Review 和合并准入规则见 `CONTRIBUTING.md`。
 
 ## AI 协作沉淀

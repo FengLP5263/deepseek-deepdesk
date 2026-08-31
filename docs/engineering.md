@@ -33,12 +33,20 @@ pnpm flow -- <command> [options]
 
 ## 流程分层
 
-1. 开发前：`pnpm flow -- doctor`
+1. 开发前：确认位于 `develop` 或从 `develop` 创建的短期分支，再运行 `pnpm flow -- doctor`
 2. 改代码中：按影响范围运行 `pnpm flow -- check`
 3. 改安全、权限、持久化、IPC、Agent 工具：必须补或更新测试
 4. 功能和修复改动：按语义化版本号同步更新 `package.json` 与 `src/shared/app-meta.ts`
 5. 提交前：`pnpm flow -- check --include-build`
 6. 发版前：在目标系统运行 `pnpm flow -- release --target win` 或 `pnpm flow -- release --target mac`
+
+## 分支工作流
+
+- 日常开发、功能集成和修复都进入 `develop`，不在 `main` 上直接开发。
+- 外部贡献与多人协作使用从 `develop` 创建的短期分支，PR 目标为 `develop`。
+- 只有达到发布标准时才创建 `develop` → `main` 的发布 PR。
+- 发布合并后在 `main` 创建 `vX.Y.Z` 注解标签，并同步到 Gitee、GitHub。
+- 详细步骤和合并策略见 `docs/git-flow.md`。
 
 ## 版本规则
 
@@ -54,6 +62,7 @@ DeepDesk 还没有发布第一个稳定对外版本，因此当前使用 `0.x.y`
 
 - CI：见 `docs/ci.md` 和 `.github/workflows/ci.yml`。
 - Release：见 `docs/release.md` 和 `.github/workflows/release.yml`。
+- Git Flow：见 `docs/git-flow.md`。
 - E2E：见 `docs/e2e.md`。
 - 外部贡献、Code Review 和合并规则：见 `CONTRIBUTING.md` 与 `.github/pull_request_template.md`。
 

@@ -1,13 +1,23 @@
 # DeepDesk workflow reference
 
+## Git Flow
+
+1. Keep `main` and `develop` as permanent branches.
+2. Start ordinary work on `develop` or a short-lived branch created from `develop`; ordinary PRs target `develop`.
+3. Use Squash Merge for ordinary PRs when practical.
+4. Release only through a reviewed `develop` → `main` PR after the complete release gate.
+5. Do not squash a release PR. Tag the resulting `main` commit with the annotated tag `vX.Y.Z`, matching `package.json`, and push `main` plus the tag to both remotes.
+6. See `docs/git-flow.md` for branch protection and exact commands.
+
 ## Development
 
 1. Read `AGENTS.md`.
 2. Inspect current status with `git -c core.quotepath=false status --short`.
 3. Read the nearest folder-level `AGENTS.md` for every directory being edited.
-4. Prefer narrow changes.
-5. Run `pnpm flow -- check` for ordinary code changes.
-6. Run `pnpm flow -- check --include-build` before handoff.
+4. Confirm the current branch follows the Git Flow rules above.
+5. Prefer narrow changes.
+6. Run `pnpm flow -- check` for ordinary code changes.
+7. Run `pnpm flow -- check --include-build` before handoff.
 
 ## IPC changes
 
@@ -31,9 +41,12 @@ Update files in this order:
 
 ## Release candidate
 
-1. `pnpm flow -- check --include-build --include-smoke --include-e2e`
-2. Run `pnpm flow -- package --target win` on Windows or `pnpm flow -- package --target mac` on Apple Silicon macOS.
-3. Verify the Windows `.exe` or macOS `.dmg` under `release/`.
+1. Prepare the version and release notes on `develop`.
+2. `pnpm flow -- check --include-build --include-smoke --include-e2e`
+3. Run `pnpm flow -- package --target win` on Windows or `pnpm flow -- package --target mac` on Apple Silicon macOS.
+4. Verify the Windows `.exe` or macOS `.dmg` under `release/`.
+5. Merge a reviewed `develop` → `main` release PR without squashing.
+6. Create and push the annotated `vX.Y.Z` tag from the resulting `main` commit.
 
 ## CI and E2E
 

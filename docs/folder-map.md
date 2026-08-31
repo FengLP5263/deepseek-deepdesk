@@ -37,6 +37,7 @@
 | 改 LLM 协议 | `src/shared/llm`、`tests` | `src/shared/AGENTS.md`、`tests/AGENTS.md` |
 | 改构建/发布流程 | `scripts`、`docs`、`.agents` | 三个局部 `AGENTS.md` |
 | 改 CI/Release | `.github`、`scripts`、`docs` | 对应局部 `AGENTS.md` |
+| 改分支与发布协作流程 | `AGENTS.md`、`CONTRIBUTING.md`、`docs/git-flow.md`、`.github` | 根规则、Docs 与 GitHub 局部说明 |
 
 ## 验证策略
 

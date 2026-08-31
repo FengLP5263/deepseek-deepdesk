@@ -21,6 +21,8 @@ DeepDesk 当前具备基础质量门禁，并已接入真实 Electron UI 端到�
 pnpm flow -- check --include-build --include-smoke
 ```
 
+GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。普通开发 PR 以 `develop` 为目标；`develop` → `main` 的发布 PR还必须满足 `docs/release.md` 的完整发布检查。
+
 ## 已覆盖重点
 
 - OpenAI 兼容 SSE 流式解析

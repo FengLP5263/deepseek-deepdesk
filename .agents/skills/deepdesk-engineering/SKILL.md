@@ -13,8 +13,9 @@ Use this skill to keep DeepDesk changes reproducible and AI-friendly. Prefer scr
 
 1. Read `AGENTS.md`.
 2. Inspect the current worktree with `git -c core.quotepath=false status --short`.
-3. Read the nearest folder-level `AGENTS.md` for every directory being edited.
-4. Use `pnpm flow -- ...` for checks, builds, smoke tests, packages, and releases.
+3. Confirm ordinary development is on `develop` or a short-lived branch created from `develop`; do not modify `main` outside an explicit release workflow.
+4. Read the nearest folder-level `AGENTS.md` for every directory being edited.
+5. Use `pnpm flow -- ...` for checks, builds, smoke tests, packages, and releases.
 
 ## Command entrypoint
 
@@ -46,6 +47,7 @@ Common commands:
 - IPC, permission, persistence, or Agent tool change: run `pnpm flow -- check --include-build`.
 - Feature or bugfix change: update SemVer in both `package.json` and `src/shared/app-meta.ts`. Before the first stable public release, keep the major version at `0` (`feat` -> minor, `fix` -> patch, breaking -> minor with explicit release notes). Only the first stable public release may become `1.0.0`.
 - Release candidate: run `pnpm flow -- release --target <platform>`.
+- Git Flow: ordinary changes target `develop`; only a reviewed release PR may merge `develop` into `main`, followed by an annotated `vX.Y.Z` tag matching `package.json`.
 - macOS packages must be built on macOS.
 - DeepDesk currently supports Windows x64 and macOS arm64; Linux is out of scope.
 - Playwright Electron E2E is installed; run isolated mode for CI and session mode for local visual acceptance.
