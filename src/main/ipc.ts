@@ -4,8 +4,9 @@ import { startChat, cancelChat } from './llm'
 import { startAgent, cancelAgent, approveCommand } from './agent'
 import { connectConnector, disconnectConnector, getConnectorActivityFeed, getConnectorAuthStatus, listConnectors, sendConnectorMessage, startConnectorAuth } from './connectors'
 import type { AppStore } from './store'
-import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage } from '../shared/types'
+import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, BrowserExtensionSetupAction, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage } from '../shared/types'
 import type { AgentRunRequest, AgentSession } from '../shared/agent-types'
+import { setupBrowserSessionSharing } from './browser-runtime'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.SettingsGet, () => store.getSnapshot().settings)
@@ -81,6 +82,8 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   ipcMain.handle(IPC.ConnectorConnect, (_event, id: ConnectorId) => connectConnector(store, id))
 
   ipcMain.handle(IPC.ConnectorDisconnect, (_event, id: ConnectorId) => disconnectConnector(store, id))
+
+  ipcMain.handle(IPC.ConnectorBrowserSetup, (_event, action: BrowserExtensionSetupAction) => setupBrowserSessionSharing(action))
 
   ipcMain.handle(IPC.ConnectorActivities, (_event, id?: ConnectorId) => getConnectorActivityFeed(store, id))
 

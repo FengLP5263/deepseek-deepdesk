@@ -1,4 +1,4 @@
-import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus } from './types'
+import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus } from './types'
 import type { AgentEvent, AgentRunRequest, AgentSession } from './agent-types'
 import type { PlatformInfo } from './platform'
 
@@ -33,6 +33,7 @@ export interface DeepDeskApi {
     authStatus: (id: ConnectorId, sessionId: string) => Promise<ConnectorAuthSession>
     connect: (id: ConnectorId) => Promise<ConnectorActionResult>
     disconnect: (id: ConnectorId) => Promise<ConnectorActionResult>
+    setupBrowser: (action: BrowserExtensionSetupAction) => Promise<ConnectorActionResult>
     activities: (id?: ConnectorId) => Promise<ConnectorActivityFeed>
     sendMessage: (id: ConnectorId, message: ConnectorOutboundMessage) => Promise<ConnectorActionResult>
   }

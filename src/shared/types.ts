@@ -107,6 +107,7 @@ export interface ConnectorStatus {
   disconnectAction?: string
   command?: string
   config?: ConnectorConfig
+  browserMode?: 'extension' | 'idle'
 }
 
 export type ConnectorAuthState = 'pending' | 'scanned' | 'connected' | 'expired' | 'failed'
@@ -130,6 +131,8 @@ export interface ConnectorActionResult {
   detail?: string
   command?: string
 }
+
+export type BrowserExtensionSetupAction = 'copy-extension-directory' | 'open-extension-manager'
 
 export type ConnectorActivityDirection = 'inbound' | 'outbound' | 'system'
 

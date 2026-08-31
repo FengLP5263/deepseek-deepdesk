@@ -1,7 +1,7 @@
 {
   "name": "deepseek-desktop",
   "productName": "DeepDesk",
-  "version": "0.16.0",
+  "version": "0.17.6",
   "description": "Open-source desktop AI client with OpenAI-compatible model services, local conversations, coding agents, connectors, and browser debugging",
   "main": "./out/main/index.js",
   "author": "DeepDesk Team",

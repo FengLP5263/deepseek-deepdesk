@@ -4,6 +4,7 @@ import { AppStore } from './store'
 import { registerIpc } from './ipc'
 import { cancelAllChats } from './llm'
 import { getPlatformAdapter } from './platform'
+import { configureBrowserAutomation, shutdownBrowserAutomation } from './browser-runtime'
 
 let mainWindow: BrowserWindow | null = null
 const platform = getPlatformAdapter()
@@ -25,6 +26,7 @@ if (!gotLock) {
   void app.whenReady().then(async () => {
     platform.installApplicationMenu()
     await store.init()
+    await configureBrowserAutomation(store)
     registerIpc(store, () => mainWindow)
     mainWindow = createMainWindow()
     mainWindow.on('closed', () => {
@@ -63,6 +65,6 @@ if (!gotLock) {
     if (isQuitting) return
     event.preventDefault()
     isQuitting = true
-    void store.flush().finally(() => app.quit())
+    void Promise.all([store.flush(), shutdownBrowserAutomation()]).finally(() => app.quit())
   })
 }

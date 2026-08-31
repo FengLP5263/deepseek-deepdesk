@@ -7,7 +7,7 @@
 1. 日常改动先合入 `develop`，并在 `develop` 完成版本号与发布说明更新。
 2. 完整发布门禁通过后，创建 `develop` → `main` 的发布 PR。
 3. 发布 PR 使用 Merge Commit 或 Fast-forward，不使用 Squash Merge。
-4. 在合并后的 `main` 提交上创建与 `package.json` 一致的注解标签，例如 `v0.16.0`。
+4. 在合并后的 `main` 提交上创建与 `package.json` 一致的 `vX.Y.Z` 注解标签。
 5. 将 `main` 与标签同步到 Gitee、GitHub。详细命令见 `docs/git-flow.md`。
 
 ## 本地发布候选

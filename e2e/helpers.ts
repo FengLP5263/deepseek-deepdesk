@@ -344,7 +344,11 @@ export async function launchDeepDesk(userDataDir = mkdtempSync(join(tmpdir(), 'd
       ...process.env,
       DEEPDESK_USER_DATA_DIR: userDataDir,
       DEEPDESK_E2E_PICK_DIRECTORY: userDataDir,
-      DEEPDESK_DISABLE_DIRECT_CONNECTORS: '1'
+      DEEPDESK_DISABLE_DIRECT_CONNECTORS: '1',
+      DEEPDESK_DISABLE_BROWSER_EXTENSION_BRIDGE: '1',
+      DEEPDESK_BROWSER_CONNECT_TIMEOUT_MS: '0',
+      DEEPDESK_BROWSER_EXECUTABLE: process.execPath,
+      DEEPDESK_BROWSER_NAME: 'E2E Browser'
     }
   })
   const page = await app.firstWindow()

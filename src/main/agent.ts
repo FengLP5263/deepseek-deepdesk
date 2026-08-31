@@ -8,6 +8,7 @@ import type { AgentEvent, AgentRunRequest, AgentToolCall, AgentToolName, AgentTo
 import type { AgentPermissionMode, AppSettings, ProviderConfig } from '../shared/types'
 import type { PlatformInfo } from '../shared/platform'
 import { getModelContextWindow, manageContextMessages } from '../shared/context-manager'
+import { continuationMessages, IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, streamNeedsContinuation, streamTerminationError, type TokenUsage } from '../shared/llm/stream'
 import { isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
 
@@ -43,7 +44,7 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
     , '4. 边做边用简短的话汇报进度；最终给出总结。'
     , '5. 无法完成或信息不足就直说，不要编造。'
     , '6. 如需通知他人，先用 search_feishu_user 按姓名查 open_id，再用 send_feishu_message 发飞书消息。'
-    , '7. 需要操作网页时，先用 browser_pages 和 browser_snapshot 了解页面，再点击、输入或调试；浏览器未连接时请提示用户在“连接器”中启动。'
+    , '7. 需要操作网页时，先用 browser_pages 和 browser_snapshot 了解页面，交互优先使用 browser_click 和 browser_type，让操作以浏览器原生鼠标键盘事件呈现在用户当前浏览器标签页中；不要用 browser_evaluate 代替常规点击或输入。遇到验证码时暂停并请用户在当前浏览器中手动完成。浏览器扩展未连接或连接器未启用时，请提示用户前往“连接器 → 浏览器调试”完成连接；不要尝试启动其他浏览器。'
     , ''
     , '工作目录：' + workdir
     , '操作系统：' + platform.id
@@ -122,6 +123,68 @@ export function cancelAgent(runId: string): void {
   clearPendingApprovalsForRun(runId, false)
 }
 
+interface AgentTurnResult {
+  content: string
+  toolCalls: ToolCallItem[]
+  usage?: TokenUsage
+}
+
+async function completeAgentTurn(
+  req: AgentRunRequest,
+  provider: ProviderConfig,
+  messages: Array<Record<string, unknown>>,
+  signal: AbortSignal,
+  onText: (text: string) => void
+): Promise<AgentTurnResult> {
+  let content = ''
+  let requestMessages = messages
+  let continuations = 0
+  let usage: TokenUsage | undefined
+
+  while (true) {
+    let finalReceived = false
+    let finishReason: string | undefined
+    let toolCalls: ToolCallItem[] = []
+    try {
+      for await (const chunk of streamChatCompletionWithTools({
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        model: req.modelId,
+        messages: requestMessages,
+        tools: AGENT_TOOLS,
+        temperature: req.temperature,
+        signal
+      })) {
+        throwIfAborted(signal)
+        if (chunk.type === 'content') {
+          content += chunk.text
+          onText(chunk.text)
+        } else {
+          finalReceived = true
+          toolCalls = chunk.toolCalls
+          finishReason = chunk.finishReason
+          usage = mergeTokenUsage(usage, chunk.usage)
+        }
+      }
+      if (!finalReceived) throw new IncompleteStreamError()
+    } catch (error) {
+      throwIfAborted(signal)
+      if (!(error instanceof IncompleteStreamError) || continuations >= MAX_STREAM_CONTINUATIONS) throw error
+      continuations += 1
+      requestMessages = continuationMessages(messages, content)
+      continue
+    }
+
+    const terminationError = streamTerminationError(finishReason)
+    if (terminationError) throw new Error(terminationError)
+    if (!streamNeedsContinuation(finishReason, content, toolCalls.length > 0)) return { content, toolCalls, usage }
+    if (toolCalls.length > 0) throw new Error('模型工具调用未完整生成，已停止执行不完整的工具参数')
+    if (continuations >= MAX_STREAM_CONTINUATIONS) throw new Error('模型回复多次未完整结束，请缩小任务范围后重试')
+    continuations += 1
+    requestMessages = continuationMessages(messages, content)
+  }
+}
+
 export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: ProviderConfig, settings: AppSettings): void {
   const controller = new AbortController()
   controllers.set(req.runId, controller)
@@ -136,33 +199,18 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
     }
     messages.push({ role: 'user', content: req.task })
     const contextWindow = getModelContextWindow(provider, req.modelId)
+    let inFlightContent = ''
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
         throwIfAborted(controller.signal)
         send({ runId: req.runId, type: 'thinking' })
         const managed = manageContextMessages(messages, { contextWindow })
         messages = managed.messages
-        let content = ''
-        let toolCalls: ToolCallItem[] = []
-        let usage: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined
-        for await (const chunk of streamChatCompletionWithTools({
-          baseUrl: provider.baseUrl,
-          apiKey: provider.apiKey,
-          model: req.modelId,
-          messages,
-          tools: AGENT_TOOLS,
-          temperature: req.temperature,
-          signal: controller.signal
-        })) {
-          throwIfAborted(controller.signal)
-          if (chunk.type === 'content') {
-            content += chunk.text
-            send({ runId: req.runId, type: 'text', text: chunk.text })
-          } else {
-            toolCalls = chunk.toolCalls
-            usage = chunk.usage
-          }
-        }
+        inFlightContent = ''
+        const { content, toolCalls, usage } = await completeAgentTurn(req, provider, messages, controller.signal, text => {
+          inFlightContent += text
+          send({ runId: req.runId, type: 'text', text })
+        })
         throwIfAborted(controller.signal)
         if (toolCalls.length > 0) {
           messages.push({
@@ -170,35 +218,42 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
             content: content || null,
             tool_calls: toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } }))
           })
+          inFlightContent = ''
           for (const rawCall of toolCalls) {
             throwIfAborted(controller.signal)
             const call: AgentToolCall = { id: rawCall.id, name: rawCall.name as AgentToolName, args: rawCall.args }
             send({ runId: req.runId, type: 'tool_call', call })
             const perm = evaluatePermission(call, req.workdir, mode)
             let result: AgentToolResult
-            if (perm.needsApproval) {
-              const approval: AgentEvent = { runId: req.runId, type: 'approval_request', callId: call.id, reason: perm.reason }
-              if (call.name === 'run_command') {
-                approval.command = String(call.args.command ?? '')
-                approval.cwd = call.args.cwd ? String(call.args.cwd) : req.workdir
-              } else if (call.name === 'send_feishu_message') {
-                approval.command = String(call.args.text ?? '')
-                approval.target = String(call.args.user_id ?? '')
-              } else if (isBrowserToolName(call.name)) {
-                approval.command = call.name + ' ' + JSON.stringify(call.args)
-              } else {
-                approval.target = String(call.args.path ?? '')
-              }
-              send(approval)
-              const approved = await waitApproval(req.runId, call.id)
-              throwIfAborted(controller.signal)
-              if (!approved) {
-                result = { ok: false, content: '用户拒绝了该操作', summary: '已拒绝: ' + (approval.command ?? approval.target ?? '') }
+            try {
+              if (perm.needsApproval) {
+                const approval: AgentEvent = { runId: req.runId, type: 'approval_request', callId: call.id, reason: perm.reason }
+                if (call.name === 'run_command') {
+                  approval.command = String(call.args.command ?? '')
+                  approval.cwd = call.args.cwd ? String(call.args.cwd) : req.workdir
+                } else if (call.name === 'send_feishu_message') {
+                  approval.command = String(call.args.text ?? '')
+                  approval.target = String(call.args.user_id ?? '')
+                } else if (isBrowserToolName(call.name)) {
+                  approval.command = call.name + ' ' + JSON.stringify(call.args)
+                } else {
+                  approval.target = String(call.args.path ?? '')
+                }
+                send(approval)
+                const approved = await waitApproval(req.runId, call.id)
+                throwIfAborted(controller.signal)
+                if (!approved) {
+                  result = { ok: false, content: '用户拒绝了该操作', summary: '已拒绝: ' + (approval.command ?? approval.target ?? '') }
+                } else {
+                  result = await executeTool(call, req.workdir, perm.allowOutside, controller.signal)
+                }
               } else {
                 result = await executeTool(call, req.workdir, perm.allowOutside, controller.signal)
               }
-            } else {
-              result = await executeTool(call, req.workdir, perm.allowOutside, controller.signal)
+            } catch (error) {
+              throwIfAborted(controller.signal)
+              const message = error instanceof Error ? error.message : String(error)
+              result = { ok: false, content: message, summary: message }
             }
             throwIfAborted(controller.signal)
             send({ runId: req.runId, type: 'tool_result', callId: call.id, summary: result.summary, ok: result.ok, output: result.content })
@@ -206,13 +261,16 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
           }
         } else {
           messages.push({ role: 'assistant', content })
+          inFlightContent = ''
           send({ runId: req.runId, type: 'done', usage, history: messages })
           return
         }
+        inFlightContent = ''
       }
       send({ runId: req.runId, type: 'error', message: '已达到最大执行步数（' + MAX_TURNS + '），已停止', history: messages })
     } catch (err) {
       const e = err as Error
+      if (inFlightContent.trim()) messages.push({ role: 'assistant', content: inFlightContent })
       if (controller.signal.aborted || (e && e.name === 'AbortError')) {
         send({ runId: req.runId, type: 'done', message: '已停止', history: messages })
       } else {

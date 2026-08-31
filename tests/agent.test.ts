@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const mocks = vi.hoisted(() => ({
-  responses: [] as Array<{ content: string | null; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>; waitForAbort?: boolean }>,
+  responses: [] as Array<{ content: string | null; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>; finishReason?: string; interrupt?: boolean; waitForAbort?: boolean }>,
   requests: [] as Array<{ messages: Array<Record<string, unknown>> }>
 }))
 
@@ -25,7 +25,11 @@ vi.mock('../src/shared/llm/toolcall', () => ({
       })
     }
     if (resp.content) yield { type: 'content', text: resp.content }
-    yield { type: 'final', toolCalls: resp.toolCalls }
+    if (resp.interrupt) {
+      const { IncompleteStreamError } = await import('../src/shared/llm/stream')
+      throw new IncompleteStreamError()
+    }
+    yield { type: 'final', toolCalls: resp.toolCalls, finishReason: resp.finishReason ?? (resp.toolCalls.length > 0 ? 'tool_calls' : 'stop') }
   }
 }))
 
@@ -108,6 +112,65 @@ describe('startAgent', () => {
     expect(events.some(e => e.type === 'tool_result' && e.ok === true)).toBe(true)
     expect(events.some(e => e.type === 'text' && e.text === '已完成')).toBe(true)
     expect(events.some(e => e.type === 'done')).toBe(true)
+  })
+
+  it('模型因输出长度结束时自动续写并合并为一条回复', async () => {
+    mocks.responses.push({ content: '第一段，', toolCalls: [], finishReason: 'length' })
+    mocks.responses.push({ content: '第二段。', toolCalls: [], finishReason: 'stop' })
+    const { events, win } = makeWin()
+
+    startAgent(win as never, { runId: 'r-length', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '请输出完整内容', temperature: 1 }, provider, baseSettings)
+    await runUntilDone(events)
+
+    expect(events.filter(event => event.type === 'text').map(event => event.text).join('')).toBe('第一段，第二段。')
+    expect(events.some(event => event.type === 'error')).toBe(false)
+    const done = events.find(event => event.type === 'done')
+    expect(done?.history?.at(-1)).toEqual({ role: 'assistant', content: '第一段，第二段。' })
+    expect(mocks.requests[1].messages).toContainEqual({ role: 'assistant', content: '第一段，' })
+    expect(String(mocks.requests[1].messages.at(-1)?.content)).toContain('从中断位置继续')
+  })
+
+  it('流在输出中途断开时保留已收到内容并自动恢复', async () => {
+    mocks.responses.push({ content: '已收到的前半段，', toolCalls: [], interrupt: true })
+    mocks.responses.push({ content: '恢复后的后半段。', toolCalls: [], finishReason: 'stop' })
+    const { events, win } = makeWin()
+
+    startAgent(win as never, { runId: 'r-interrupted', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '请输出完整内容', temperature: 1 }, provider, baseSettings)
+    await runUntilDone(events)
+
+    expect(events.filter(event => event.type === 'text').map(event => event.text).join('')).toBe('已收到的前半段，恢复后的后半段。')
+    expect(events.some(event => event.type === 'error')).toBe(false)
+    expect(mocks.requests).toHaveLength(2)
+    expect(mocks.requests[1].messages).toContainEqual({ role: 'assistant', content: '已收到的前半段，' })
+  })
+
+  it('模型错误标记为正常结束但留下明显残句时自动续写', async () => {
+    mocks.responses.push({ content: '停用账号多为 7/', toolCalls: [], finishReason: 'stop' })
+    mocks.responses.push({ content: '21 日批量导入。', toolCalls: [], finishReason: 'stop' })
+    const { events, win } = makeWin()
+
+    startAgent(win as never, { runId: 'r-dangling-stop', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '请输出完整统计', temperature: 1 }, provider, baseSettings)
+    await runUntilDone(events)
+
+    expect(events.filter(event => event.type === 'text').map(event => event.text).join('')).toBe('停用账号多为 7/21 日批量导入。')
+    expect(events.some(event => event.type === 'error')).toBe(false)
+    expect(mocks.requests).toHaveLength(2)
+    expect(mocks.requests[1].messages).toContainEqual({ role: 'assistant', content: '停用账号多为 7/' })
+  })
+
+  it('单个工具抛错时返回失败结果并允许模型继续恢复', async () => {
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'missing-page', name: 'read_file', args: { path: '不存在的文件.txt' } }] })
+    mocks.responses.push({ content: '文件不存在，我已停止读取。', toolCalls: [] })
+    const { events, win } = makeWin()
+
+    startAgent(win as never, { runId: 'r-tool-error', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '读取文件', temperature: 1 }, provider, baseSettings)
+    await runUntilDone(events)
+
+    expect(events).toContainEqual(expect.objectContaining({ runId: 'r-tool-error', type: 'tool_result', callId: 'missing-page', ok: false }))
+    expect(events.some(event => event.type === 'text' && event.text === '文件不存在，我已停止读取。')).toBe(true)
+    expect(events.some(event => event.type === 'error')).toBe(false)
+    expect(events.some(event => event.type === 'done')).toBe(true)
+    expect(mocks.requests[1].messages).toContainEqual(expect.objectContaining({ role: 'tool', tool_call_id: 'missing-page' }))
   })
 
   it('发送给模型前会压缩超过窗口预算的旧上下文并保留当前问题', async () => {

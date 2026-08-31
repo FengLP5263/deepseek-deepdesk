@@ -18,6 +18,11 @@ describe('browser CDP connector', () => {
   beforeEach(async () => {
     receivedMethods = []
     const server = createServer((request, response) => {
+      if (request.url === '/json/version') {
+        response.setHeader('content-type', 'application/json')
+        response.end(JSON.stringify({ Browser: 'DeepDesk Test Browser' }))
+        return
+      }
       if (request.url === '/json/list') {
         const address = server.address() as AddressInfo
         response.setHeader('content-type', 'application/json')
@@ -51,8 +56,10 @@ describe('browser CDP connector', () => {
               }
             : expression === 'document.readyState'
               ? 'complete'
-              : expression.includes('document.querySelector')
-                ? { ok: true, tag: 'button', text: '提交' }
+              : expression.includes('getBoundingClientRect')
+                ? { ok: true, x: 120, y: 80, tag: expression.includes('元素不支持输入') ? 'input' : 'button', text: '提交' }
+                : expression.includes('element.value ??')
+                  ? 'DeepDesk 输入测试'
                 : { title: 'DeepDesk 测试页', url: 'https://example.test/', readyState: 'complete' }
           result = { result: { type: 'object', value } }
         }
@@ -86,12 +93,17 @@ describe('browser CDP connector', () => {
   it('reads page structure and performs interaction through CDP', async () => {
     const snapshot = await executeBrowserTool({ id: 'call-1', name: 'browser_snapshot', args: { target_id: 'page-1' } })
     const click = await executeBrowserTool({ id: 'call-2', name: 'browser_click', args: { target_id: 'page-1', selector: '#submit' } })
+    const type = await executeBrowserTool({ id: 'call-3', name: 'browser_type', args: { target_id: 'page-1', selector: '#search', text: 'DeepDesk 输入测试', submit: true } })
 
     expect(snapshot.ok).toBe(true)
     expect(snapshot.content).toContain('连接器可以读取当前页面')
     expect(snapshot.content).toContain('#submit')
     expect(click).toMatchObject({ ok: true, summary: '点击 #submit' })
+    expect(type).toMatchObject({ ok: true, summary: '输入到 #search' })
+    expect(type.content).toContain('DeepDesk 输入测试')
     expect(receivedMethods).toContain('Runtime.enable')
-    expect(receivedMethods.filter(method => method === 'Runtime.evaluate')).toHaveLength(2)
+    expect(receivedMethods.filter(method => method === 'Input.dispatchMouseEvent')).toHaveLength(6)
+    expect(receivedMethods).toContain('Input.insertText')
+    expect(receivedMethods.filter(method => method === 'Input.dispatchKeyEvent')).toHaveLength(5)
   })
 })

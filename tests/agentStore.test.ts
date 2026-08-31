@@ -90,6 +90,33 @@ describe('useAgentStore 会话持久化', () => {
     expect(useAgentStore.getState().steps.some(step => step.kind === 'thinking')).toBe(false)
   })
 
+  it('运行错误会结束状态并把未完成工具标记为出错', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('读取浏览器页面')
+    const runId = startReqs[0].runId
+    chunkCb!({ runId, type: 'tool_call', call: { id: 'browser-1', name: 'browser_snapshot', args: { target_id: 'stale-page' } } })
+
+    chunkCb!({ runId, type: 'error', message: '未找到浏览器页面：stale-page' })
+
+    const failed = useAgentStore.getState()
+    expect(failed.running).toBe(false)
+    expect(failed.currentRunId).toBeNull()
+    expect(failed.steps.find(step => step.callId === 'browser-1')).toMatchObject({
+      status: 'error',
+      summary: '未找到浏览器页面：stale-page',
+      result: '未找到浏览器页面：stale-page'
+    })
+    expect(failed.steps.some(step => step.kind === 'thinking')).toBe(false)
+  })
+
+  it('运行标识异常丢失时停止操作仍会清理界面运行态', () => {
+    useAgentStore.setState({ running: true, currentRunId: null, pendingApproval: { callId: 'approval-1', command: '', cwd: '', target: '', reason: '等待批准' } })
+
+    useAgentStore.getState().stop()
+
+    expect(useAgentStore.getState()).toMatchObject({ running: false, currentRunId: null, pendingApproval: null })
+  })
+
   it('任务完成后自动保存会话', async () => {
     useAgentStore.getState().init()
     await useAgentStore.getState().start('写一个文件')

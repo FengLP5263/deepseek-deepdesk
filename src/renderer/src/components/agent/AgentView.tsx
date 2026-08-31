@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ArrowDown, Check, ChevronDown, Copy, FolderOpen, Gauge, Pencil, RefreshCw, SendHorizontal, Terminal, ThumbsDown, ThumbsUp, Trash2, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, FolderOpen, Gauge, Pencil, RefreshCw, Terminal, ThumbsDown, ThumbsUp, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import type { AgentStep } from '@shared/agent-types'
@@ -254,41 +254,43 @@ function QueuedMessages() {
 
   return (
     <section className='agent-queue' aria-label='待发送消息队列'>
-      <div className='agent-queue-header'>待发送 <span>{queuedMessages.length}</span></div>
       <div className='agent-queue-list'>
         {queuedMessages.map((message, index) => (
           <div className='agent-queue-item' key={message.id}>
-            <span className='agent-queue-order'>{index + 1}</span>
             {editingId === message.id ? (
-              <textarea
-                className='agent-queue-editor'
-                value={draft}
-                autoFocus
-                rows={2}
-                onChange={event => setDraft(event.target.value)}
-                onKeyDown={event => {
-                  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                    event.preventDefault()
-                    saveEdit()
-                  }
-                  if (event.key === 'Escape') cancelEdit()
-                }}
-              />
-            ) : <span className='agent-queue-text'>{message.text}</span>}
-            <div className='agent-queue-actions'>
-              {editingId === message.id ? (
-                <>
+              <div className='agent-queue-editing'>
+                <textarea
+                  className='agent-queue-editor'
+                  value={draft}
+                  autoFocus
+                  rows={2}
+                  onChange={event => setDraft(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                      event.preventDefault()
+                      saveEdit()
+                    }
+                    if (event.key === 'Escape') cancelEdit()
+                  }}
+                />
+                <div className='agent-queue-edit-actions'>
                   <button type='button' className='queue-text-button' onClick={cancelEdit}>取消</button>
                   <button type='button' className='queue-text-button primary' disabled={!draft.trim()} onClick={saveEdit}>保存</button>
-                </>
-              ) : (
-                <>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className='agent-queue-copy'>
+                  <span className='agent-queue-label'>待发送{queuedMessages.length > 1 ? ` · ${index + 1}/${queuedMessages.length}` : ''}</span>
+                  <span className='agent-queue-text'>{message.text}</span>
+                </div>
+                <div className='agent-queue-actions'>
+                  <button type='button' className='queue-icon-button queue-send-now' aria-label='立即发送' title='立即发送并中断当前回复' onClick={() => void sendQueuedNow(message.id)}><ArrowUp size={14} /></button>
                   <button type='button' className='queue-icon-button' aria-label='编辑待发送消息' title='编辑' onClick={() => beginEdit(message.id, message.text)}><Pencil size={14} /></button>
-                  <button type='button' className='queue-send-now' onClick={() => void sendQueuedNow(message.id)}><SendHorizontal size={14} />立即发送</button>
-                  <button type='button' className='queue-icon-button danger' aria-label='移除待发送消息' title='移除' onClick={() => removeQueuedMessage(message.id)}><Trash2 size={14} /></button>
-                </>
-              )}
-            </div>
+                  <button type='button' className='queue-icon-button danger' aria-label='移除待发送消息' title='移除' onClick={() => removeQueuedMessage(message.id)}><X size={15} /></button>
+                </div>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -548,7 +550,6 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
               <ArrowDown size={17} />
             </button>
           )}
-          <QueuedMessages />
           {pendingApproval && (
             <div className='agent-approval' role='dialog' aria-label='执行审批'>
               <div className='agent-approval-title'>{pendingApproval.reason || '等待批准'}</div>
@@ -560,7 +561,10 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
               </div>
             </div>
           )}
-          <AgentComposer onOpenSettings={onOpenSettings} />
+          <div className='agent-composer-stack'>
+            <QueuedMessages />
+            <AgentComposer onOpenSettings={onOpenSettings} />
+          </div>
         </div>
       )}
     </div>

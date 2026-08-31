@@ -222,7 +222,20 @@ test('opens sidebar feature pages and applies a skill template', async () => {
   await expect(page.locator('.hub-header', { hasText: '连接器' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '飞书' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '微信' })).toBeVisible()
-  await expect(page.locator('.connector-card', { hasText: '浏览器调试' })).toBeVisible()
+  const browserConnector = page.locator('.connector-card', { hasText: '浏览器调试' })
+  await expect(browserConnector).toBeVisible()
+  await expect(browserConnector).toContainText('E2E Browser · 未连接')
+  await expect(browserConnector.getByRole('button', { name: '连接', exact: true })).toBeVisible()
+  await expect(browserConnector.getByRole('button', { name: '安装扩展' })).toHaveCount(0)
+  await expect(browserConnector.getByRole('button', { name: '启用' })).toHaveCount(0)
+  await expect(browserConnector.getByRole('button', { name: '停用' })).toHaveCount(0)
+  await browserConnector.getByRole('button', { name: '连接', exact: true }).click()
+  const browserSetupModal = page.locator('.modal', { hasText: '安装浏览器扩展' })
+  await expect(browserSetupModal).toBeVisible()
+  await expect(browserSetupModal).toContainText('完成后 DeepDesk 会自动连接')
+  await expect(browserSetupModal.getByRole('button', { name: '复制扩展目录' })).toBeVisible()
+  await browserSetupModal.getByRole('button', { name: '关闭' }).click()
+  await expect(browserConnector).toContainText('E2E Browser · 等待扩展')
   await expect(page.locator('.connector-activity-panel', { hasText: '连接器消息' })).toBeVisible()
   await expect(page.locator('.connector-activity-empty')).toContainText('还没有收到连接器消息')
   await expect(page.locator('.connector-card', { hasText: '飞书' }).getByAltText('飞书 图标')).toBeVisible()
@@ -720,7 +733,7 @@ test('places the scroll-to-bottom control above the composer in a long agent ses
   await expect.poll(async () => scroll.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(2)
 })
 
-test('queues editable messages during a run, keeps approval above the composer, and stops immediately', async () => {
+test('shows ChatGPT-style queued messages, keeps approval above the composer, and stops immediately', async () => {
   await closeDeepDesk(ctx)
   ctx = null
   const mock = await startMockApprovalServer()
@@ -748,19 +761,33 @@ test('queues editable messages during a run, keeps approval above the composer, 
     await queue.locator('.agent-queue-editor').fill('稍后检查完整测试')
     await queue.getByRole('button', { name: '保存' }).click()
     await expect(queue).toContainText('稍后检查完整测试')
+    await expect(queue.locator('.agent-queue-header')).toHaveCount(0)
+    await expect(queue.locator('.agent-queue-label')).toHaveText('待发送')
     await expect(queue.getByRole('button', { name: '立即发送' })).toBeVisible()
+
+    const queueStyle = await queue.locator('.agent-queue-item').evaluate(element => {
+      const style = getComputedStyle(element)
+      return {
+        borderRadius: style.borderRadius,
+        backgroundIsTransparent: style.backgroundColor === 'transparent' || style.backgroundColor === 'rgba(0, 0, 0, 0)'
+      }
+    })
+    expect(queueStyle).toEqual({ borderRadius: '12px', backgroundIsTransparent: false })
 
     const layout = await page.evaluate(() => {
       const approvalEl = document.querySelector<HTMLElement>('.agent-approval')
       const composerEl = document.querySelector<HTMLElement>('.agent-footer .agent-composer')
+      const queueEl = document.querySelector<HTMLElement>('.agent-footer .agent-queue')
       const scrollEl = document.querySelector<HTMLElement>('.agent-scroll')
-      if (!approvalEl || !composerEl || !scrollEl) return null
+      if (!approvalEl || !composerEl || !queueEl || !scrollEl) return null
       const approvalBox = approvalEl.getBoundingClientRect()
       const composerBox = composerEl.getBoundingClientRect()
+      const queueBox = queueEl.getBoundingClientRect()
       const scrollBox = scrollEl.getBoundingClientRect()
       return {
         approval: { x: approvalBox.x, y: approvalBox.y, width: approvalBox.width, height: approvalBox.height },
         composer: { x: composerBox.x, y: composerBox.y, width: composerBox.width },
+        queue: { x: queueBox.x, y: queueBox.y, width: queueBox.width, height: queueBox.height },
         scroll: { y: scrollBox.y, height: scrollBox.height }
       }
     })
@@ -769,6 +796,10 @@ test('queues editable messages during a run, keeps approval above the composer, 
     expect(layout!.approval.y + layout!.approval.height).toBeLessThanOrEqual(layout!.composer.y - 8)
     expect(Math.abs(layout!.approval.x - layout!.composer.x)).toBeLessThanOrEqual(1)
     expect(Math.abs(layout!.approval.width - layout!.composer.width)).toBeLessThanOrEqual(1)
+    expect(layout!.queue.x).toBeGreaterThan(layout!.composer.x)
+    expect(layout!.queue.width).toBeLessThan(layout!.composer.width)
+    expect(layout!.queue.y + layout!.queue.height - layout!.composer.y).toBeGreaterThanOrEqual(14)
+    expect(layout!.queue.y + layout!.queue.height - layout!.composer.y).toBeLessThanOrEqual(18)
 
     const stopButton = page.getByRole('button', { name: '停止生成' })
     await expect(stopButton).toBeVisible()

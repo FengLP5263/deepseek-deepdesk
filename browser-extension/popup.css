@@ -1,0 +1,64 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+}
+
+body {
+  width: 290px;
+  margin: 0;
+  background: #ffffff;
+  color: #20232a;
+}
+
+main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 18px 14px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: #5667d8;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+p {
+  margin: 3px 0 0;
+  color: #768091;
+  font-size: 12px;
+}
+
+p.connected {
+  color: #16834a;
+}
+
+.hint {
+  margin: 0 18px 18px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #f5f6f8;
+  color: #687181;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  body { background: #1f2023; color: #f1f3f5; }
+  p { color: #9ca4b1; }
+  p.connected { color: #60d394; }
+  .hint { background: #2a2c30; color: #aeb5bf; }
+}

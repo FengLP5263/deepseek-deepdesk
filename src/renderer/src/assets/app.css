@@ -322,6 +322,10 @@ input, textarea { user-select: text; }
 .connector-modal-result.ok strong { color: var(--success); }
 .connector-modal-result.warn strong { color: var(--danger); }
 .connector-modal-result span { color: var(--text-muted); line-height: 1.5; }
+.browser-setup-panel { display: grid; gap: 16px; }
+.browser-setup-panel > p { margin: 0; color: var(--text-secondary); font-size: var(--fs-sm); line-height: 1.65; }
+.browser-setup-panel ol { display: grid; gap: 8px; margin: 0; padding: 14px 14px 14px 34px; border-radius: 10px; background: var(--bg-hover); color: var(--text-secondary); font-size: var(--fs-xs); line-height: 1.55; }
+.browser-setup-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* ===== 技能广场 ===== */
 .brand-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; line-height: 1.05; }

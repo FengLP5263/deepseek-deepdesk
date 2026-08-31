@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type { DeepDeskApi } from '../shared/api'
 import type { AgentEvent, AgentRunRequest, AgentSession } from '../shared/agent-types'
-import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus } from '../shared/types'
+import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus } from '../shared/types'
 import { platformInfoFromNode } from '../shared/platform'
 
 const api: DeepDeskApi = {
@@ -36,6 +36,7 @@ const api: DeepDeskApi = {
     authStatus: (id: ConnectorId, sessionId: string) => ipcRenderer.invoke(IPC.ConnectorAuthStatus, id, sessionId) as Promise<ConnectorAuthSession>,
     connect: (id: ConnectorId) => ipcRenderer.invoke(IPC.ConnectorConnect, id) as Promise<ConnectorActionResult>,
     disconnect: (id: ConnectorId) => ipcRenderer.invoke(IPC.ConnectorDisconnect, id) as Promise<ConnectorActionResult>,
+    setupBrowser: (action: BrowserExtensionSetupAction) => ipcRenderer.invoke(IPC.ConnectorBrowserSetup, action) as Promise<ConnectorActionResult>,
     activities: (id?: ConnectorId) => ipcRenderer.invoke(IPC.ConnectorActivities, id) as Promise<ConnectorActivityFeed>,
     sendMessage: (id: ConnectorId, message: ConnectorOutboundMessage) => ipcRenderer.invoke(IPC.ConnectorMessageSend, id, message) as Promise<ConnectorActionResult>
   },

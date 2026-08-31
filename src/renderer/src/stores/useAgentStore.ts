@@ -228,6 +228,14 @@ function stoppedSteps(steps: AgentStep[]): AgentStep[] {
   return next
 }
 
+function failedSteps(steps: AgentStep[], message: string): AgentStep[] {
+  const next = steps.map(step => step.kind === 'tool' && step.status === 'running'
+    ? { ...step, status: 'error' as const, summary: message, result: message }
+    : step)
+  while (next.at(-1)?.kind === 'thinking') next.pop()
+  return next
+}
+
 function stoppedHistory(ctx: RunningAgentSession): Array<Record<string, unknown>> {
   const history = [...ctx.history]
   const last = history.at(-1)
@@ -538,13 +546,19 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         updateTool(ctx, ev.callId ?? '', { status: ev.ok ? 'ok' : 'error', summary: ev.summary ?? '', result: ev.output ?? '' })
         break
       case 'done':
+        ctx.steps = failedSteps(ctx.steps, '工具未能在本轮结束前返回结果')
         finishRun(ctx, ev.history, true, true)
         break
-      case 'error':
+      case 'error': {
         flushTextBuffer(ev.runId)
-        append(ctx, { kind: 'error', message: ev.message ?? '未知错误' })
+        const message = ev.message ?? '未知错误'
+        const hasRunningTool = ctx.steps.some(step => step.kind === 'tool' && step.status === 'running')
+        ctx.steps = failedSteps(ctx.steps, message)
+        if (hasRunningTool) commitContext(ctx)
+        else append(ctx, { kind: 'error', message })
         finishRun(ctx, ev.history, false, true)
         break
+      }
     }
   }
 
@@ -650,11 +664,23 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     },
     stop: () => {
       const id = get().currentRunId
-      if (!id) return
+      if (!id) {
+        set({ running: false, currentRunId: null, pendingApproval: null })
+        return
+      }
       void window.api.agent.cancel(id)
       const ctx = runContexts.get(id)
       if (!ctx) {
-        set({ running: false, currentRunId: null, pendingApproval: null })
+        const sessionId = get().currentSessionId
+        runIdBySessionId.delete(sessionId)
+        clearTextBuffer(id)
+        set(s => ({
+          ...removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, sessionId),
+          running: false,
+          currentRunId: null,
+          pendingApproval: null,
+          steps: stoppedSteps(s.steps)
+        }))
         return
       }
       flushTextBuffer(id)
@@ -705,7 +731,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       const ctx = runId ? runContexts.get(runId) : undefined
       const active = activeRunState(id)
       set(state => ({
-        steps: ctx?.steps ?? s.steps,
+        steps: ctx?.steps ?? stoppedSteps(s.steps),
         currentTask: ctx?.task ?? s.task,
         currentModelId: ctx?.modelId ?? s.modelId,
         currentSource: ctx?.source ?? s.source,

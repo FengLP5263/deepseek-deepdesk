@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "DeepDesk Browser Connector",
+  "version": "0.1.0",
+  "description": "Connects DeepDesk to the current Edge or Chrome profile so browser tasks can use existing signed-in sessions.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn8m4UP3lQhiYlQAtsirV/IpmPQPOrMc3ZmBEr0mkXIwzovPKWlpyTuG1233XRHDRZpaObQpVnsLYaaDezB4qNjvnhTWgKBKh1hQNeTNAE4KRHfpGxR3pAV4uOJ0eRMe8HQ2q0rVcRF/TECYAdZ1shR3QBvkXrAzRRBXqAwaa0IJlfH3fO+lCQpQCCvw9qonCJ80zCB98QsWbJ+qIf6M5MuvIpS6ugnFDJfytwl6SzLGTDVatlzyBjW81V7lNsARcHLzIwhd6D3yTFEI9XQv45ZCT/HApcByfQvBNULyoUbrUzzUMK1vITikl1NP7Y5QmSSxYvzMz2O714iRy/H04BQIDAQAB",
+  "permissions": [
+    "alarms",
+    "debugger",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "DeepDesk 浏览器连接器",
+    "default_popup": "popup.html"
+  }
+}

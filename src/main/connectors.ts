@@ -1,21 +1,13 @@
-import { app } from 'electron'
-import { promises as fs } from 'node:fs'
-import path from 'node:path'
-import { spawn } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import QRCode from 'qrcode'
 import type { AppStore } from './store'
 import type { ConnectorActionResult, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityFeed, ConnectorActivityStatus, ConnectorAuthSession, ConnectorAuthState, ConnectorConfig, ConnectorId, ConnectorOutboundMessage, ConnectorState, ConnectorStatus } from '../shared/types'
 import { listBrowserPages } from './browser-cdp'
-import { getPlatformAdapter } from './platform'
+import { disableBrowserAutomation, enableBrowserAutomation, inspectBrowserAutomation } from './browser-runtime'
 
 const WECHAT_ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com'
 const WECHAT_ILINK_BOT_TYPE = '3'
 const DIRECT_AUTH_TTL_MS = 5 * 60_000
-
-interface DesktopAppCandidate {
-  path: string
-}
 
 interface GatewayAuthStartResponse {
   sessionId?: unknown
@@ -115,20 +107,6 @@ function findConfig(configs: ConnectorConfig[], id: ConnectorId): ConnectorConfi
 
 function hasText(value: string): boolean {
   return value.trim().length > 0
-}
-
-async function exists(file: string): Promise<boolean> {
-  try {
-    await fs.access(file)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function commandResultMessage(stdout: string, stderr: string): string {
-  const text = `${stdout}\n${stderr}`.trim()
-  return text.length > 500 ? text.slice(0, 500) + '...' : text
 }
 
 function trimBaseUrl(url: string): string {
@@ -909,8 +887,11 @@ async function syncGatewayActivities(store: AppStore, id: ConnectorId, config: C
   }
 }
 
-async function listBrowserTargets(): Promise<ConnectorActivity[]> {
+async function listBrowserTargets(config: ConnectorConfig): Promise<ConnectorActivity[]> {
+  if (!config.enabled) return []
   try {
+    const { running } = await inspectBrowserAutomation(config)
+    if (!running) return []
     const pages = (await listBrowserPages()).slice(0, 5)
     return pages.map((page, index) => ({
       id: 'browser-' + String(page.id || index),
@@ -918,7 +899,7 @@ async function listBrowserTargets(): Promise<ConnectorActivity[]> {
       direction: 'system',
       sourceName: '浏览器调试',
       sourceId: page.id,
-      conversationName: 'Chrome DevTools',
+      conversationName: '浏览器 DevTools',
       text: page.title + (page.url ? ' · ' + page.url : ''),
       createdAt: Date.now(),
       status: 'handled'
@@ -937,7 +918,7 @@ export async function getConnectorActivityFeed(store: AppStore, id?: ConnectorId
     const message = await syncGatewayActivities(store, connectorId, findConfig(configs, connectorId))
     if (message) messages.push(message)
   }
-  const browserItems = ids.includes('browser') ? await listBrowserTargets() : []
+  const browserItems = ids.includes('browser') ? await listBrowserTargets(findConfig(configs, 'browser')) : []
   const storedItems = store.listConnectorActivities(id).filter(item => item.connectorId !== 'browser')
   const items = [...browserItems, ...storedItems]
     .filter(item => !id || item.connectorId === id)
@@ -1000,60 +981,37 @@ function checkWeChat(config: ConnectorConfig): ConnectorStatus {
   )
 }
 
-async function fetchBrowserVersion(): Promise<boolean> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 800)
-  try {
-    const res = await fetch('http://127.0.0.1:9222/json/version', { signal: controller.signal })
-    return res.ok
-  } catch {
-    return false
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-function chromeCandidates(): DesktopAppCandidate[] {
-  if (process.platform === 'win32') {
-    const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files'
-    const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
-    const localAppData = process.env['LOCALAPPDATA'] ?? ''
-    return [
-      { path: path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe') },
-      { path: path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe') },
-      ...(localAppData ? [{ path: path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe') }] : [])
-    ]
-  }
-  return [
-    { path: '/Applications/Google Chrome.app' },
-    { path: '/Applications/Chromium.app' }
-  ]
-}
-
-async function findExisting(candidates: DesktopAppCandidate[]): Promise<DesktopAppCandidate | null> {
-  for (const candidate of candidates) {
-    if (await exists(candidate.path)) return candidate
-  }
-  return null
-}
-
-function browserLaunchCommand(): string {
-  const profile = path.join(app.getPath('userData'), 'browser-automation-profile')
-  if (process.platform === 'win32') {
-    return 'chrome.exe --remote-debugging-port=9222 --user-data-dir=' + getPlatformAdapter().quoteArgument(profile)
-  }
-  return 'open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir=' + getPlatformAdapter().quoteArgument(profile)
-}
-
 async function checkBrowser(config: ConnectorConfig): Promise<ConnectorStatus> {
-  if (await fetchBrowserVersion()) {
-    return connectorStatus('browser', '浏览器调试', 'connected', '已连接', 'AI 可以读取页面结构、操作网页，并采集控制台、异常和网络调试信息。', '重新检测', config, '断开')
+  const { browser, running, mode } = await inspectBrowserAutomation(config)
+  if (!browser) {
+    return { ...connectorStatus('browser', '浏览器调试', 'needs_setup', '未检测到支持的浏览器', '支持 Microsoft Edge、Google Chrome、Brave 和 Chromium。', '重新检测', config), browserMode: mode }
   }
-  const candidate = await findExisting(chromeCandidates())
-  if (candidate) {
-    return connectorStatus('browser', '浏览器调试', 'available', '可连接', '连接后，AI 将获得网页读取、交互和调试能力。', '连接浏览器', config, undefined, browserLaunchCommand())
+  if (mode !== 'extension') {
+    return {
+      ...connectorStatus(
+        'browser',
+        '浏览器调试',
+        'needs_setup',
+        config.enabled ? `${browser.name} · 等待扩展` : `${browser.name} · 未连接`,
+        config.enabled
+          ? '完成一次扩展安装后，DeepDesk 会自动完成连接。'
+          : '点击连接后，DeepDesk 会连接已打开的默认浏览器；若浏览器未运行，则会先启动它。',
+        '连接',
+        config
+      ),
+      browserMode: mode
+    }
   }
-  return connectorStatus('browser', '浏览器调试', 'needs_setup', '不可用', '需要先安装 Chrome 或 Chromium 浏览器，才能启用浏览器调试连接。', '重新检测', config, undefined, browserLaunchCommand())
+  if (config.enabled && running) {
+    return {
+      ...connectorStatus('browser', '浏览器调试', 'connected', `${browser.name} · 已连接`, 'AI 可以操作浏览器标签页，并沿用已有账号和登录状态。', '重新检测', config, '断开'),
+      browserMode: mode
+    }
+  }
+  return {
+    ...connectorStatus('browser', '浏览器调试', 'available', `${browser.name} · 可连接`, '连接后，AI 可以操作浏览器标签页并沿用已有登录状态。', '连接', config),
+    browserMode: mode
+  }
 }
 
 export async function listConnectors(configs: ConnectorConfig[]): Promise<ConnectorStatus[]> {
@@ -1080,49 +1038,11 @@ export async function connectConnector(store: AppStore, id: ConnectorId): Promis
     store.upsertConnectorConfig({ id, enabled: true })
     return { id, ok: true, message: '已启用微信接入', detail: 'DeepDesk 将通过微信消息接收任务并返回结果。' }
   }
-  return openBrowserDebug()
-}
-
-async function openBrowserDebug(): Promise<ConnectorActionResult> {
-  const profile = path.join(app.getPath('userData'), 'browser-automation-profile')
-  await fs.mkdir(profile, { recursive: true })
-  if (process.platform === 'win32') {
-    const candidate = await findExisting(chromeCandidates())
-    if (!candidate) return { id: 'browser', ok: false, message: '未检测到可用浏览器', detail: '请先安装 Chrome 或 Chromium。' }
-    const child = spawn(candidate.path, ['--remote-debugging-port=9222', '--user-data-dir=' + profile], { detached: true, stdio: 'ignore', windowsHide: true })
-    child.unref()
-    return { id: 'browser', ok: true, message: '已连接浏览器调试', detail: 'AI 现在可以读取、操作并调试这个独立浏览器会话。' }
-  }
-  const command = browserLaunchCommand()
-  const result = await getPlatformAdapter().executeCommand(command, process.cwd())
-  return result.code === 0
-    ? { id: 'browser', ok: true, message: '已连接浏览器调试', detail: 'AI 现在可以读取、操作并调试这个独立浏览器会话。' }
-    : { id: 'browser', ok: false, message: '连接浏览器调试失败', detail: commandResultMessage(result.stdout, result.stderr) }
-}
-
-function managedBrowserCloseCommand(): string {
-  const profile = path.join(app.getPath('userData'), 'browser-automation-profile')
-  const quote = getPlatformAdapter().quoteArgument
-  if (process.platform === 'win32') {
-    return `$profile = ${quote(profile)}; $items = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*--remote-debugging-port=9222*' -and $_.CommandLine -like ('*' + $profile + '*') }; $items | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; if ($items) { 'closed' } else { 'not-found' }`
-  }
-  return `profile=${quote(profile)}; pids=$(ps -axo pid=,command= | grep -- '--remote-debugging-port=9222' | grep -- "$profile" | grep -v grep | awk '{print $1}'); if [ -z "$pids" ]; then printf '%s\\n' not-found; else kill $pids && printf '%s\\n' closed; fi`
-}
-
-async function disconnectBrowser(): Promise<ConnectorActionResult> {
-  const command = managedBrowserCloseCommand()
-  const result = await getPlatformAdapter().executeCommand(command, process.cwd())
-  if (result.code !== 0) {
-    return { id: 'browser', ok: false, message: '断开浏览器调试失败', detail: commandResultMessage(result.stdout, result.stderr) }
-  }
-  if (result.stdout.includes('closed')) {
-    return { id: 'browser', ok: true, message: '已断开浏览器调试', detail: '已关闭由 DeepDesk 启动的独立浏览器会话。' }
-  }
-  return { id: 'browser', ok: false, message: '未找到可断开的浏览器调试', detail: '当前浏览器会话可能不是由 DeepDesk 启动的。' }
+  return enableBrowserAutomation(store)
 }
 
 export async function disconnectConnector(store: AppStore, id: ConnectorId): Promise<ConnectorActionResult> {
-  if (id === 'browser') return disconnectBrowser()
+  if (id === 'browser') return disableBrowserAutomation(store)
   closeDirectSessionsFor(id)
   store.upsertConnectorConfig({ id, enabled: false })
   return {

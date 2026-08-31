@@ -6,6 +6,9 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - from: browser-extension
+    to: browser-extension
 asar: true
 npmRebuild: false
 electronLanguages:

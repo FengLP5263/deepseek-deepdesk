@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createAgentTools } from '../src/main/agent-tools'
 import { buildSystemPrompt } from '../src/main/agent'
 import { buildPowerShellInvocation, buildZshInvocation, quotePosixArgument, quotePowerShellArgument } from '../src/main/platform/shells'
+import { browserIdFromMacBundleId, browserIdFromWindowsProgId, prioritizeBrowserCandidates, type DetectedBrowser } from '../src/main/platform/browser'
 import { isDangerousCommand, isReadOnlyCommand } from '../src/main/tools'
 import { platformInfoFromNode } from '../src/shared/platform'
 
@@ -23,6 +24,17 @@ describe('platform adapters', () => {
   it('quotes arguments for both shells', () => {
     expect(quotePowerShellArgument("O'Brien")).toBe("'O''Brien'")
     expect(quotePosixArgument("O'Brien")).toBe("'O'\\''Brien'")
+  })
+
+  it('maps system default browser identifiers and prioritizes the matching Chromium browser', () => {
+    expect(browserIdFromWindowsProgId('MSEdgeHTM')).toBe('edge')
+    expect(browserIdFromWindowsProgId('ChromeHTML')).toBe('chrome')
+    expect(browserIdFromMacBundleId('com.microsoft.edgemac')).toBe('edge')
+    expect(browserIdFromWindowsProgId('FirefoxURL')).toBeUndefined()
+
+    const chrome: DetectedBrowser = { id: 'chrome', name: 'Google Chrome', executablePath: 'chrome.exe', processName: 'chrome.exe' }
+    const edge: DetectedBrowser = { id: 'edge', name: 'Microsoft Edge', executablePath: 'msedge.exe', processName: 'msedge.exe' }
+    expect(prioritizeBrowserCandidates([chrome, edge], 'edge').map(browser => browser.id)).toEqual(['edge', 'chrome'])
   })
 
   it('describes the active shell in Agent tools and prompts', () => {
