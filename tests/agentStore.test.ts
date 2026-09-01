@@ -23,7 +23,7 @@ beforeEach(() => {
   const api = {
     platform: { id: 'macos', shellName: 'zsh', nativeWindowControls: true },
     settings: {
-      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }),
+      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }),
       set: async (patch: Record<string, unknown>) => ({ ...patch })
     },
     providers: { list: async () => [], upsert: async () => {}, remove: async () => {}, test: async () => ({ ok: true, message: '' }) },
@@ -68,7 +68,7 @@ beforeEach(() => {
   useSettingsStore.setState({ loaded: true, providers: [
     { id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [{ id: 'deepseek-v4-pro' }], createdAt: 0 },
     { id: 'zhipu', name: '智谱', type: 'openai', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: 'glm-key', models: [{ id: 'glm-5.3-flash', name: 'GLM 5.3 Flash' }], createdAt: 0 }
-  ], settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' } })
+  ], settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' } })
   useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentProviderId: '', currentModelId: '', currentSessionId: '', currentSource: undefined, draftTask: '', steps: [], history: [], queuedMessages: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
 })
 

@@ -229,6 +229,7 @@ export interface AppSettings {
   temperature: number
   theme: Theme
   appFont: AppFont
+  appFontScale: number
   enterToSend: boolean
   agentWorkdir: string
   agentPermissionMode: AgentPermissionMode

@@ -37,7 +37,8 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 - 跨供应商模型选择及会话级 provider/model 持久化
 - 架构预算、Renderer 禁止直连网络和跨层导入失败用例
 - Electron renderer 加载 smoke
-- Playwright Electron 覆盖启动、设置页、平台快捷键、Windows 自定义窗口按钮、macOS 原生交通灯布局、侧边栏、模型入口、权限模式、模拟工作目录选择、输入框发送状态、多行输入、上下文面板、Provider 增删改、API Key 显隐、常规设置重启读回、窗口最大化，以及长会话中的回到底部控件定位与滚动行为
+- Playwright Electron 覆盖启动、设置页、平台快捷键、Windows 自定义窗口按钮、macOS 原生交通灯布局、侧边栏、模型入口、权限模式、模拟工作目录选择、输入框发送状态、多行输入、上下文面板、Provider 增删改、API Key 显隐、常规设置重启读回、Ctrl + 滚轮整体界面缩放与持久化、高倍率下的图标和弹窗布局、窗口最大化，以及长会话中的回到底部控件定位与滚动行为
+- 可见 UI 改动在自动化测试后还需进行真实客户端视觉验收：Windows 优先使用 Computer Use 检查受影响页面、窗口边缘、弹窗以及最小/默认/最大状态；Computer Use 不可用时，改用已构建 Electron 客户端的多状态截图，并在交付说明中明确记录替代方式。
 - E2E 同时支持 CI 友好的 isolated 模式和人工观察友好的 session 模式
 
 ## 不应在测试中做的事

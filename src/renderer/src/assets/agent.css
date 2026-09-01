@@ -56,7 +56,7 @@
 .ctx-track { fill: none; stroke: var(--border-strong); stroke-width: 2; }
 .ctx-fill { fill: none; stroke: var(--text-secondary); stroke-width: 2; stroke-linecap: round; }
 .ctx-panel { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 100; box-sizing: border-box; width: 280px; padding: 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-elevated); box-shadow: var(--shadow-float); font-size: var(--fs-xs); line-height: 20px; color: var(--text-secondary); cursor: default; }
-.ctx-header { display: flex; align-items: center; gap: 6px; }
+.ctx-header { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ctx-figures { margin-left: auto; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text); }
 .ctx-percent { font-weight: 500; color: var(--text); }
 .ctx-bar { display: flex; gap: 1px; margin: 10px 0 2px; height: 4px; border-radius: 999px; background: var(--bg-hover); overflow: hidden; }

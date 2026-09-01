@@ -61,7 +61,7 @@ import type { AgentEvent } from '../src/shared/agent-types'
 import type { AppSettings, ProviderConfig } from '../src/shared/types'
 
 const provider: ProviderConfig = { id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }
-const baseSettings: AppSettings = { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }
+const baseSettings: AppSettings = { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }
 const outputCommand = (text: string): string => process.platform === 'win32' ? 'Write-Output ' + text : "printf '%s\\n' " + text
 
 function makeWin() {

@@ -34,6 +34,7 @@ describe('AppStore', () => {
     expect(snap.providers.find(p => p.id === 'deepseek')).toBeTruthy()
     expect(snap.settings.defaultModelId).toBe('deepseek-v4-flash')
     expect(snap.settings.appFont).toBe('default')
+    expect(snap.settings.appFontScale).toBe(1)
     expect(snap.providers.find(p => p.id === 'deepseek')?.models.map(m => m.id).sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
     expect(snap.providers.find(p => p.id === 'deepseek')?.models.every(m => m.contextWindow === 256000)).toBe(true)
     expect(snap.conversations).toEqual([])
@@ -45,13 +46,14 @@ describe('AppStore', () => {
   it('设置持久化并可重新加载', async () => {
     const store = createStore()
     await store.init()
-    store.updateSettings({ defaultModelId: 'deepseek-v4-pro', temperature: 0.5, appFont: 'system' })
+    store.updateSettings({ defaultModelId: 'deepseek-v4-pro', temperature: 0.5, appFont: 'system', appFontScale: 1.3 })
     await store.flush()
     const store2 = createStore()
     await store2.init()
     expect(store2.getSnapshot().settings.defaultModelId).toBe('deepseek-v4-pro')
     expect(store2.getSnapshot().settings.temperature).toBe(0.5)
     expect(store2.getSnapshot().settings.appFont).toBe('system')
+    expect(store2.getSnapshot().settings.appFontScale).toBe(1.3)
   })
 
   it('upsert / delete 提供商', async () => {

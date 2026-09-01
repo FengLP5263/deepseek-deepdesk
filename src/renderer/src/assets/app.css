@@ -21,7 +21,7 @@
 .fs-sm { font-size: var(--fs-sm); }
 .fs-base { font-size: var(--fs-base); }
 
-:root {
+:root { --ui-scale: 1;
   --fs-2xs: 11px;
   --fs-xs: 12px;
   --fs-sm: 13px;
@@ -108,7 +108,7 @@
 
 * { box-sizing: border-box; }
 
-html, body, #root { height: 100%; }
+html, body, #root { height: 100%; } #root { zoom: var(--ui-scale); }
 
 body {
   margin: 0;

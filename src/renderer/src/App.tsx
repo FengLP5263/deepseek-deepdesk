@@ -9,9 +9,11 @@ import DeepSeekLogo from './components/DeepSeekLogo'
 import { useSettingsStore } from './stores/useSettingsStore'
 import { useAgentStore } from './stores/useAgentStore'
 import { Loader2 } from 'lucide-react'
+import { useAppFontScale } from './hooks/useAppFontScale'
 
 type View = 'chat' | 'settings' | 'connectors' | 'skills' | 'more'
 export default function App() {
+  useAppFontScale()
   const ready = useSettingsStore(s => s.loaded)
   const [view, setView] = useState<View>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')

@@ -5,6 +5,7 @@ import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, M
 import type { AgentSession } from '../shared/agent-types'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
 import { extractMemoryCandidates, normalizeMemoryContent, searchMemories, type MemoryCandidate } from '../shared/memory'
+import { normalizeAppFontScale } from '../shared/font-scale'
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
@@ -13,6 +14,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   temperature: 1,
   theme: 'dark',
   appFont: 'default',
+  appFontScale: 1,
   enterToSend: true,
   agentWorkdir: '',
   agentPermissionMode: 'ask'
@@ -150,6 +152,7 @@ export class AppStore {
   private migrate(parsed: Partial<AppState>): AppState {
     const raw = parsed.settings as (Partial<AppSettings> & { agentAutoApprove?: boolean }) | undefined
     const settings: AppSettings = { ...DEFAULT_SETTINGS, ...raw }
+    settings.appFontScale = normalizeAppFontScale(settings.appFontScale)
     if (raw?.agentAutoApprove === true && settings.agentPermissionMode === 'ask') {
       settings.agentPermissionMode = 'auto'
     }
@@ -215,6 +218,7 @@ export class AppStore {
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     this.data.settings = { ...this.data.settings, ...patch }
+    this.data.settings.appFontScale = normalizeAppFontScale(this.data.settings.appFontScale)
     this.persist()
     return structuredClone(this.data.settings)
   }

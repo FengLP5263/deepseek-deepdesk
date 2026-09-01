@@ -96,6 +96,8 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 ## 测试
 
 - 核心逻辑都有 vitest 测试；改行为必须同步改测试。
+- Ctrl + 滚轮整体界面缩放的 Electron 回归测试位于 `e2e/font-scale.spec.ts`，覆盖文字、图标和弹窗布局，并纳入 isolated E2E 清单。
+- 可见 UI 改动通过自动化后，Windows 环境优先使用 Computer Use 走查真实客户端；不可用时必须检查已构建 Electron 客户端的多状态截图，并在交付时说明。
 - 测试用 mock（vi.mock / mock LLM / mock window.api），不联网、不真发飞书消息、不真执行危险命令。
 - `pnpm test` 全绿才能提交。
 - 提交前建议跑 `pnpm quality`；发版前跑 `pnpm release:win`。
