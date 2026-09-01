@@ -1,4 +1,11 @@
-import type { MemoryItem, MemoryScope } from './types'
+import type { MemoryItem, MemoryKind, MemoryScope } from './types'
+
+export interface MemoryCandidate {
+  scope: MemoryScope
+  kind: MemoryKind
+  content: string
+  tags: string[]
+}
 
 const scopeLabels: Record<MemoryScope, string> = {
   user: '用户',
@@ -16,6 +23,78 @@ const kindLabels: Record<MemoryItem['kind'], string> = {
 
 function normalize(text: string): string {
   return text.toLowerCase().trim()
+}
+
+function cleanCandidate(text: string): string {
+  return text
+    .trim()
+    .replace(/^[：:，,。；;\s]+/u, '')
+    .replace(/[\s。；;]+$/u, '')
+    .replace(/\s+/gu, ' ')
+    .slice(0, 500)
+}
+
+function isSensitive(text: string): boolean {
+  return /(?:api[ _-]?key|access[ _-]?token|refresh[ _-]?token|password|passwd|secret|密码|口令|令牌|身份证|银行卡|信用卡)/iu.test(text)
+}
+
+function classifyExplicitMemory(content: string): Omit<MemoryCandidate, 'content'> {
+  if (/(?:项目|仓库|代码|提交|合并|发布|版本|测试|架构|组件|文件组织)/u.test(content)) {
+    return { scope: 'project', kind: /(?:决定|约定|统一|必须|规范)/u.test(content) ? 'decision' : 'procedure', tags: ['显式记忆', '项目'] }
+  }
+  if (/(?:喜欢|偏好|习惯|不喜欢|希望你|回答时|称呼我|默认)/u.test(content)) {
+    return { scope: 'user', kind: 'preference', tags: ['显式记忆', '偏好'] }
+  }
+  return { scope: 'user', kind: 'fact', tags: ['显式记忆'] }
+}
+
+function pushCandidate(candidates: MemoryCandidate[], candidate: MemoryCandidate): void {
+  const content = cleanCandidate(candidate.content)
+  if (content.length < 2 || isSensitive(content)) return
+  const key = normalize(content)
+  if (candidates.some(item => normalize(item.content) === key)) return
+  candidates.push({ ...candidate, content })
+}
+
+/**
+ * Extracts only high-confidence durable facts. This intentionally prefers
+ * missing a weak hint over storing ordinary one-off instructions as memory.
+ */
+export function extractMemoryCandidates(text: string): MemoryCandidate[] {
+  const input = cleanCandidate(text)
+  if (!input || isSensitive(input)) return []
+  const candidates: MemoryCandidate[] = []
+  const explicitPatterns = [
+    /(?:请|麻烦你)?(?:帮我)?(?:记住|记一下|记得|记录一下|保存到记忆)[：:，,\s]*(.+)$/iu,
+    /(?:please\s+)?remember(?:\s+that)?[：:,\s]+(.+)$/iu
+  ]
+  for (const pattern of explicitPatterns) {
+    const match = input.match(pattern)
+    if (!match?.[1]) continue
+    const classified = classifyExplicitMemory(match[1])
+    pushCandidate(candidates, { ...classified, content: match[1] })
+    return candidates
+  }
+
+  const sentences = input.split(/[。！？!?\n]+/u).map(cleanCandidate).filter(Boolean)
+  for (const sentence of sentences) {
+    if (/(?:我(?:一直|通常|更)?(?:喜欢|偏好|习惯|不喜欢)|我的偏好是|我希望你以后|以后请|今后请|每次请|请始终|默认请)/u.test(sentence)) {
+      pushCandidate(candidates, { scope: 'user', kind: 'preference', content: sentence, tags: ['自动提取', '偏好'] })
+      continue
+    }
+    if (/(?:我叫|我的名字是|请称呼我为|我的职业是|我在.+工作)/u.test(sentence)) {
+      pushCandidate(candidates, { scope: 'user', kind: 'fact', content: sentence, tags: ['自动提取', '个人信息'] })
+      continue
+    }
+    if (/(?:我们|本项目|这个项目).*(?:决定|约定|统一|一律|必须)|(?:以后|今后).*(?:提交|合并|发布|版本|测试|代码).*(?:要|必须|统一)/u.test(sentence)) {
+      pushCandidate(candidates, { scope: 'project', kind: 'decision', content: sentence, tags: ['自动提取', '项目约定'] })
+    }
+  }
+  return candidates.slice(0, 3)
+}
+
+export function normalizeMemoryContent(text: string): string {
+  return normalize(cleanCandidate(text)).replace(/[，,。；;！？!?\s]+/gu, '')
 }
 
 function tokenize(text: string): string[] {

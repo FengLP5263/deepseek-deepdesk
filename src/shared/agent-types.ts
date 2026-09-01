@@ -1,3 +1,5 @@
+export type McpAgentToolName = `mcp__${string}`
+
 export type AgentToolName =
   | 'run_command'
   | 'read_file'
@@ -14,6 +16,17 @@ export type AgentToolName =
   | 'browser_type'
   | 'browser_debug'
   | 'browser_evaluate'
+  | 'inspect_mcp_server'
+  | 'install_mcp_server'
+  | McpAgentToolName
+
+export interface McpInstallApproval {
+  candidateId: string
+  name: string
+  source: string
+  serverVersion?: string
+  toolNames: string[]
+}
 
 export interface AgentQueuedMessage {
   id: string
@@ -72,6 +85,7 @@ export interface AgentEvent {
   cwd?: string
   target?: string
   reason?: string
+  mcpInstall?: McpInstallApproval
   history?: Array<Record<string, unknown>>
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
 }
@@ -97,6 +111,7 @@ export interface AgentSession {
   id: string
   task: string
   workdir: string
+  providerId?: string
   modelId: string
   createdAt: number
   updatedAt: number

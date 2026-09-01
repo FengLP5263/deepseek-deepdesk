@@ -722,7 +722,7 @@ input, textarea { user-select: text; }
 }
 .composer-left .composer-menu-popover { left: 0; }
 .composer-right .composer-menu-popover, .ctx-panel { right: 0; }
-.composer-model-popover { width: 240px; }
+.composer-model-popover { width: 268px; }
 .composer-menu-option, .model-menu-option, .model-menu-config {
   display: flex;
   align-items: center;
@@ -905,3 +905,36 @@ input, textarea { user-select: text; }
 .badge { background: var(--bg-hover); color: var(--text-muted); border: 1px solid var(--border); }
 .badge.builtin, .badge.off, .badge.ok { background: var(--bg-hover); color: var(--text-muted); }
 .model-chip-item { border-color: var(--border); background: var(--bg-hover); }
+
+.mcp-list { display: flex; flex-direction: column; gap: 12px; }
+.mcp-card { border: 1px solid var(--border); border-radius: 16px; background: var(--bg-elevated); padding: 18px 20px; }
+.mcp-card-head { display: flex; align-items: center; gap: 12px; }
+.mcp-server-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; background: var(--bg-hover); color: var(--text-secondary); }
+.mcp-card-title { min-width: 0; flex: 1; }
+.mcp-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; color: var(--text); font-size: var(--fs-base); font-weight: 650; }
+.mcp-endpoint { margin-top: 4px; overflow: hidden; color: var(--text-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
+.mcp-status { display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 550; }
+.mcp-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mcp-status.connected { color: var(--success); }
+.mcp-status.connecting { color: var(--accent-text); }
+.mcp-status.error { color: var(--danger); }
+.mcp-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.mcp-card-actions .icon-btn.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.mcp-card-body { margin: 14px 0 0 46px; }
+.mcp-tool-summary { color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.5; }
+.mcp-tool-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.mcp-tool-list span { display: inline-flex; align-items: center; max-width: 210px; min-height: 25px; padding: 0 9px; overflow: hidden; border-radius: 999px; background: var(--bg-hover); color: var(--text-secondary); font-family: var(--font-mono); font-size: var(--fs-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.mcp-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 116px; border: 1px dashed var(--border); border-radius: 16px; background: var(--bg-elevated); color: var(--text-muted); font-size: var(--fs-sm); text-align: center; }
+.mcp-form { display: flex; flex-direction: column; gap: 15px; }
+.mcp-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 12px; }
+.mcp-form .textarea { min-height: 82px; resize: vertical; line-height: 1.55; }
+.mcp-advanced { border-top: 1px solid var(--border); padding-top: 12px; }
+.mcp-advanced summary { width: max-content; color: var(--text-secondary); font-size: var(--fs-xs); font-weight: 600; cursor: pointer; user-select: none; }
+.mcp-advanced-body { display: flex; flex-direction: column; gap: 13px; padding-top: 13px; }
+
+@media (max-width: 760px) {
+  .settings-view { grid-template-columns: 210px minmax(0, 1fr); }
+  .mcp-card-head { align-items: flex-start; flex-wrap: wrap; }
+  .mcp-card-actions { width: 100%; margin-left: 46px; }
+  .mcp-form-grid { grid-template-columns: 1fr; }
+}

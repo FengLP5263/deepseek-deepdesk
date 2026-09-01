@@ -4,9 +4,11 @@ import { startChat, cancelChat } from './llm'
 import { startAgent, cancelAgent, approveCommand } from './agent'
 import { connectConnector, disconnectConnector, getConnectorActivityFeed, getConnectorAuthStatus, listConnectors, sendConnectorMessage, startConnectorAuth } from './connectors'
 import type { AppStore } from './store'
-import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, BrowserExtensionSetupAction, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage } from '../shared/types'
+import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage } from '../shared/types'
 import type { AgentRunRequest, AgentSession } from '../shared/agent-types'
 import { setupBrowserSessionSharing } from './browser-runtime'
+import { connectMcpServer, deleteMcpServer, disconnectMcpServer, listMcpStatuses, saveMcpServer } from './mcp'
+import type { McpServerConfig } from '../shared/types'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.SettingsGet, () => store.getSnapshot().settings)
@@ -49,6 +51,16 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
     }
   })
 
+  ipcMain.handle(IPC.McpServersList, () => listMcpStatuses())
+
+  ipcMain.handle(IPC.McpServerSave, (_event, config: McpServerConfig) => saveMcpServer(config))
+
+  ipcMain.handle(IPC.McpServerDelete, (_event, id: string) => deleteMcpServer(id))
+
+  ipcMain.handle(IPC.McpServerConnect, (_event, id: string) => connectMcpServer(id))
+
+  ipcMain.handle(IPC.McpServerDisconnect, (_event, id: string) => disconnectMcpServer(id))
+
   ipcMain.handle(IPC.ConversationsList, () => store.getSnapshot().conversations)
 
   ipcMain.handle(IPC.ConversationGet, (_event, id: string) => store.getConversation(id))
@@ -70,6 +82,7 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   })
 
   ipcMain.handle(IPC.MemoriesSearch, (_event, request: MemorySearchRequest) => store.searchMemories(request))
+  ipcMain.handle(IPC.MemoriesCapture, (_event, request: MemoryCaptureRequest) => store.captureMemories(request))
 
   ipcMain.handle(IPC.ConnectorsList, () => listConnectors(store.getSnapshot().connectors))
 

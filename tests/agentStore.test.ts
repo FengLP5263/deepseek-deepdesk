@@ -8,6 +8,7 @@ let chunkCb: ((ev: AgentEvent) => void) | null = null
 let saved: AgentSession[] = []
 let startReqs: AgentRunRequest[] = []
 let memoryResults: MemoryItem[] = []
+let capturedMemoryTexts: string[] = []
 let connectorMessages: Array<{ id: string; sessionId: string; threadId: string; text: string; replyToken?: string }> = []
 let cancelledRunIds: string[] = []
 
@@ -16,6 +17,7 @@ beforeEach(() => {
   saved = []
   startReqs = []
   memoryResults = []
+  capturedMemoryTexts = []
   connectorMessages = []
   cancelledRunIds = []
   const api = {
@@ -30,7 +32,8 @@ beforeEach(() => {
       list: async () => memoryResults,
       upsert: async (memory: MemoryItem) => memory,
       remove: async () => {},
-      search: async () => memoryResults
+      search: async () => memoryResults,
+      capture: async (request: { text: string }) => { capturedMemoryTexts.push(request.text); return [] }
     },
     connectors: {
       list: async () => [],
@@ -62,8 +65,11 @@ beforeEach(() => {
     appVersion: async () => '1.0.0'
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
-  useSettingsStore.setState({ loaded: true, providers: [{ id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }], settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' } })
-  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, draftTask: '', steps: [], history: [], queuedMessages: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
+  useSettingsStore.setState({ loaded: true, providers: [
+    { id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [{ id: 'deepseek-v4-pro' }], createdAt: 0 },
+    { id: 'zhipu', name: '智谱', type: 'openai', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: 'glm-key', models: [{ id: 'glm-5.3-flash', name: 'GLM 5.3 Flash' }], createdAt: 0 }
+  ], settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' } })
+  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentProviderId: '', currentModelId: '', currentSessionId: '', currentSource: undefined, draftTask: '', steps: [], history: [], queuedMessages: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
 })
 
 describe('useAgentStore 会话持久化', () => {
@@ -212,16 +218,19 @@ describe('useAgentStore 会话持久化', () => {
     await useAgentStore.getState().start('提交代码')
 
     expect(startReqs[0].memoryContext).toContain('提交前先跑 pnpm flow -- check')
+    expect(capturedMemoryTexts).toEqual(['提交代码'])
   })
 
-  it('当前会话选择的模型优先于全局默认模型并随会话保存', async () => {
+  it('当前会话可选择其他供应商模型并将供应商与模型一起保存', async () => {
     useAgentStore.getState().init()
-    useAgentStore.getState().setCurrentModel('glm-5.3-flash')
+    useAgentStore.getState().setCurrentModel('zhipu', 'glm-5.3-flash')
     await useAgentStore.getState().start('用当前模型继续')
 
+    expect(startReqs[0].providerId).toBe('zhipu')
     expect(startReqs[0].modelId).toBe('glm-5.3-flash')
     chunkCb!({ runId: startReqs[0].runId, type: 'done' })
     await new Promise(r => setTimeout(r, 80))
+    expect(saved[0].providerId).toBe('zhipu')
     expect(saved[0].modelId).toBe('glm-5.3-flash')
   })
 

@@ -18,7 +18,8 @@
 .composer-menu-trigger { max-width: 220px; border-color: transparent; background: transparent; color: var(--text); font-weight: 650; }
 .composer-model-trigger { max-width: 190px; font-size: var(--fs-base); }
 .composer-menu-popover { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 100; display: flex; min-width: 156px; padding: 4px; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; background: var(--menu-surface); box-shadow: var(--shadow-float); }
-.composer-model-popover { right: 0; left: auto; box-sizing: border-box; width: 248px; min-width: 248px; padding: 7px 8px 6px; border-radius: 8px; background: var(--bg-elevated); }
+.composer-model-popover { right: 0; left: auto; box-sizing: border-box; width: 268px; min-width: 268px; padding: 7px 8px 6px; border-radius: 8px; background: var(--bg-elevated); pointer-events: none; }
+.composer-model-popover button { pointer-events: auto; }
 .composer-menu-option { display: flex; align-items: center; justify-content: space-between; min-height: 32px; gap: 18px; padding: 6px 8px; border: none; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: var(--fs-xs); text-align: left; cursor: pointer; }
 .composer-menu-option:hover, .composer-menu-option[aria-checked='true'] { background: var(--menu-option-active); color: var(--text); }
 .composer-menu-popover:has(.composer-menu-option:hover) .composer-menu-option[aria-checked='true']:not(:hover) { background: transparent; color: var(--text-secondary); }
@@ -30,7 +31,11 @@
 .model-max-switch span { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg-elevated); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); transition: transform 120ms ease; }
 .model-max-switch.on { background: var(--text); }
 .model-max-switch.on span { transform: translateX(14px); }
-.model-menu-list { max-height: 250px; overflow-y: auto; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.model-menu-list { max-height: 300px; overflow-y: auto; padding: 3px 0 5px; border-bottom: 1px solid var(--border); }
+.model-provider-group { display: block; padding-top: 4px; }
+.model-provider-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; padding: 3px 8px; color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 600; }
+.model-provider-heading span:last-child { font-variant-numeric: tabular-nums; font-weight: 500; }
+.model-menu-empty { padding: 18px 8px; color: var(--text-muted); font-size: var(--fs-xs); text-align: center; }
 .model-menu-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 36px; padding: 6px 7px; border: none; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
 .model-menu-option:hover, .model-menu-option[aria-checked='true'] { background: var(--bg-hover); color: var(--text); }
 .model-menu-option:focus-visible, .model-menu-config:focus-visible, .model-max-switch:focus-visible { outline: none; background: var(--bg-hover); }
@@ -105,6 +110,15 @@
 .agent-approval-cmd { margin: 0 0 6px; padding: 8px 10px; background: var(--code-bg); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); white-space: pre-wrap; word-break: break-all; user-select: text; }
 .agent-approval-cwd { font-size: var(--fs-2xs); color: var(--text-muted); margin-bottom: 10px; }
 .agent-approval-actions { display: flex; gap: 8px; }
+.agent-approval.mcp-install { padding: 16px; border-color: var(--border-strong); }
+.mcp-install-heading { display: flex; align-items: baseline; gap: 8px; color: var(--text); font-size: var(--fs-md); font-weight: 650; }
+.mcp-install-version { color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 500; }
+.mcp-install-source { margin-top: 5px; overflow: hidden; color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-2xs); text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.mcp-install-copy { margin-top: 12px; color: var(--text-secondary); font-size: var(--fs-xs); line-height: 1.55; }
+.mcp-install-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.mcp-install-tool { max-width: 200px; padding: 3px 8px; overflow: hidden; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-panel); color: var(--text-secondary); font-family: var(--font-mono); font-size: var(--fs-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.mcp-install-tool.muted { color: var(--text-muted); font-family: var(--font-ui); }
+.mcp-install-note { margin: 10px 0 12px; color: var(--text-muted); font-size: var(--fs-2xs); }
 
 .agent-queue { box-sizing: border-box; width: min(820px, calc(100% - 48px)); margin: 0 auto 6px; }
 .agent-queue-list { display: flex; flex-direction: column; gap: 6px; }

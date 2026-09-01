@@ -43,6 +43,7 @@ Common commands:
 ## Validation rules
 
 - Ordinary code change: run `pnpm flow -- check`.
+- Structural change or new module: read `references/architecture-quality.md` and run `pnpm architecture`.
 - Behavior change: update or add tests, then run `pnpm flow -- check`.
 - IPC, permission, persistence, or Agent tool change: run `pnpm flow -- check --include-build`.
 - Feature or bugfix change: update SemVer in both `package.json` and `src/shared/app-meta.ts`. Before the first stable public release, keep the major version at `0` (`feat` -> minor, `fix` -> patch, breaking -> minor with explicit release notes). Only the first stable public release may become `1.0.0`.
@@ -62,9 +63,12 @@ Common commands:
 - Shared code belongs in `src/shared`; do not import Electron across layers.
 - Tests must not call real model services, send real Feishu messages, or execute dangerous commands.
 - Documentation must describe implemented behavior and must not present planned work as an existing capability.
+- New files must stay within `scripts/architecture-budget.json`; legacy exceptions are frozen and cannot grow. Split responsibilities instead of raising limits to pass CI.
 
 ## References
 
 Read `references/workflows.md` when changing IPC, Agent tools, or preparing release candidates.
+
+Read `references/architecture-quality.md` when adding features, changing module boundaries, or touching a file near its size budget.
 
 Read `docs/folder-map.md` when routing work across multiple project folders.

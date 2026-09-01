@@ -25,6 +25,10 @@ export interface MockChatServer {
   close: () => Promise<void>
 }
 
+export interface MockMcpInstallServer extends MockChatServer {
+  mcpUrl: string
+}
+
 function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return new Promise(resolve => {
     let body = ''
@@ -131,6 +135,104 @@ export async function startMockApprovalServer(): Promise<MockChatServer> {
   }
 }
 
+export async function startMockMcpInstallServer(): Promise<MockMcpInstallServer> {
+  const requests: MockChatRequest[] = []
+  let mcpUrl = ''
+
+  const server = createServer(async (req, res) => {
+    if (req.url === '/mcp') {
+      const body = await readJsonBody(req) as { jsonrpc?: string; id?: string | number; method?: string; params?: Record<string, unknown> }
+      if (body.method === 'notifications/initialized') {
+        res.writeHead(202)
+        res.end()
+        return
+      }
+      let result: Record<string, unknown>
+      if (body.method === 'initialize') {
+        result = {
+          protocolVersion: String(body.params?.protocolVersion ?? '2025-11-25'),
+          capabilities: { tools: {} },
+          serverInfo: { name: 'DeepDesk Docs', version: '1.2.0' }
+        }
+      } else if (body.method === 'tools/list') {
+        result = {
+          tools: [{
+            name: 'search_docs',
+            description: '搜索团队文档',
+            inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+            annotations: { readOnlyHint: true, destructiveHint: false }
+          }]
+        }
+      } else if (body.method === 'tools/call') {
+        result = { content: [{ type: 'text', text: 'result:ok' }] }
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id ?? null, error: { code: -32601, message: 'Method not found' } }))
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result }))
+      return
+    }
+    if (req.url === '/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: [{ id: 'mock-chat' }] }))
+      return
+    }
+    if (req.url === '/chat/completions') {
+      const body = await readJsonBody(req) as MockChatRequest
+      requests.push(body)
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      })
+      const toolMessages = (body.messages ?? []).filter(message => message.role === 'tool')
+      if (toolMessages.length === 0) {
+        writeSse(res, {
+          id: 'mock-mcp-inspect',
+          model: body.model ?? 'mock-chat',
+          choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_inspect_mcp', type: 'function', function: { name: 'inspect_mcp_server', arguments: JSON.stringify({ source: mcpUrl }) } }] } }]
+        })
+        writeSse(res, { id: 'mock-mcp-inspect', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })
+      } else if (toolMessages.length === 1) {
+        const content = String(toolMessages[0].content ?? '{}')
+        let candidateId = ''
+        try {
+          candidateId = (JSON.parse(content) as { candidate_id?: string }).candidate_id ?? ''
+        } catch {
+          throw new Error(`MCP inspection failed in E2E: ${content}`)
+        }
+        writeSse(res, {
+          id: 'mock-mcp-install',
+          model: body.model ?? 'mock-chat',
+          choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_install_mcp', type: 'function', function: { name: 'install_mcp_server', arguments: JSON.stringify({ candidate_id: candidateId }) } }] } }]
+        })
+        writeSse(res, { id: 'mock-mcp-install', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })
+      } else {
+        writeSse(res, { id: 'mock-mcp-done', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { role: 'assistant' } }] })
+        writeSse(res, { id: 'mock-mcp-done', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { content: 'MCP 服务已安装并连接。' } }] })
+        writeSse(res, { id: 'mock-mcp-done', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+      }
+      res.write('data: [DONE]\n\n')
+      res.end()
+      return
+    }
+    res.writeHead(404)
+    res.end('not found')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = (server.address() as { port: number }).port
+  const baseUrl = 'http://127.0.0.1:' + port
+  mcpUrl = baseUrl + '/mcp'
+  return {
+    baseUrl,
+    mcpUrl,
+    requests,
+    close: () => new Promise(resolve => server.close(() => resolve()))
+  }
+}
+
 export function createMemoryUserData(baseUrl: string): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
@@ -154,6 +256,48 @@ export function createMemoryUserData(baseUrl: string): string {
       models: [{ id: 'mock-chat', name: 'Mock Chat' }],
       createdAt: 1
     }],
+    conversations: [],
+    agentSessions: [],
+    memories: []
+  }
+  writeFileSync(join(userDataDir, 'deepdesk.json'), JSON.stringify(state), 'utf8')
+  return userDataDir
+}
+
+export function createMultiProviderUserData(baseUrl: string): string {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
+  const state = {
+    settings: {
+      version: 1,
+      defaultProviderId: 'mock-local',
+      defaultModelId: 'mock-chat',
+      temperature: 1,
+      theme: 'light',
+      appFont: 'default',
+      enterToSend: true,
+      agentWorkdir: '',
+      agentPermissionMode: 'ask'
+    },
+    providers: [
+      {
+        id: 'mock-local',
+        name: 'Mock Local',
+        type: 'openai',
+        baseUrl,
+        apiKey: 'sk-mock',
+        models: [{ id: 'mock-chat', name: 'Mock Chat' }],
+        createdAt: 1
+      },
+      {
+        id: 'zhipu-local',
+        name: '智谱模型',
+        type: 'openai',
+        baseUrl,
+        apiKey: 'sk-zhipu',
+        models: [{ id: 'glm-5.3-flash', name: 'GLM 5.3 Flash' }],
+        createdAt: 2
+      }
+    ],
     conversations: [],
     agentSessions: [],
     memories: []

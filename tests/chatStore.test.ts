@@ -38,7 +38,8 @@ beforeEach(() => {
       list: async () => memoryResults,
       upsert: async (memory: MemoryItem) => memory,
       remove: async () => {},
-      search: async () => memoryResults
+      search: async () => memoryResults,
+      capture: async () => []
     },
     chat: {
       start: async (req: ChatStartRequest) => { startRequests.push(req); return { ok: true } },

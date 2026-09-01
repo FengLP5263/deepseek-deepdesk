@@ -39,6 +39,7 @@ describe('AppStore', () => {
     expect(snap.conversations).toEqual([])
     expect(snap.memories).toEqual([])
     expect(snap.connectorActivities).toEqual([])
+    expect(snap.mcpServers).toEqual([])
   })
 
   it('设置持久化并可重新加载', async () => {
@@ -77,6 +78,29 @@ describe('AppStore', () => {
 
     store2.upsertConnectorConfig({ id: 'wechat', enabled: false })
     expect(store2.getSnapshot().connectors.find(connector => connector.id === 'wechat')?.enabled).toBe(false)
+  })
+
+  it('MCP 服务器配置可持久化、更新并删除', async () => {
+    const store = createStore()
+    await store.init()
+    store.upsertMcpServer({
+      id: 'filesystem', name: '文件工具', transport: 'stdio', enabled: true,
+      command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'], env: { TEST_KEY: 'value' }, cwd: dir,
+      url: '', token: '', headers: {}, createdAt: 1, updatedAt: 1
+    })
+    await store.flush()
+
+    const store2 = createStore()
+    await store2.init()
+    expect(store2.getSnapshot().mcpServers[0]).toEqual(expect.objectContaining({
+      id: 'filesystem', name: '文件工具', enabled: true, command: 'npx', env: { TEST_KEY: 'value' }
+    }))
+
+    const current = store2.getSnapshot().mcpServers[0]
+    store2.upsertMcpServer({ ...current, enabled: false, name: '文件系统工具' })
+    expect(store2.getSnapshot().mcpServers[0]).toEqual(expect.objectContaining({ enabled: false, name: '文件系统工具' }))
+    store2.deleteMcpServer('filesystem')
+    expect(store2.getSnapshot().mcpServers).toEqual([])
   })
 
   it('连接器活动消息持久化并按时间倒序读取', async () => {
@@ -125,6 +149,48 @@ describe('AppStore', () => {
     expect(store2.listMemories()[0].content).toBe('用户喜欢先给结论')
     store2.deleteMemory('m1')
     expect(store2.listMemories()).toEqual([])
+  })
+
+  it('自动捕获显式记忆并去重', async () => {
+    const store = new AppStore(dir)
+    stores.push(store)
+    await store.init()
+
+    const first = store.captureMemories({ text: '帮我记一下：我喜欢先给结论', source: { type: 'agent', id: 's1' } })
+    const second = store.captureMemories({ text: '请记住，我喜欢先给结论。', source: { type: 'agent', id: 's2' } })
+
+    expect(first).toHaveLength(1)
+    expect(first[0]).toMatchObject({ scope: 'user', kind: 'preference', content: '我喜欢先给结论' })
+    expect(second[0].id).toBe(first[0].id)
+    expect(store.listMemories()).toHaveLength(1)
+  })
+
+  it('启动时从已有 Agent 会话回填高置信长期记忆', async () => {
+    const first = new AppStore(dir)
+    stores.push(first)
+    await first.init()
+    first.upsertAgentSession({
+      id: 'history-session',
+      task: '历史会话',
+      workdir: '',
+      providerId: 'deepseek',
+      modelId: 'deepseek-v4-flash',
+      createdAt: 1,
+      updatedAt: 1,
+      steps: [{ kind: 'task', text: '以后请默认先给结论，再补充细节' }],
+      history: []
+    })
+    await first.flush()
+
+    const reopened = new AppStore(dir)
+    stores.push(reopened)
+    await reopened.init()
+
+    expect(reopened.listMemories()).toEqual([expect.objectContaining({
+      scope: 'user',
+      kind: 'preference',
+      content: '以后请默认先给结论，再补充细节'
+    })])
   })
 
   it('删除默认提供商后回退到首个', async () => {

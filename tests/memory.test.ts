@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MemoryItem } from '../src/shared/types'
-import { formatMemoryContext, searchMemories } from '../src/shared/memory'
+import { extractMemoryCandidates, formatMemoryContext, normalizeMemoryContent, searchMemories } from '../src/shared/memory'
 
 function memory(patch: Partial<MemoryItem>): MemoryItem {
   return {
@@ -17,6 +17,22 @@ function memory(patch: Partial<MemoryItem>): MemoryItem {
 }
 
 describe('memory helpers', () => {
+  it('提取显式记忆、高置信偏好和项目约定', () => {
+    expect(extractMemoryCandidates('帮我记一下：我喜欢先给结论再解释')).toEqual([expect.objectContaining({
+      scope: 'user',
+      kind: 'preference',
+      content: '我喜欢先给结论再解释'
+    })])
+    expect(extractMemoryCandidates('以后请默认使用约定式提交')).toEqual([expect.objectContaining({ kind: 'preference' })])
+    expect(extractMemoryCandidates('我们这个项目约定：合并前必须跑完测试')).toEqual([expect.objectContaining({ scope: 'project', kind: 'decision' })])
+  })
+
+  it('不记录普通一次性指令和敏感凭据', () => {
+    expect(extractMemoryCandidates('帮我检查一下这个文件')).toEqual([])
+    expect(extractMemoryCandidates('帮我记住 API Key 是 secret-value')).toEqual([])
+    expect(normalizeMemoryContent('先给结论， 再解释。')).toBe('先给结论再解释')
+  })
+
   it('按关键词、标签和范围检索启用的记忆', () => {
     const items = [
       memory({ id: 'a', scope: 'user', kind: 'preference', content: '用户喜欢直接给结论', tags: ['沟通'], updatedAt: 1 }),

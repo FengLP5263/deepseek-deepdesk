@@ -42,6 +42,7 @@ pnpm start        # 运行已构建版本
 pnpm test         # vitest 单元测试
 pnpm typecheck    # TypeScript 类型检查
 pnpm lint         # oxlint
+pnpm architecture # 文件规模与进程分层门禁
 pnpm build        # electron-vite 构建
 pnpm smoke        # 构建 + Electron 冒烟测试
 pnpm package:win  # 打 Windows NSIS 安装包
@@ -59,6 +60,7 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 - 新增 Agent 工具：`agent-tools.ts` 加 schema → `tools.ts` 加 `executeTool` 分支 → `agent.ts` 的 `evaluatePermission` 决定是否需批准。
 - Windows/macOS 差异统一放在 `src/main/platform`；业务代码禁止直接写死 PowerShell、zsh 或平台窗口行为。
 - 共享代码放 `src/shared`，不要跨层直接 import Electron。
+- 新文件必须满足 `scripts/architecture-budget.json` 的规模预算；历史例外不得继续增长。禁止仅为过门禁而调高预算，拆分规则见 `docs/architecture-quality.md`。
 
 ## 安全约束（改动前必读）
 
@@ -103,6 +105,6 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 
 ## AI 协作沉淀
 
-- 项目工程化 Skill 位于 `.agents/skills/deepdesk-engineering/SKILL.md`。
+- 项目工程化 Skill 位于 `.agents/skills/deepdesk-engineering/SKILL.md`；架构质量流程见其 `references/architecture-quality.md`。
 - 修改开发、测试、打包、发布流程时，同步更新 `docs/engineering.md`、`docs/testing.md` 和该 Skill。
 - 修改具体目录下文件时，先读取最近的局部 `AGENTS.md`；目录索引见 `docs/folder-map.md`。

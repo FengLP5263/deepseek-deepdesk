@@ -205,6 +205,34 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
   {
     type: 'function',
     function: {
+      name: 'inspect_mcp_server',
+      description: '检查用户明确提供的 HTTP MCP 服务端点，读取服务身份和工具清单，并生成一个短时安装凭证。只支持可直接连接的 Streamable HTTP MCP 地址；不要把 GitHub、npm 或普通网页地址当作服务端点。',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: '用户提供的完整 HTTP 或 HTTPS MCP 服务端点' }
+        },
+        required: ['source']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'install_mcp_server',
+      description: '使用 inspect_mcp_server 返回的短时凭证安装并连接 MCP 服务。该操作始终要求用户确认，不能自行构造 candidate_id，也不要通过命令或改配置文件绕过确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          candidate_id: { type: 'string', description: 'inspect_mcp_server 返回的 candidate_id' }
+        },
+        required: ['candidate_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'browser_evaluate',
       description: '在页面上下文执行 JavaScript 调试表达式并返回可序列化结果。该能力权限较高，通常需要用户批准。',
       parameters: {

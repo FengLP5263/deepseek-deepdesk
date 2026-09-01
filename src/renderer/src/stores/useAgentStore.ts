@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, AgentStep } from '@shared/agent-types'
+import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, AgentStep, McpInstallApproval } from '@shared/agent-types'
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
 
@@ -9,6 +9,7 @@ interface PendingApprovalState {
   cwd: string
   target: string
   reason: string
+  mcpInstall?: McpInstallApproval
 }
 
 interface RunningAgentSession {
@@ -17,6 +18,7 @@ interface RunningAgentSession {
   task: string
   input: string
   workdir: string
+  providerId: string
   modelId: string
   source?: AgentSessionSource
   createdAt: number
@@ -36,6 +38,7 @@ interface AgentState {
   running: boolean
   currentRunId: string | null
   currentTask: string
+  currentProviderId: string
   currentModelId: string
   currentSessionId: string
   currentSource?: AgentSessionSource
@@ -67,7 +70,7 @@ interface AgentState {
   setStepFeedback: (index: number, feedback: 'positive' | 'negative') => void
   regenerateFrom: (index: number) => Promise<void>
   rerunTaskFrom: (index: number, task: string) => Promise<void>
-  setCurrentModel: (modelId: string) => void
+  setCurrentModel: (providerId: string, modelId: string) => void
   setDraftTask: (task: string) => void
   clear: () => void
 }
@@ -176,6 +179,7 @@ function sessionFromContext(ctx: RunningAgentSession): AgentSession {
     id: ctx.sessionId,
     task: ctx.task,
     workdir: ctx.workdir,
+    providerId: ctx.providerId,
     modelId: ctx.modelId,
     createdAt: ctx.createdAt,
     updatedAt: Date.now(),
@@ -267,6 +271,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         id: ctx.sessionId,
         task: ctx.task,
         workdir: ctx.workdir,
+        providerId: ctx.providerId,
         modelId: ctx.modelId,
         createdAt: ctx.createdAt,
         updatedAt: Date.now(),
@@ -285,6 +290,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         history: active ? ctx.history : s.history,
         queuedMessages: active ? ctx.queuedMessages : s.queuedMessages,
         currentTask: active ? ctx.task : s.currentTask,
+        currentProviderId: active ? ctx.providerId : s.currentProviderId,
         currentModelId: active ? ctx.modelId : s.currentModelId,
         currentSource: active ? ctx.source : s.currentSource,
         workdir: active ? ctx.workdir : s.workdir
@@ -352,11 +358,14 @@ export const useAgentStore = create<AgentState>()((set, get) => {
   function saveCurrentSession(): void {
     const s = get()
     if (!s.currentTask || s.steps.length === 0) return
-    const defaultModelId = useSettingsStore.getState().settings?.defaultModelId ?? 'deepseek-v4-pro'
+    const settings = useSettingsStore.getState().settings
+    const defaultProviderId = settings?.defaultProviderId ?? 'deepseek'
+    const defaultModelId = settings?.defaultModelId ?? 'deepseek-v4-pro'
     const session: AgentSession = {
       id: s.currentSessionId,
       task: s.currentTask,
       workdir: s.workdir,
+      providerId: s.currentProviderId || defaultProviderId,
       modelId: s.currentModelId || defaultModelId,
       createdAt: s.sessions.find(item => item.id === s.currentSessionId)?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
@@ -408,20 +417,28 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     if (!t) return false
 
     const ss = useSettingsStore.getState()
-    const providerId = ss.settings?.defaultProviderId ?? 'deepseek'
+    const activeState = get()
+    const defaultProviderId = ss.settings?.defaultProviderId ?? 'deepseek'
+    const providerId = session?.providerId || activeState.currentProviderId || defaultProviderId
     const provider = ss.providers.find(p => p.id === providerId)
     if (!provider || !provider.apiKey) {
       if (activate) set({ error: '请先在「设置 → 模型服务」中配置 API Key' })
       return false
     }
 
-    const activeState = get()
-    const defaultModelId = ss.settings?.defaultModelId ?? 'deepseek-v4-pro'
+    const defaultModelId = providerId === defaultProviderId
+      ? (ss.settings?.defaultModelId ?? provider.models[0]?.id ?? '')
+      : (provider.models[0]?.id ?? '')
     const sessionId = session?.id || activeState.currentSessionId || makeId('sess')
     if (runIdBySessionId.has(sessionId)) return false
 
     const workdir = session?.workdir ?? activeState.workdir
-    const modelId = session?.modelId || activeState.currentModelId || defaultModelId
+    const selectedModelId = activeState.currentProviderId === providerId ? activeState.currentModelId : ''
+    const modelId = session?.modelId || selectedModelId || defaultModelId
+    if (!modelId) {
+      if (activate) set({ error: `模型服务“${provider.name}”还没有可用模型` })
+      return false
+    }
     const source = session?.source ?? activeState.currentSource
     const previousSteps = session?.steps ?? activeState.steps
     const previousHistory = session?.history ?? activeState.history
@@ -437,6 +454,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       task: title,
       input: t,
       workdir,
+      providerId,
       modelId,
       source,
       createdAt,
@@ -452,6 +470,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       activeSessionId: activate ? sessionId : s.activeSessionId,
       currentSessionId: activate ? sessionId : s.currentSessionId,
       currentTask: activate ? title : s.currentTask,
+      currentProviderId: activate ? providerId : s.currentProviderId,
       currentModelId: activate ? modelId : s.currentModelId,
       currentSource: activate ? source : s.currentSource,
       workdir: activate ? workdir : s.workdir,
@@ -464,6 +483,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     }))
     commitContext(ctx)
 
+    await window.api.memories.capture({ text: t, source: { type: 'agent', id: sessionId } }).catch(error => console.warn('Failed to capture Agent memory', error))
     const memories = await window.api.memories.search({ query: [t, workdir].filter(Boolean).join(' '), scopes: ['user', 'project', 'agent'], limit: 8 })
     const memoryContext = formatMemoryContext(memories)
     const res = await window.api.agent.start({ runId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, history: previousHistory, memoryContext })
@@ -534,7 +554,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         break
       case 'approval_request': {
         flushTextBuffer(ev.runId)
-        const pendingApproval = { callId: ev.callId ?? '', command: ev.command ?? '', cwd: ev.cwd ?? '', target: ev.target ?? '', reason: ev.reason ?? '' }
+        const pendingApproval = { callId: ev.callId ?? '', command: ev.command ?? '', cwd: ev.cwd ?? '', target: ev.target ?? '', reason: ev.reason ?? '', mcpInstall: ev.mcpInstall }
         set(s => ({
           pendingApprovalsBySessionId: { ...s.pendingApprovalsBySessionId, [ctx.sessionId]: pendingApproval },
           pendingApproval: s.activeSessionId === ctx.sessionId ? pendingApproval : s.pendingApproval
@@ -568,6 +588,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     running: false,
     currentRunId: null,
     currentTask: '',
+    currentProviderId: '',
     currentModelId: '',
     currentSessionId: '',
     currentSource: undefined,
@@ -727,12 +748,14 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     loadSession: (id) => {
       const s = get().sessions.find(x => x.id === id)
       if (!s) return
+      const defaultProviderId = useSettingsStore.getState().settings?.defaultProviderId ?? 'deepseek'
       const runId = runIdBySessionId.get(id)
       const ctx = runId ? runContexts.get(runId) : undefined
       const active = activeRunState(id)
       set(state => ({
         steps: ctx?.steps ?? stoppedSteps(s.steps),
         currentTask: ctx?.task ?? s.task,
+        currentProviderId: ctx?.providerId ?? s.providerId ?? defaultProviderId,
         currentModelId: ctx?.modelId ?? s.modelId,
         currentSource: ctx?.source ?? s.source,
         workdir: ctx?.workdir ?? s.workdir,
@@ -766,6 +789,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
           currentSessionId: '',
           currentSource: undefined,
           currentTask: '',
+          currentProviderId: '',
           currentModelId: '',
           steps: [],
           history: [],
@@ -837,8 +861,8 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       set({ steps: steps.slice(0, index), history })
       await get().start(text)
     },
-    setCurrentModel: (modelId) => {
-      set({ currentModelId: modelId })
+    setCurrentModel: (providerId, modelId) => {
+      set({ currentProviderId: providerId, currentModelId: modelId })
       saveCurrentSession()
     },
     setDraftTask: (task) => {
@@ -846,7 +870,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     },
     clear: () => {
       if (get().running) get().stop()
-      set({ steps: [], history: [], queuedMessages: [], error: null, pendingApproval: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, activeSessionId: null, running: false, currentRunId: null })
+      set({ steps: [], history: [], queuedMessages: [], error: null, pendingApproval: null, currentTask: '', currentProviderId: '', currentModelId: '', currentSessionId: '', currentSource: undefined, activeSessionId: null, running: false, currentRunId: null })
     }
   }
 })

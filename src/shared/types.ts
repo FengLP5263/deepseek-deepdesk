@@ -74,6 +74,11 @@ export interface MemorySearchRequest {
   limit?: number
 }
 
+export interface MemoryCaptureRequest {
+  text: string
+  source: NonNullable<MemoryItem['source']>
+}
+
 export type ConnectorId = 'lark' | 'wechat' | 'browser'
 
 export type ConnectorState = 'connected' | 'available' | 'needs_setup' | 'unavailable'
@@ -166,6 +171,57 @@ export interface ConnectorOutboundMessage {
   replyToken?: string
 }
 
+export type McpTransport = 'stdio' | 'http'
+
+export interface McpServerConfig {
+  id: string
+  name: string
+  transport: McpTransport
+  enabled: boolean
+  command: string
+  args: string[]
+  env: Record<string, string>
+  cwd: string
+  url: string
+  token: string
+  headers: Record<string, string>
+  createdAt: number
+  updatedAt: number
+}
+
+export interface McpToolAnnotations {
+  title?: string
+  readOnlyHint?: boolean
+  destructiveHint?: boolean
+  idempotentHint?: boolean
+  openWorldHint?: boolean
+}
+
+export interface McpToolInfo {
+  name: string
+  description?: string
+  inputSchema: Record<string, unknown>
+  annotations?: McpToolAnnotations
+}
+
+export type McpConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error'
+
+export interface McpServerStatus {
+  config: McpServerConfig
+  state: McpConnectionState
+  message: string
+  serverName?: string
+  serverVersion?: string
+  toolCount: number
+  tools: McpToolInfo[]
+}
+
+export interface McpActionResult {
+  ok: boolean
+  message: string
+  status?: McpServerStatus
+}
+
 export interface AppSettings {
   version: number
   defaultProviderId: string
@@ -181,6 +237,7 @@ export interface AppSettings {
 export interface AppState {
   settings: AppSettings
   providers: ProviderConfig[]
+  mcpServers: McpServerConfig[]
   connectors: ConnectorConfig[]
   connectorActivities: ConnectorActivity[]
   conversations: Conversation[]

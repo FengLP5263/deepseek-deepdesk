@@ -1,8 +1,8 @@
 {
   "name": "deepseek-desktop",
   "productName": "DeepDesk",
-  "version": "0.17.6",
-  "description": "Open-source desktop AI client with OpenAI-compatible model services, local conversations, coding agents, connectors, and browser debugging",
+  "version": "0.20.1",
+  "description": "Open-source desktop AI client with OpenAI-compatible model services, local conversations, coding agents, MCP tools, connectors, and browser debugging",
   "main": "./out/main/index.js",
   "author": "DeepDesk Team",
   "license": "MIT",
@@ -21,6 +21,7 @@
     "test": "vitest run",
     "lint": "oxlint src scripts tests e2e playwright.config.ts",
     "lint:fix": "oxlint --fix src scripts tests e2e playwright.config.ts",
+    "architecture": "node scripts/check-architecture.mjs",
     "flow": "node scripts/flow.mjs",
     "doctor": "node scripts/flow.mjs doctor",
     "ci": "node scripts/flow.mjs ci --include-build",
@@ -36,6 +37,7 @@
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "clsx": "^2.1.1",
     "highlight.js": "^11.10.0",
     "lucide-react": "^0.454.0",
@@ -46,6 +48,7 @@
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "ws": "^8.21.3",
+    "zod": "^3.25.76",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

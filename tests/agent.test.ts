@@ -5,12 +5,17 @@ import { join } from 'node:path'
 
 const mocks = vi.hoisted(() => ({
   responses: [] as Array<{ content: string | null; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>; finishReason?: string; interrupt?: boolean; waitForAbort?: boolean }>,
-  requests: [] as Array<{ messages: Array<Record<string, unknown>> }>
+  requests: [] as Array<{ messages: Array<Record<string, unknown>>; tools: Array<Record<string, unknown>> }>,
+  mcpTools: [] as Array<{ name: string; definition: Record<string, unknown>; serverId: string; serverName: string; toolName: string; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } }>,
+  mcpExecutions: [] as Array<{ name: string; args: Record<string, unknown> }>,
+  mcpInspections: [] as Array<{ source: string; runId: string }>,
+  mcpInstalls: [] as Array<{ candidateId: string; runId: string }>,
+  mcpCandidate: undefined as undefined | { candidateId: string; name: string; source: string; serverVersion?: string; toolNames: string[] }
 }))
 
 vi.mock('../src/shared/llm/toolcall', () => ({
-  streamChatCompletionWithTools: async function* (req: { messages: Array<Record<string, unknown>>; signal?: AbortSignal }) {
-    mocks.requests.push({ messages: structuredClone(req.messages) })
+  streamChatCompletionWithTools: async function* (req: { messages: Array<Record<string, unknown>>; tools: Array<Record<string, unknown>>; signal?: AbortSignal }) {
+    mocks.requests.push({ messages: structuredClone(req.messages), tools: structuredClone(req.tools) })
     const resp = mocks.responses.shift()
     if (!resp) return
     if (resp.waitForAbort) {
@@ -30,6 +35,24 @@ vi.mock('../src/shared/llm/toolcall', () => ({
       throw new IncompleteStreamError()
     }
     yield { type: 'final', toolCalls: resp.toolCalls, finishReason: resp.finishReason ?? (resp.toolCalls.length > 0 ? 'tool_calls' : 'stop') }
+  }
+}))
+
+vi.mock('../src/main/mcp', () => ({
+  listMcpAgentTools: () => mocks.mcpTools,
+  getMcpAgentTool: (name: string) => mocks.mcpTools.find(tool => tool.name === name),
+  executeMcpAgentTool: async (name: string, args: Record<string, unknown>) => {
+    mocks.mcpExecutions.push({ name, args })
+    return { ok: true, content: 'MCP 执行结果', summary: 'MCP 执行完成' }
+  },
+  inspectMcpServer: async (source: string, runId: string) => {
+    mocks.mcpInspections.push({ source, runId })
+    return { ok: true, content: JSON.stringify({ candidate_id: 'candidate-1' }), summary: 'MCP 检查完成' }
+  },
+  getMcpInstallCandidate: (candidateId: string, runId: string) => candidateId === mocks.mcpCandidate?.candidateId && runId.startsWith('r-') ? mocks.mcpCandidate : undefined,
+  installMcpServer: async (candidateId: string, runId: string) => {
+    mocks.mcpInstalls.push({ candidateId, runId })
+    return { ok: true, content: 'MCP 已安装', summary: 'MCP 安装完成' }
   }
 }))
 
@@ -80,7 +103,16 @@ async function waitForApprovalCount(events: AgentEvent[], count: number): Promis
 }
 
 let dir: string
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'agent-test-')); mocks.responses.length = 0; mocks.requests.length = 0 })
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'agent-test-'))
+  mocks.responses.length = 0
+  mocks.requests.length = 0
+  mocks.mcpTools.length = 0
+  mocks.mcpExecutions.length = 0
+  mocks.mcpInspections.length = 0
+  mocks.mcpInstalls.length = 0
+  mocks.mcpCandidate = undefined
+})
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 
 describe('startAgent', () => {
@@ -276,6 +308,88 @@ describe('startAgent', () => {
     expect(approval).toBeTruthy()
     approveCommand(approval!.callId!, false)
     await runUntilDone(events)
+  })
+
+  it('auto 模式：MCP 明确标注的只读工具自动执行并进入模型工具列表', async () => {
+    const name = 'mcp__demo__read__12345678'
+    mocks.mcpTools.push({
+      name,
+      serverId: 'demo',
+      serverName: '演示服务器',
+      toolName: 'read',
+      annotations: { readOnlyHint: true, destructiveHint: false },
+      definition: { type: 'function', function: { name, description: '读取数据', parameters: { type: 'object' } } }
+    })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'mcp-read', name, args: { id: 7 } }] })
+    mocks.responses.push({ content: '读取完成', toolCalls: [] })
+    const { events, win } = makeWin()
+    const autoSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'auto' }
+
+    startAgent(win as never, { runId: 'r-mcp-read', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '读取 MCP 数据', temperature: 1 }, provider, autoSettings)
+    await runUntilDone(events)
+
+    expect(events.some(event => event.type === 'approval_request')).toBe(false)
+    expect(mocks.mcpExecutions).toEqual([{ name, args: { id: 7 } }])
+    expect(mocks.requests[0].tools).toContainEqual(expect.objectContaining({ type: 'function', function: expect.objectContaining({ name }) }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_result', callId: 'mcp-read', ok: true }))
+  })
+
+  it('auto 模式：未声明只读的 MCP 工具仍需用户批准', async () => {
+    const name = 'mcp__demo__write__87654321'
+    mocks.mcpTools.push({
+      name,
+      serverId: 'demo',
+      serverName: '演示服务器',
+      toolName: 'write',
+      annotations: { destructiveHint: true },
+      definition: { type: 'function', function: { name, description: '写入数据', parameters: { type: 'object' } } }
+    })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'mcp-write', name, args: { value: 'x' } }] })
+    mocks.responses.push({ content: '已取消', toolCalls: [] })
+    const { events, win } = makeWin()
+    const autoSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'auto' }
+
+    startAgent(win as never, { runId: 'r-mcp-write', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '写入 MCP 数据', temperature: 1 }, provider, autoSettings)
+    const approval = await waitForApproval(events)
+
+    expect(approval).toEqual(expect.objectContaining({ reason: '调用外部 MCP 工具：演示服务器 · write', command: '演示服务器 · write' }))
+    approveCommand(approval!.callId!, false)
+    await runUntilDone(events)
+    expect(mocks.mcpExecutions).toEqual([])
+  })
+
+  it('会话可以检查 MCP 地址，但安装即使在 full 模式也必须展示服务详情并确认', async () => {
+    mocks.mcpCandidate = {
+      candidateId: 'candidate-1',
+      name: 'Docs MCP',
+      source: 'https://mcp.example.com/mcp',
+      serverVersion: '2.1.0',
+      toolNames: ['search_docs', 'read_doc']
+    }
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'inspect-1', name: 'inspect_mcp_server', args: { source: 'https://mcp.example.com/mcp' } }] })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'install-1', name: 'install_mcp_server', args: { candidate_id: 'candidate-1' } }] })
+    mocks.responses.push({ content: '安装完成', toolCalls: [] })
+    const { events, win } = makeWin()
+    const fullSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'full' }
+
+    startAgent(win as never, { runId: 'r-mcp-install', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '安装这个 MCP', temperature: 1 }, provider, fullSettings)
+    const approval = await waitForApproval(events)
+
+    expect(mocks.mcpInspections).toEqual([{ source: 'https://mcp.example.com/mcp', runId: 'r-mcp-install' }])
+    expect(approval).toEqual(expect.objectContaining({
+      callId: 'install-1',
+      reason: '安装 MCP 服务',
+      command: 'Docs MCP',
+      target: 'https://mcp.example.com/mcp',
+      mcpInstall: mocks.mcpCandidate
+    }))
+    expect(mocks.mcpInstalls).toEqual([])
+
+    approveCommand('install-1', true)
+    await runUntilDone(events)
+
+    expect(mocks.mcpInstalls).toEqual([{ candidateId: 'candidate-1', runId: 'r-mcp-install' }])
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_result', callId: 'install-1', ok: true }))
   })
 
   it('ask 模式：访问工作目录外文件需批准', async () => {

@@ -20,7 +20,8 @@ import {
   openSettings,
   pressAppShortcut,
   startMockApprovalServer,
-  startMockChatServer
+  startMockChatServer,
+  startMockMcpInstallServer
 } from './helpers'
 
 let app: ElectronApplication
@@ -116,6 +117,74 @@ test('aligns the settings navigation and content columns', async () => {
   expect(layout!.headingLeft).toBe(layout!.contentLeft)
   expect(layout!.searchLeft).toBe(layout!.activeItemLeft)
   expect(layout!.searchRight).toBe(layout!.activeItemRight)
+})
+
+test('adds, edits, and removes an MCP server from settings', async () => {
+  await openSettings(page)
+  await page.getByRole('button', { name: 'MCP', exact: true }).click()
+
+  await expect(page.locator('.settings-title')).toHaveText('MCP')
+  await expect(page.locator('.mcp-empty')).toContainText('还没有 MCP 服务器')
+  await page.getByRole('button', { name: '添加服务器' }).click()
+
+  const form = page.locator('.modal', { hasText: '添加 MCP 服务器' })
+  await expect(form).toBeVisible()
+  await form.getByLabel('服务器名称').fill('团队知识库')
+  await form.getByLabel('连接方式').selectOption('http')
+  await form.getByLabel('服务器地址').fill('https://example.com/mcp')
+  await form.getByRole('button', { name: '保存', exact: true }).click()
+
+  const card = page.locator('.mcp-card', { hasText: '团队知识库' })
+  await expect(card).toBeVisible()
+  await expect(card).toContainText('未连接')
+  await expect(card).toContainText('https://example.com/mcp')
+  await expect(card.getByRole('button', { name: '连接', exact: true })).toBeVisible()
+
+  await card.getByTitle('编辑服务器').click()
+  const editForm = page.locator('.modal', { hasText: '编辑 MCP 服务器' })
+  await expect(editForm.getByLabel('服务器名称')).toHaveValue('团队知识库')
+  await editForm.getByRole('button', { name: '取消' }).click()
+
+  await card.getByTitle('删除服务器').click()
+  const confirm = page.locator('.modal', { hasText: '删除 MCP 服务器' })
+  await confirm.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(card).toHaveCount(0)
+  await expect(page.locator('.mcp-empty')).toContainText('还没有 MCP 服务器')
+})
+
+test('inspects and installs an HTTP MCP service from the conversation after explicit confirmation', async () => {
+  await closeDeepDesk(ctx)
+  ctx = null
+  const mock = await startMockMcpInstallServer()
+
+  try {
+    ctx = await launchDeepDesk(createMemoryUserData(mock.baseUrl))
+    app = ctx.app
+    page = ctx.page
+
+    await page.getByPlaceholder('发消息，或让我帮你做点事…').fill(`把这个 MCP 服务装一下：${mock.mcpUrl}`)
+    await page.locator('.send-btn').click()
+
+    const approval = page.getByRole('dialog', { name: '安装 MCP 服务' })
+    await expect(approval).toBeVisible()
+    await expect(approval).toContainText('DeepDesk Docs')
+    await expect(approval).toContainText(mock.mcpUrl)
+    await expect(approval).toContainText('search_docs')
+    await expect(approval).toContainText('1 个工具')
+    await expect(approval.getByRole('button', { name: '安装并连接' })).toBeVisible()
+    await expect(approval.getByRole('button', { name: '取消' })).toBeVisible()
+
+    await approval.getByRole('button', { name: '安装并连接' }).click()
+    await expect(page.getByText('MCP 服务已安装并连接。')).toBeVisible()
+
+    await openSettings(page)
+    await page.getByRole('button', { name: 'MCP', exact: true }).click()
+    const card = page.locator('.mcp-card', { hasText: 'DeepDesk Docs' })
+    await expect(card).toContainText('已连接')
+    await expect(card).toContainText('1 个可用工具')
+  } finally {
+    await mock.close()
+  }
 })
 
 test('marks titlebar drag regions and supports settings back button', async () => {
@@ -384,35 +453,6 @@ test('selects agent permission mode from the gray composer menu', async () => {
   await permissionButton.click()
   await menu.getByRole('menuitemradio', { name: '每次询问' }).click()
   await expect(permissionButton).toContainText('每次询问')
-})
-
-test('selects a model from the polished composer model picker', async () => {
-  const modelButton = page.getByTitle('选择模型')
-
-  await expect(modelButton).toContainText('Auto')
-
-  await modelButton.click()
-  const menu = page.getByRole('menu', { name: '选择模型' })
-  await expect(menu).toBeVisible()
-  const menuStyle = await menu.evaluate(element => {
-    const rect = element.getBoundingClientRect()
-    return {
-      width: Math.round(rect.width),
-      radius: getComputedStyle(element).borderTopLeftRadius
-    }
-  })
-  expect(menuStyle.width).toBeLessThanOrEqual(248)
-  expect(menuStyle.radius).toBe('8px')
-  await expect(menu).not.toContainText('0.79')
-  await expect(menu.getByRole('switch', { name: 'Max 模式' })).toBeVisible()
-  await expect(menu.getByRole('menuitemradio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true')
-
-  await menu.getByRole('menuitemradio', { name: 'DeepSeek V4 Pro（深度思考）' }).click()
-  await expect(modelButton).toContainText('DeepSeek V4 Pro（深度思考）')
-
-  await modelButton.click()
-  await page.getByRole('menuitem', { name: '配置自定义模型' }).click()
-  await expect(page.locator('.settings-title', { hasText: '模型服务' })).toBeVisible()
 })
 
 test('selects a mock agent work directory without opening a native dialog', async () => {

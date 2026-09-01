@@ -5,6 +5,7 @@ import { registerIpc } from './ipc'
 import { cancelAllChats } from './llm'
 import { getPlatformAdapter } from './platform'
 import { configureBrowserAutomation, shutdownBrowserAutomation } from './browser-runtime'
+import { configureMcp, shutdownMcp } from './mcp'
 
 let mainWindow: BrowserWindow | null = null
 const platform = getPlatformAdapter()
@@ -27,6 +28,7 @@ if (!gotLock) {
     platform.installApplicationMenu()
     await store.init()
     await configureBrowserAutomation(store)
+    await configureMcp(store)
     registerIpc(store, () => mainWindow)
     mainWindow = createMainWindow()
     mainWindow.on('closed', () => {
@@ -65,6 +67,6 @@ if (!gotLock) {
     if (isQuitting) return
     event.preventDefault()
     isQuitting = true
-    void Promise.all([store.flush(), shutdownBrowserAutomation()]).finally(() => app.quit())
+    void Promise.all([store.flush(), shutdownBrowserAutomation(), shutdownMcp()]).finally(() => app.quit())
   })
 }

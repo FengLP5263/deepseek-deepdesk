@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type { DeepDeskApi } from '../shared/api'
 import type { AgentEvent, AgentRunRequest, AgentSession } from '../shared/agent-types'
-import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus } from '../shared/types'
+import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus, McpActionResult, McpServerConfig, McpServerStatus } from '../shared/types'
 import { platformInfoFromNode } from '../shared/platform'
 
 const api: DeepDeskApi = {
@@ -17,6 +17,13 @@ const api: DeepDeskApi = {
     remove: (id: string) => ipcRenderer.invoke(IPC.ProviderDelete, id) as Promise<void>,
     test: (provider: ProviderConfig) => ipcRenderer.invoke(IPC.ProviderTest, provider) as Promise<ProviderTestResult>
   },
+  mcp: {
+    list: () => ipcRenderer.invoke(IPC.McpServersList) as Promise<McpServerStatus[]>,
+    save: (config: McpServerConfig) => ipcRenderer.invoke(IPC.McpServerSave, config) as Promise<McpServerStatus>,
+    remove: (id: string) => ipcRenderer.invoke(IPC.McpServerDelete, id) as Promise<void>,
+    connect: (id: string) => ipcRenderer.invoke(IPC.McpServerConnect, id) as Promise<McpActionResult>,
+    disconnect: (id: string) => ipcRenderer.invoke(IPC.McpServerDisconnect, id) as Promise<McpActionResult>
+  },
   conversations: {
     list: () => ipcRenderer.invoke(IPC.ConversationsList) as Promise<Conversation[]>,
     get: (id: string) => ipcRenderer.invoke(IPC.ConversationGet, id) as Promise<Conversation | null>,
@@ -27,7 +34,8 @@ const api: DeepDeskApi = {
     list: () => ipcRenderer.invoke(IPC.MemoriesList) as Promise<MemoryItem[]>,
     upsert: (memory: MemoryItem) => ipcRenderer.invoke(IPC.MemoryUpsert, memory) as Promise<MemoryItem>,
     remove: (id: string) => ipcRenderer.invoke(IPC.MemoryDelete, id) as Promise<void>,
-    search: (request: MemorySearchRequest) => ipcRenderer.invoke(IPC.MemoriesSearch, request) as Promise<MemoryItem[]>
+    search: (request: MemorySearchRequest) => ipcRenderer.invoke(IPC.MemoriesSearch, request) as Promise<MemoryItem[]>,
+    capture: (request: MemoryCaptureRequest) => ipcRenderer.invoke(IPC.MemoriesCapture, request) as Promise<MemoryItem[]>
   },
   connectors: {
     list: () => ipcRenderer.invoke(IPC.ConnectorsList) as Promise<ConnectorStatus[]>,

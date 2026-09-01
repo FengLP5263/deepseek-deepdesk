@@ -9,6 +9,7 @@ DeepDesk 当前具备基础质量门禁，并已接入真实 Electron UI 端到�
 | 类型检查 | `pnpm typecheck` | 已有 |
 | E2E 类型检查 | `pnpm typecheck:e2e` | 已有 |
 | 静态检查 | `pnpm lint` | 已有 |
+| 架构检查 | `pnpm architecture` | 已有，文件预算与跨层边界 |
 | 单元/集成测试 | `pnpm test` | 已有，Vitest |
 | 构建验证 | `pnpm build` | 已有 |
 | Electron smoke | `pnpm smoke` | 已有，验证 renderer 加载 |
@@ -32,6 +33,9 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 - 文件工具工作目录边界
 - Zustand store 行为
 - AppStore 持久化链路
+- 长期记忆显式捕获、偏好提取、敏感信息过滤和去重
+- 跨供应商模型选择及会话级 provider/model 持久化
+- 架构预算、Renderer 禁止直连网络和跨层导入失败用例
 - Electron renderer 加载 smoke
 - Playwright Electron 覆盖启动、设置页、平台快捷键、Windows 自定义窗口按钮、macOS 原生交通灯布局、侧边栏、模型入口、权限模式、模拟工作目录选择、输入框发送状态、多行输入、上下文面板、Provider 增删改、API Key 显隐、常规设置重启读回、窗口最大化，以及长会话中的回到底部控件定位与滚动行为
 - E2E 同时支持 CI 友好的 isolated 模式和人工观察友好的 session 模式
@@ -91,3 +95,4 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 - 改权限：补允许、拒绝、越界、危险命令测试。
 - 改 LLM 协议：补 mock HTTP 流式测试。
 - 改 UI 关键交互：至少补 store 测试；E2E 建好后补 UI 测试。
+- 新增领域 E2E 时优先创建独立 `*.spec.ts`，不要继续扩张历史综合验收文件。

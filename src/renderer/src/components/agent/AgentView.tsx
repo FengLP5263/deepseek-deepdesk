@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, FolderOpen, Gauge, Pencil, RefreshCw, Terminal, ThumbsDown, ThumbsUp, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
+import { ArrowDown, ArrowUp, Blocks, Check, ChevronDown, Copy, FolderOpen, Pencil, RefreshCw, Terminal, ThumbsDown, ThumbsUp, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import type { AgentStep } from '@shared/agent-types'
@@ -9,8 +9,7 @@ import { formatTokens } from '../../lib/format'
 import { DEFAULT_CONTEXT_WINDOW, estimateContextUsage } from '@shared/context-manager'
 import Markdown from '../chat/Markdown'
 import { copyText } from '../../lib/utils'
-import DeepSeekLogo from '../DeepSeekLogo'
-import zhipuIcon from '../../assets/icons/zhipu.svg'
+import AgentModelPicker from './AgentModelPicker'
 import '../../assets/agent.css'
 
 function formatWorkdirName(workdir: string): string {
@@ -303,6 +302,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const workdir = useAgentStore(s => s.workdir)
   const history = useAgentStore(s => s.history)
   const draftTask = useAgentStore(s => s.draftTask)
+  const currentProviderId = useAgentStore(s => s.currentProviderId)
   const currentModelId = useAgentStore(s => s.currentModelId)
   const start = useAgentStore(s => s.start)
   const enqueueMessage = useAgentStore(s => s.enqueueMessage)
@@ -315,40 +315,18 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const updateSettings = useSettingsStore(s => s.updateSettings)
   const [text, setText] = useState('')
   const [openMenu, setOpenMenu] = useState<'model' | 'permission' | 'context' | null>(null)
-  const [maxMode, setMaxMode] = useState(false)
-  const [autoModelMode, setAutoModelMode] = useState(true)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const provider = providers.find(p => p.id === (settings?.defaultProviderId ?? 'deepseek'))
+  const autoModelMode = !currentProviderId || !currentModelId
+  const effectiveProviderId = currentProviderId || (settings?.defaultProviderId ?? 'deepseek')
+  const provider = providers.find(p => p.id === effectiveProviderId)
   const effectiveModelId = currentModelId || (settings?.defaultModelId ?? '')
   const contextWindow = provider?.models.find(m => m.id === effectiveModelId)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW
   const mode = settings?.agentPermissionMode ?? 'ask'
   const modeLabel = mode === 'full' ? '完全访问' : mode === 'auto' ? '替我审批' : '每次询问'
-  const models = provider?.models ?? []
-  const selectedModel = models.find(item => item.id === effectiveModelId)
-  const selectedModelLabel = selectedModel?.name ?? (effectiveModelId || '选择模型')
-  const modelButtonLabel = autoModelMode ? 'Auto' : selectedModelLabel
   const workdirLabel = formatWorkdirName(workdir)
-  const workdirTitle = workdir ? `工作目录：${workdir}` : '选择工作目录'
-  const isDeepSeekModel = (model: { id: string; name?: string }): boolean => {
-    const text = (model.id + ' ' + (model.name ?? '')).toLowerCase()
-    return text.includes('deepseek')
-  }
-  const isZhipuModel = (model: { id: string; name?: string }): boolean => {
-    const text = [
-      provider?.name,
-      provider?.baseUrl,
-      model.id,
-      model.name
-    ].filter(Boolean).join(' ').toLowerCase()
-    return text.includes('智谱') || text.includes('zhipu') || text.includes('bigmodel') || text.includes('glm')
-  }
-  const modelButtonIcon = autoModelMode ? <RefreshCw size={14} /> : selectedModel && isDeepSeekModel(selectedModel)
-    ? <DeepSeekLogo className='model-logo' width={15} height={15} aria-hidden />
-    : selectedModel && isZhipuModel(selectedModel)
-      ? <img src={zhipuIcon} className='model-logo model-logo-img compact' alt='' aria-hidden />
-    : <span className='model-mark compact'>{selectedModelLabel.trim().charAt(0).toUpperCase()}</span>
+  const workdirTitle = workdir ? `工作目录：${workdir}` : '未选择时使用系统用户主目录'
 
   useEffect(() => {
     const closeMenu = (event: PointerEvent): void => {
@@ -357,10 +335,6 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
     document.addEventListener('pointerdown', closeMenu)
     return () => document.removeEventListener('pointerdown', closeMenu)
   }, [])
-
-  useEffect(() => {
-    setAutoModelMode(!currentModelId)
-  }, [currentModelId])
 
   useEffect(() => {
     const ta = taRef.current
@@ -424,45 +398,21 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
             )}
           </div>
           <button className='toolbar-item' onClick={() => void pickDirectory()} title={workdirTitle}>
-            <FolderOpen size={13} /><span>{workdirLabel || '选择工作目录'}</span>
+            <FolderOpen size={13} /><span>{workdirLabel || '用户主目录'}</span>
           </button>
         </div>
         <div className='composer-right'>
-          <div className='composer-menu'>
-            <button className='toolbar-item composer-menu-trigger composer-model-trigger' aria-expanded={openMenu === 'model'} onClick={() => setOpenMenu(openMenu === 'model' ? null : 'model')} title='选择模型'>
-              {modelButtonIcon}
-              <span>{modelButtonLabel}</span><ChevronDown size={12} />
-            </button>
-            {openMenu === 'model' && (
-              <div className='composer-menu-popover composer-model-popover' role='menu' aria-label='选择模型'>
-                <div className='model-menu-header'>
-                  <div className='model-menu-title'><Gauge size={15} /> Max 模式</div>
-                  <button type='button' className={clsx('model-max-switch', maxMode && 'on')} role='switch' aria-checked={maxMode} aria-label='Max 模式' onClick={() => setMaxMode(value => !value)}>
-                    <span />
-                  </button>
-                </div>
-                <button className='model-menu-option auto' role='menuitemradio' aria-checked={autoModelMode} onClick={() => { setAutoModelMode(true); setCurrentModel(''); setOpenMenu(null) }}>
-                  <span className='model-option-main'><RefreshCw size={16} /><span>Auto</span></span>
-                  {autoModelMode && <Check size={15} />}
-                </button>
-                <div className='model-menu-list'>
-                {models.map(item => (
-                  <button key={item.id} className='model-menu-option' role='menuitemradio' aria-checked={!autoModelMode && effectiveModelId === item.id} onClick={() => { setAutoModelMode(false); setCurrentModel(item.id); setOpenMenu(null) }}>
-                    <span className='model-option-main'>
-                      {isDeepSeekModel(item) ? <DeepSeekLogo className='model-logo' width={18} height={18} aria-hidden /> : isZhipuModel(item) ? <img src={zhipuIcon} className='model-logo model-logo-img' alt='' aria-hidden /> : <span className='model-mark'>{(item.name ?? item.id).trim().charAt(0).toUpperCase()}</span>}
-                      <span className='model-name'>{item.name ?? item.id}</span>
-                    </span>
-                    {!autoModelMode && item.id === effectiveModelId && <span className='model-check'><Check size={15} /></span>}
-                  </button>
-                ))}
-                </div>
-                <button className='model-menu-config' role='menuitem' onClick={() => { setOpenMenu(null); onOpenSettings() }}>
-                  <Pencil size={15} />
-                  <span>配置自定义模型</span>
-                </button>
-              </div>
-            )}
-          </div>
+          <AgentModelPicker
+            providers={providers}
+            selectedProviderId={effectiveProviderId}
+            selectedModelId={effectiveModelId}
+            auto={autoModelMode}
+            open={openMenu === 'model'}
+            onToggle={() => setOpenMenu(openMenu === 'model' ? null : 'model')}
+            onAuto={() => { setCurrentModel('', ''); setOpenMenu(null) }}
+            onSelect={(providerId, modelId) => { setCurrentModel(providerId, modelId); setOpenMenu(null) }}
+            onConfigure={() => { setOpenMenu(null); onOpenSettings() }}
+          />
           <ContextMeter history={history} currentInput={text} contextWindow={contextWindow} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
           {running ? (
             <>
@@ -520,7 +470,7 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
     setShowScrollToBottom(false)
   }
   const workdirLabel = formatWorkdirName(workdir)
-  const workdirTitle = workdir ? `工作目录：${workdir}` : '选择工作目录'
+  const workdirTitle = workdir ? `工作目录：${workdir}` : '未选择时使用系统用户主目录'
 
   return (
     <div className='agent-view'>
@@ -528,9 +478,9 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
       {steps.length === 0 ? (
         <div className='agent-empty'>
           <div className='empty-title'>你好，我是 DeepDesk</div>
-          <div className='empty-sub'>直接问我问题，或让我帮你写代码、执行命令、读写文件、发飞书消息。先选个工作目录，然后告诉我做什么。</div>
+          <div className='empty-sub'>直接问我问题，或让我帮你写代码、执行命令、读写文件、发飞书消息。未选择目录时会使用系统用户主目录。</div>
           <div className='quick-chips'>
-            <button className='quick-chip' onClick={() => void pickDirectory()} title={workdirTitle}><FolderOpen size={13} /> {workdirLabel || '选择工作目录'}</button>
+            <button className='quick-chip' onClick={() => void pickDirectory()} title={workdirTitle}><FolderOpen size={13} /> {workdirLabel || '用户主目录'}</button>
           </div>
           <div className='agent-empty-composer'>
             <AgentComposer onOpenSettings={onOpenSettings} />
@@ -551,14 +501,39 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
             </button>
           )}
           {pendingApproval && (
-            <div className='agent-approval' role='dialog' aria-label='执行审批'>
-              <div className='agent-approval-title'>{pendingApproval.reason || '等待批准'}</div>
-              <pre className='agent-approval-cmd'>{pendingApproval.command || pendingApproval.target}</pre>
-              {pendingApproval.command && <div className='agent-approval-cwd'>工作目录：{pendingApproval.cwd}</div>}
-              <div className='agent-approval-actions'>
-                <button className='btn btn-primary btn-sm' onClick={() => approve(true)}><Check size={13} /> 批准</button>
-                <button className='btn btn-danger btn-sm' onClick={() => approve(false)}><X size={13} /> 拒绝</button>
-              </div>
+            <div className={clsx('agent-approval', { 'mcp-install': pendingApproval.mcpInstall })} role='dialog' aria-label={pendingApproval.mcpInstall ? '安装 MCP 服务' : '执行审批'}>
+              {pendingApproval.mcpInstall ? (
+                <>
+                  <div className='agent-approval-title'><Blocks size={16} /> 安装 MCP 服务</div>
+                  <div className='mcp-install-heading'>
+                    <span>{pendingApproval.mcpInstall.name}</span>
+                    {pendingApproval.mcpInstall.serverVersion && <span className='mcp-install-version'>v{pendingApproval.mcpInstall.serverVersion}</span>}
+                  </div>
+                  <div className='mcp-install-source' title={pendingApproval.mcpInstall.source}>{pendingApproval.mcpInstall.source}</div>
+                  <div className='mcp-install-copy'>安装后，DeepDesk 将连接该服务，并向 Agent 提供 {pendingApproval.mcpInstall.toolNames.length} 个工具。</div>
+                  {pendingApproval.mcpInstall.toolNames.length > 0 && (
+                    <div className='mcp-install-tools' aria-label='MCP 工具清单'>
+                      {pendingApproval.mcpInstall.toolNames.slice(0, 6).map(name => <span className='mcp-install-tool' key={name}>{name}</span>)}
+                      {pendingApproval.mcpInstall.toolNames.length > 6 && <span className='mcp-install-tool muted'>+{pendingApproval.mcpInstall.toolNames.length - 6}</span>}
+                    </div>
+                  )}
+                  <div className='mcp-install-note'>此连接会保存到“设置 → MCP”，下次启动时自动恢复。</div>
+                  <div className='agent-approval-actions'>
+                    <button className='btn btn-secondary btn-sm' onClick={() => approve(false)}><X size={13} /> 取消</button>
+                    <button className='btn btn-primary btn-sm' onClick={() => approve(true)}><Check size={13} /> 安装并连接</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className='agent-approval-title'>{pendingApproval.reason || '等待批准'}</div>
+                  <pre className='agent-approval-cmd'>{pendingApproval.command || pendingApproval.target}</pre>
+                  {pendingApproval.command && pendingApproval.cwd && <div className='agent-approval-cwd'>工作目录：{pendingApproval.cwd}</div>}
+                  <div className='agent-approval-actions'>
+                    <button className='btn btn-primary btn-sm' onClick={() => approve(true)}><Check size={13} /> 批准</button>
+                    <button className='btn btn-danger btn-sm' onClick={() => approve(false)}><X size={13} /> 拒绝</button>
+                  </div>
+                </>
+              )}
             </div>
           )}
           <div className='agent-composer-stack'>

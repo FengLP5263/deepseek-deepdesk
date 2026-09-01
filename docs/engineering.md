@@ -19,6 +19,7 @@ pnpm flow -- <command> [options]
 | 环境诊断 | `pnpm flow -- doctor` | 检查 Node、pnpm、关键配置文件 |
 | CI 门禁 | `pnpm flow -- ci --include-build` | CI 等价命令 |
 | 快速质量门禁 | `pnpm flow -- check` | typecheck + typecheck:e2e + lint + test |
+| 架构质量门禁 | `pnpm architecture` | 文件规模预算、Renderer 网络边界和跨层依赖 |
 | 完整本地门禁 | `pnpm flow -- check --include-build --include-smoke --include-e2e` | 追加 build、Electron smoke、E2E |
 | E2E 隔离模式 | `pnpm flow -- e2e` | 每条用例独立启动客户端，CI 默认使用 |
 | E2E 会话模式 | `pnpm flow -- e2e --mode session` | 一个客户端窗口连续跑完整验收流，适合本地人工观察 |
@@ -36,9 +37,10 @@ pnpm flow -- <command> [options]
 1. 开发前：确认位于 `develop` 或从 `develop` 创建的短期分支，再运行 `pnpm flow -- doctor`
 2. 改代码中：按影响范围运行 `pnpm flow -- check`
 3. 改安全、权限、持久化、IPC、Agent 工具：必须补或更新测试
-4. 功能和修复改动：按语义化版本号同步更新 `package.json` 与 `src/shared/app-meta.ts`
-5. 提交前：`pnpm flow -- check --include-build`
-6. 发版前：在目标系统运行 `pnpm flow -- release --target win` 或 `pnpm flow -- release --target mac`
+4. 新增模块或修改结构：先读 `docs/architecture-quality.md`，新文件不得超预算，历史例外不得增长
+5. 功能和修复改动：按语义化版本号同步更新 `package.json` 与 `src/shared/app-meta.ts`
+6. 提交前：`pnpm flow -- check --include-build`
+7. 发版前：在目标系统运行 `pnpm flow -- release --target win` 或 `pnpm flow -- release --target mac`
 
 ## 分支工作流
 
@@ -83,6 +85,12 @@ DeepDesk 还没有发布第一个稳定对外版本，因此当前使用 `0.x.y`
   - `docs/engineering.md`
   - 相关测试
   - 必要时更新项目 Skill
+
+## 架构质量
+
+`pnpm flow -- check` 会首先执行 `pnpm architecture`。预算配置位于 `scripts/architecture-budget.json`，检查器位于 `scripts/check-architecture.mjs`。详细的类型上限、历史债务冻结策略、分层边界和拆分方式见 `docs/architecture-quality.md`。
+
+已有超限文件使用带原因和目标值的显式例外冻结；任何新增行都会让门禁失败。不要压缩代码或提高例外上限，应把新职责拆入独立模块和领域测试文件。
 
 ## 当前缺口
 

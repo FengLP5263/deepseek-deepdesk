@@ -41,10 +41,8 @@ export default function MemoriesTab() {
 
   return (
     <div className='settings-section'>
-      <div>
-        <div className='settings-section-title'>长期记忆</div>
-        <div className='settings-section-desc'>记忆只保存在本地，用于聊天和 Agent 启动前的上下文注入；关闭后不会参与检索。</div>
-      </div>
+      <div className='settings-section-title'>长期记忆</div>
+      <div className='settings-section-desc'>显式要求记住的内容和高置信长期偏好会自动保存在本地；你可以在这里编辑、停用或删除。</div>
 
       <div className='settings-card memory-editor'>
         <div className='memory-editor-grid'>
@@ -70,13 +68,14 @@ export default function MemoriesTab() {
 
       <div className='memory-list'>
         {!loaded && <div className='memory-empty'>正在加载记忆...</div>}
-        {loaded && memories.length === 0 && <div className='memory-empty'>还没有记忆。先添加一条用户偏好或项目事实。</div>}
+        {loaded && memories.length === 0 && <div className='memory-empty'>还没有可长期使用的记忆。你也可以手动添加一条偏好或项目事实。</div>}
         {memories.map(memory => (
           <div key={memory.id} className='memory-card'>
             <div className='memory-card-main'>
               <div className='memory-meta'>
                 <span>{labelOf(scopeOptions, memory.scope)}</span>
                 <span>{labelOf(kindOptions, memory.kind)}</span>
+                <span>{memory.source?.type === 'manual' ? '手动添加' : '自动记录'}</span>
                 {!memory.enabled && <span>已停用</span>}
               </div>
               <div className='memory-content'>{memory.content}</div>
