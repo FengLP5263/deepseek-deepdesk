@@ -4,15 +4,20 @@ import { streamOpenAICompatible } from '../shared/llm/openai'
 import { getModelContextWindow, manageContextMessages } from '../shared/context-manager'
 import { IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, STREAM_CONTINUE_PROMPT, streamNeedsContinuation, streamTerminationError } from '../shared/llm/stream'
 import type { ChatChunkPayload, ChatStartRequest, ProviderConfig, Usage } from '../shared/types'
+import { createStreamEventBuffer } from './stream-event-buffer'
 
 const controllers = new Map<string, AbortController>()
 
 export function startChat(win: BrowserWindow, req: ChatStartRequest, provider: ProviderConfig): void {
   const controller = new AbortController()
   controllers.set(req.runId, controller)
-  const send = (payload: ChatChunkPayload): void => {
+  const sendNow = (payload: ChatChunkPayload): void => {
     if (!win.isDestroyed()) win.webContents.send(IPC.ChatChunk, payload)
   }
+  const streamEvents = createStreamEventBuffer(sendNow, {
+    isBufferable: payload => payload.type === 'content' || payload.type === 'reasoning'
+  })
+  const send = streamEvents.send
   send({ runId: req.runId, conversationId: req.conversationId, type: 'start', model: req.modelId })
   void (async () => {
     try {
@@ -77,6 +82,7 @@ export function startChat(win: BrowserWindow, req: ChatStartRequest, provider: P
         send({ runId: req.runId, conversationId: req.conversationId, type: 'error', message: e && e.message ? e.message : '未知错误' })
       }
     } finally {
+      streamEvents.flush()
       controllers.delete(req.runId)
     }
   })()

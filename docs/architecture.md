@@ -19,8 +19,8 @@
 3. 渲染进程通过 `window.api.memories.search` 检索本地长期记忆，并把命中的记忆格式化为临时 system 上下文
 4. 渲染进程通过 `window.api.chat.start` 发起 IPC，主进程 `startChat` 创建 `AbortController`
 5. 主进程调用 `streamOpenAICompatible`（fetch + ReadableStream + SSE 解析），逐块产出 `content` / `reasoning_content`
-6. 每个数据块经 `webContents.send(chat:chunk)` 推回渲染进程
-7. 渲染进程按 runId 匹配，写入 50ms 节流的 pending buffer，`useThrottledText` 控制 Markdown 重渲染频率，保证长文本流畅
+6. 主进程按 24ms 短时间窗合并连续同类文本，再经 `webContents.send(chat:chunk)` 推回渲染进程；工具、结束、错误和停止事件前强制刷新，保证事件顺序
+7. 渲染进程按 runId 匹配，写入 50ms 节流的 pending buffer，`useThrottledText` 控制 Markdown 重渲染频率，避免 IPC 和 React 更新被细碎 token 放大
 8. 结束（done / error / abort）时 flush 剩余内容、持久化会话、清理流状态
 
 Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连续推理分片合并为可折叠步骤并随会话持久化。每轮请求由独立装配层按“稳定系统指令 → 当轮检索记忆 → 已修复历史 → 当前输入”重建上下文；检索记忆不会写回持久历史，旧版重复记忆和系统指令会被替换。接近窗口上限时，压缩器优先保留目标、约束、关键决定、错误、路径、工具调用与结果，并单独限制摘要 token 预算。Agent 在每次请求模型前还会校验工具调用链：孤立的工具结果会被移除，异常或停止导致缺少结果的 `tool_calls` 会补为明确的未完成结果。异常历史也会按修复后的结构持久化，避免切换模型服务后因协议校验差异导致请求失败。

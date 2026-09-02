@@ -14,6 +14,7 @@ import { getPlatformAdapter } from './platform'
 import { executeMcpAgentTool, getMcpAgentTool, getMcpInstallCandidate, inspectMcpServer, installMcpServer, listMcpAgentTools } from './mcp'
 import { assembleAgentMessages, markAgentSystemPrompt, persistableAgentHistory } from '../shared/agent-context'
 import { blockedPlanToolResult, isAgentToolAllowedInMode, selectAgentToolsForMode } from './agent-mode'
+import { createStreamEventBuffer } from './stream-event-buffer'
 
 const MAX_TURNS = 25
 const pendingApprovals = new Map<string, { resolve: (v: boolean) => void }>()
@@ -228,7 +229,11 @@ async function completeAgentTurn(
 export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: ProviderConfig, settings: AppSettings): void {
   const controller = new AbortController()
   controllers.set(req.runId, controller)
-  const send = (ev: AgentEvent): void => { if (!win.isDestroyed()) win.webContents.send(IPC.AgentChunk, ev) }
+  const sendNow = (ev: AgentEvent): void => { if (!win.isDestroyed()) win.webContents.send(IPC.AgentChunk, ev) }
+  const streamEvents = createStreamEventBuffer(sendNow, {
+    isBufferable: event => event.type === 'text' || (event.type === 'thinking' && Boolean(event.text))
+  })
+  const send = streamEvents.send
   const mode: AgentPermissionMode = settings.agentPermissionMode ?? 'ask'
   const interactionMode: AgentInteractionMode = req.interactionMode ?? 'execute'
   void (async () => {
@@ -328,6 +333,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
         send({ runId: req.runId, type: 'error', message: e && e.message ? e.message : '未知错误', history })
       }
     } finally {
+      streamEvents.flush()
       controllers.delete(req.runId)
       clearPendingApprovalsForRun(req.runId, false)
     }
