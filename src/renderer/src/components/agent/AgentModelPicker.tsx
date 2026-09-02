@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, ChevronDown, Gauge, Pencil, RefreshCw, Search } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelConfig, ProviderConfig } from '@shared/types'
@@ -50,14 +50,28 @@ export default function AgentModelPicker({
   onConfigure
 }: AgentModelPickerProps) {
   const [query, setQuery] = useState('')
+  const [activeIndex, setActiveIndex] = useState(0)
   const configuredProviders = providers.filter(provider => provider.apiKey.trim() && provider.models.length > 0)
   const term = query.trim().toLocaleLowerCase()
   const visibleProviders = configuredProviders
     .map(provider => ({ provider, models: term ? provider.models.filter(model => matchesModel(provider, model, [term])) : provider.models }))
     .filter(group => group.models.length > 0)
+  const selectableModels = visibleProviders.flatMap(({ provider, models }) => models.map(model => ({ provider, model })))
   const selectedProvider = providers.find(provider => provider.id === selectedProviderId)
   const selectedModel = selectedProvider?.models.find(model => model.id === selectedModelId)
   const selectedLabel = (selectedModel?.name ?? selectedModelId) || '选择模型'
+
+  useEffect(() => {
+    if (open) setActiveIndex(0)
+  }, [open, query])
+
+  const chooseActive = (): void => {
+    if (activeIndex === 0) onAuto()
+    else {
+      const selected = selectableModels[activeIndex - 1]
+      if (selected) onSelect(selected.provider.id, selected.model.id)
+    }
+  }
 
   return (
     <div className='composer-menu'>
@@ -77,9 +91,14 @@ export default function AgentModelPicker({
           </div>
           <label className='model-menu-search'>
             <Search size={14} aria-hidden />
-            <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder='搜索模型' aria-label='搜索模型' />
+            <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder='搜索模型' aria-label='搜索模型' onKeyDown={event => {
+              if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex(index => Math.min(selectableModels.length, index + 1)) }
+              else if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex(index => Math.max(0, index - 1)) }
+              else if (event.key === 'Enter') { event.preventDefault(); chooseActive() }
+              else if (event.key === 'Escape') { event.preventDefault(); onToggle() }
+            }} />
           </label>
-          <button className='model-menu-option auto' role='menuitemradio' aria-checked={auto} onClick={onAuto}>
+          <button className={clsx('model-menu-option auto', activeIndex === 0 && 'keyboard-active')} role='menuitemradio' aria-checked={auto} onPointerMove={() => setActiveIndex(0)} onClick={onAuto}>
             <span className='model-option-main'><RefreshCw size={16} /><span>Auto</span></span>
             {auto && <Check size={15} />}
           </button>
@@ -92,8 +111,9 @@ export default function AgentModelPicker({
                 </div>
                 {models.map(model => {
                   const selected = !auto && provider.id === selectedProviderId && model.id === selectedModelId
+                  const optionIndex = selectableModels.findIndex(option => option.provider.id === provider.id && option.model.id === model.id) + 1
                   return (
-                    <button key={`${provider.id}:${model.id}`} className='model-menu-option' role='menuitemradio' aria-checked={selected} onClick={() => onSelect(provider.id, model.id)}>
+                    <button key={`${provider.id}:${model.id}`} className={clsx('model-menu-option', activeIndex === optionIndex && 'keyboard-active')} role='menuitemradio' aria-checked={selected} onPointerMove={() => setActiveIndex(optionIndex)} onClick={() => onSelect(provider.id, model.id)}>
                       <span className='model-option-main'>
                         <ModelIcon provider={provider} model={model} />
                         <span className='model-name'>{model.name ?? model.id}</span>

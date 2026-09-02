@@ -42,7 +42,7 @@
 .model-provider-heading span:last-child { font-variant-numeric: tabular-nums; font-weight: 500; }
 .model-menu-empty { padding: 18px 8px; color: var(--text-muted); font-size: var(--fs-xs); text-align: center; }
 .model-menu-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 36px; padding: 6px 7px; border: none; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
-.model-menu-option:hover, .model-menu-option[aria-checked='true'] { background: var(--bg-hover); color: var(--text); }
+.model-menu-option:hover, .model-menu-option.keyboard-active, .model-menu-option[aria-checked='true'] { background: var(--bg-hover); color: var(--text); }
 .model-menu-option:focus-visible, .model-menu-config:focus-visible, .model-max-switch:focus-visible { outline: none; background: var(--bg-hover); }
 .model-menu-option.auto { margin-top: 6px; color: var(--text); }
 .model-option-main { display: inline-flex; align-items: center; min-width: 0; gap: 10px; }

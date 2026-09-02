@@ -47,9 +47,10 @@ test('shows configured models from every provider and switches the active provid
   await page.screenshot({ path: testInfo.outputPath('model-search.png') })
   await search.fill('不存在的模型')
   await expect(menu.getByText('未找到匹配模型')).toBeVisible()
-  await search.fill('')
-
-  await menu.getByRole('menuitemradio', { name: 'GLM 5.3 Flash' }).click()
+  await search.fill('glm')
+  await search.press('ArrowDown')
+  await expect(menu.getByRole('menuitemradio', { name: 'GLM 5.3 Flash' })).toHaveClass(/keyboard-active/)
+  await search.press('Enter')
   await expect(modelButton).toContainText('GLM 5.3 Flash')
   await page.getByTitle('上下文用量').click()
   const reserveRow = page.locator('.ctx-breakdown-row', { hasText: '回复预留' })
@@ -66,6 +67,9 @@ test('shows configured models from every provider and switches the active provid
   await expect(page.locator('.ctx-breakdown-row', { hasText: 'AI 回复' })).toBeVisible()
   await page.getByTitle('上下文用量').click()
 
+  await modelButton.click()
+  await menu.getByRole('textbox', { name: '搜索模型' }).press('Escape')
+  await expect(menu).toBeHidden()
   await modelButton.click()
   await menu.getByRole('menuitem', { name: '配置模型服务' }).click()
   await expect(page.locator('.settings-title', { hasText: '模型服务' })).toBeVisible()
