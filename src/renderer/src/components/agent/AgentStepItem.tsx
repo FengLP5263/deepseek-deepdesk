@@ -16,6 +16,7 @@ function parseArgs(args?: string): Record<string, unknown> {
 
 function ToolCard({ step }: { step: AgentStep }) {
   const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
   const args = parseArgs(step.args)
   const title = step.name === 'run_command' ? String(args.command ?? '')
     : step.name === 'read_file' ? '读取 ' + String(args.path ?? '')
@@ -34,12 +35,18 @@ function ToolCard({ step }: { step: AgentStep }) {
     : step.name === 'browser_evaluate' ? '执行浏览器调试脚本'
     : String(step.name ?? '工具')
   const statusText = step.status === 'running' ? '运行中…' : step.status === 'ok' ? '完成' : step.status === 'error' ? '出错' : step.status === 'denied' ? '已拒绝' : step.status === 'cancelled' ? '已停止' : ''
+  const copyResult = async (): Promise<void> => {
+    if (!step.result || !await copyText(step.result)) return
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
   return (
     <div className={clsx('agent-tool', step.status)}>
       <div className='agent-tool-head' onClick={() => setOpen(open => !open)}>
         <Terminal size={13} />
         <span className='agent-tool-title mono'>{title}</span>
         <span className='agent-tool-status'>{statusText}</span>
+        {step.result && <button type='button' className='agent-tool-copy' aria-label={copied ? '工具结果已复制' : '复制工具结果'} title='复制工具结果' onClick={event => { event.stopPropagation(); void copyResult() }}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>}
         {step.result && <ChevronDown size={13} className='agent-tool-chev' style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />}
       </div>
       {open && step.result && <pre className='agent-tool-result'>{step.result}</pre>}

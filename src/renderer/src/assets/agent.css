@@ -109,6 +109,8 @@
 .agent-tool-head:hover { background: var(--bg-hover); }
 .agent-tool-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-size: var(--fs-sm); }
 .agent-tool-status { font-size: var(--fs-2xs); color: var(--text-muted); flex-shrink: 0; }
+.agent-tool-copy { display: inline-flex; width: 24px; height: 24px; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.agent-tool-copy:hover { background: var(--bg-active); color: var(--text); }
 .agent-tool.ok .agent-tool-status { color: var(--success); }
 .agent-tool.error .agent-tool-status { color: var(--danger); }
 .agent-tool.denied .agent-tool-status { color: var(--danger); }
