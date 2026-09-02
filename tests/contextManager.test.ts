@@ -109,6 +109,24 @@ describe('context-manager', () => {
     expect(result.messages.at(-1)).toEqual({ role: 'user', content: '当前问题' })
   })
 
+  it('压缩时优先保留中段关键决定并限制摘要自身预算', () => {
+    const messages: Array<Record<string, unknown>> = [
+      { role: 'system', content: 'system prompt' },
+      ...Array.from({ length: 8 }, (_, index) => ({ role: index % 2 === 0 ? 'user' : 'assistant', content: `普通早期内容 ${index} ${'说明'.repeat(120)}` })),
+      { role: 'user', content: '关键决定：发布前必须运行完整测试，失败时不要合并。' },
+      ...Array.from({ length: 14 }, (_, index) => ({ role: index % 2 === 0 ? 'assistant' : 'user', content: `普通后续内容 ${index} ${'细节'.repeat(120)}` })),
+      { role: 'user', content: '请继续处理当前任务' }
+    ]
+
+    const result = manageContextMessages(messages, { contextWindow: 900, threshold: 1, reserveTokens: 0 })
+    const summary = result.messages.find(message => String(message.content).startsWith('[上下文压缩摘要]'))
+
+    expect(result.compressed).toBe(true)
+    expect(String(summary?.content)).toContain('发布前必须运行完整测试')
+    expect(estimateContextUsage([summary ?? {}]).used).toBeLessThanOrEqual(512)
+    expect(result.after.used).toBeLessThanOrEqual(900)
+  })
+
   it('reads configured model context window with a 256K fallback', () => {
     const provider: ProviderConfig = {
       id: 'p',

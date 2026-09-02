@@ -179,7 +179,8 @@ function clipped(text: string, maxChars: number): string {
 
 function messageSummary(message: Record<string, unknown>): string {
   const role = roleOf(message) || 'unknown'
-  const content = clipped(stringifyValue(message.content), 260)
+  const callId = role === 'tool' && typeof message.tool_call_id === 'string' ? `(${message.tool_call_id})` : ''
+  const content = clipped(stringifyValue(message.content), 320)
   const calls: string[] = []
   if (Array.isArray(message.tool_calls)) {
     for (const call of message.tool_calls) {
@@ -188,28 +189,66 @@ function messageSummary(message: Record<string, unknown>): string {
       if (!fn || typeof fn !== 'object') continue
       const record = fn as Record<string, unknown>
       const name = stringifyValue(record.name) || 'tool'
-      const args = clipped(stringifyValue(record.arguments), 160)
+      const args = clipped(stringifyValue(record.arguments), 180)
       calls.push(args ? `${name}(${args})` : name)
     }
   }
   const suffix = calls.length > 0 ? `；工具调用：${calls.join('；')}` : ''
-  return `- ${role}${content ? '：' + content : ''}${suffix}`
+  return `- ${role}${callId}${content ? '：' + content : ''}${suffix}`
 }
 
-function buildCompressionSummary(olderMessages: Array<Record<string, unknown>>, originalTokens: number): Record<string, unknown> {
-  const head = olderMessages.slice(0, 4)
-  const tail = olderMessages.slice(Math.max(4, olderMessages.length - 10))
-  const omitted = olderMessages.length - head.length - tail.length
+function summaryPriority(message: Record<string, unknown>, index: number, total: number): number {
+  const role = roleOf(message)
+  const content = stringifyValue(message.content)
+  let score = index / Math.max(1, total)
+  if (index < 3 || index >= total - 6) score += 25
+  if (role === 'user') score += 40
+  if (role === 'tool') score += 20
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) score += 30
+  if (/(?:必须|不要|约定|决定|偏好|目标|阻塞|失败|错误|完成|下一步|路径|文件|版本|commit|branch|url|token|id)/iu.test(content)) score += 100
+  return score
+}
+
+function clipToTokenBudget(text: string, budget: number): string {
+  if (estimateTextTokens(text) <= budget) return text
+  let used = 0
+  let result = ''
+  for (const character of text) {
+    const code = character.charCodeAt(0)
+    const next = code >= 0x2e80 && code <= 0x9fff ? 1 : 0.25
+    if (used + next > budget) break
+    result += character
+    used += next
+  }
+  return result.trimEnd() + '…'
+}
+
+function buildCompressionSummary(olderMessages: Array<Record<string, unknown>>, originalTokens: number, maxTokens: number): Record<string, unknown> {
   const lines = [
     '[上下文压缩摘要]',
     `为了避免超过模型上下文窗口，DeepDesk 已压缩较早的 ${olderMessages.length} 条上下文，原始估算约 ${originalTokens} tokens。`,
-    '后续回复应把以下内容当作早期对话摘要，不要声称仍持有被压缩内容的完整原文。',
-    '',
-    ...head.map(messageSummary)
+    '以下仅保留早期对话中的目标、约束、关键进展和工具结果；不要声称仍持有被压缩内容的完整原文。'
   ]
-  if (omitted > 0) lines.push(`- ……中间省略 ${omitted} 条较早上下文……`)
-  lines.push(...tail.map(messageSummary))
-  return { role: 'system', content: lines.join('\n') }
+  let remaining = Math.max(64, maxTokens - estimateTextTokens(lines.join('\n')) - 1)
+  const candidates = olderMessages
+    .map((message, index) => ({ index, line: messageSummary(message), score: summaryPriority(message, index, olderMessages.length) }))
+    .sort((a, b) => b.score - a.score || b.index - a.index)
+  const included: Array<{ index: number; line: string }> = []
+  for (const candidate of candidates) {
+    if (remaining < 24 || included.length >= 18) break
+    const line = clipToTokenBudget(candidate.line, remaining)
+    const tokens = estimateTextTokens(line) + 1
+    if (!line || tokens > remaining) continue
+    included.push({ index: candidate.index, line })
+    remaining -= tokens
+  }
+  included.sort((a, b) => a.index - b.index)
+  const omitted = olderMessages.length - included.length
+  lines.push('', ...included.map(item => item.line))
+  const omittedLine = `- ……另有 ${omitted} 条低优先级上下文已省略……`
+  if (omitted > 0 && estimateTextTokens(omittedLine) + 1 <= remaining) lines.push(omittedLine)
+  const content = lines.join('\n')
+  return { role: 'system', content: clipToTokenBudget(content, maxTokens) }
 }
 
 function stripLeadingOrphanToolMessages(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
@@ -257,7 +296,7 @@ export function manageContextMessages(input: Array<Record<string, unknown>>, opt
   }
 
   const older = conversationMessages.slice(0, olderCount)
-  const summary = buildCompressionSummary(older, older.reduce((sum, message) => sum + messageTokens(message), 0))
+  const summary = buildCompressionSummary(older, older.reduce((sum, message) => sum + messageTokens(message), 0), summaryAllowance)
   let messages = [...systemMessages, summary, ...cleanedRecent]
 
   while (messages.length > systemMessages.length + 2 && estimateContextUsage(messages).used > budget) {
