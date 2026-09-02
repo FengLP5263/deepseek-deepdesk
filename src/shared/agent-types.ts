@@ -1,5 +1,7 @@
 export type McpAgentToolName = `mcp__${string}`
 
+export type AgentInteractionMode = 'execute' | 'plan'
+
 export type AgentToolName =
   | 'run_command'
   | 'read_file'
@@ -61,6 +63,7 @@ export interface AgentRunRequest {
   workdir: string
   task: string
   temperature: number
+  interactionMode?: AgentInteractionMode
   history?: Array<Record<string, unknown>>
   memoryContext?: string
 }

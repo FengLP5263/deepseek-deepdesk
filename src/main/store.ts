@@ -17,7 +17,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   appFontScale: 1,
   enterToSend: true,
   agentWorkdir: '',
-  agentPermissionMode: 'ask'
+  agentPermissionMode: 'ask',
+  agentInteractionMode: 'execute'
 }
 
 function cloneProviders(): ProviderConfig[] {

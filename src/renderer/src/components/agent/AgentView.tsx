@@ -1,65 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ArrowDown, ArrowUp, Blocks, Check, ChevronDown, Copy, FolderOpen, Pencil, RefreshCw, Terminal, ThumbsDown, ThumbsUp, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
+import { ArrowDown, ArrowUp, Blocks, Check, ChevronDown, Copy, FolderOpen, ListChecks, Pencil, RefreshCw, Terminal, ThumbsDown, ThumbsUp, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import type { AgentStep } from '@shared/agent-types'
 import clsx from 'clsx'
-import { formatTokens, formatWorkdirName } from '../../lib/format'
-import { DEFAULT_CONTEXT_WINDOW, estimateContextUsage } from '@shared/context-manager'
+import { formatWorkdirName } from '../../lib/format'
+import { DEFAULT_CONTEXT_WINDOW } from '@shared/context-manager'
 import Markdown from '../chat/Markdown'
 import ThinkingBlock from '../chat/ThinkingBlock'
 import { copyText } from '../../lib/utils'
 import AgentModelPicker from './AgentModelPicker'
+import AgentContextMeter from './AgentContextMeter'
 import '../../assets/agent.css'
-
-function ContextMeter({ history, currentInput, contextWindow, open, onToggle }: { history: Array<Record<string, unknown>>; currentInput: string; contextWindow: number; open: boolean; onToggle: () => void }) {
-  const usage = estimateContextUsage(history, currentInput)
-  const used = usage.used
-  const percent = Math.min(100, Math.round(used / contextWindow * 100))
-  const RADIUS = 5.5
-  const CIRC = 2 * Math.PI * RADIUS
-  return (
-    <span className='ctx-meter'>
-      <button className='ctx-trigger' aria-expanded={open} onClick={onToggle} title='上下文用量'>
-        <svg viewBox='0 0 14 14' width='14' height='14' aria-hidden>
-          <circle className='ctx-track' cx='7' cy='7' r={RADIUS} />
-          <circle className='ctx-fill' cx='7' cy='7' r={RADIUS} strokeDasharray={CIRC * percent / 100 + ' ' + CIRC} transform='rotate(-90 7 7)' />
-        </svg>
-      </button>
-      {open && (
-        <div className='ctx-panel'>
-          <div className='ctx-header'>
-            <span>上下文已用</span>
-            <span className='ctx-percent'>{percent}%</span>
-            <span className='ctx-figures'>~{formatTokens(used)} / {formatTokens(contextWindow)}</span>
-          </div>
-          <div className='ctx-bar' aria-label='上下文组成进度'>
-            {usage.parts.map(part => (
-              <div
-                className='ctx-bar-segment'
-                data-tone={part.tone}
-                key={part.label}
-                style={{ width: Math.max(0.8, part.tokens / contextWindow * 100) + '%' }}
-                title={`${part.label}：~${formatTokens(part.tokens)}`}
-              />
-            ))}
-          </div>
-          <div className='ctx-breakdown' aria-label='上下文组成'>
-            {usage.parts.length > 0 ? usage.parts.map(part => (
-              <div className='ctx-breakdown-row' data-tone={part.tone} key={part.label}>
-                <span className='ctx-breakdown-label'><span className='ctx-breakdown-dot' aria-hidden />{part.label}</span>
-                <span className='ctx-breakdown-value'>~{formatTokens(part.tokens)}</span>
-              </div>
-            )) : (
-              <div className='ctx-breakdown-empty'>暂无上下文内容</div>
-            )}
-          </div>
-        </div>
-      )}
-    </span>
-  )
-}
 
 function parseArgs(args?: string): Record<string, unknown> {
   if (!args) return {}
@@ -308,7 +261,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const providers = useSettingsStore(s => s.providers)
   const updateSettings = useSettingsStore(s => s.updateSettings)
   const [text, setText] = useState('')
-  const [openMenu, setOpenMenu] = useState<'model' | 'permission' | 'context' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'model' | 'interaction' | 'permission' | 'context' | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -317,6 +270,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const provider = providers.find(p => p.id === effectiveProviderId)
   const effectiveModelId = currentModelId || (settings?.defaultModelId ?? '')
   const contextWindow = provider?.models.find(m => m.id === effectiveModelId)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+  const interactionMode = settings?.agentInteractionMode ?? 'execute'
   const mode = settings?.agentPermissionMode ?? 'ask'
   const modeLabel = mode === 'full' ? '完全访问' : mode === 'auto' ? '替我审批' : '每次询问'
   const workdirLabel = formatWorkdirName(workdir)
@@ -377,6 +331,21 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className='composer-actions'>
         <div className='composer-left'>
           <div className='composer-menu'>
+            <button className='toolbar-item composer-menu-trigger' aria-expanded={openMenu === 'interaction'} onClick={() => setOpenMenu(openMenu === 'interaction' ? null : 'interaction')} title='选择工作模式'>
+              {interactionMode === 'plan' ? <ListChecks size={13} /> : <Terminal size={13} />}
+              <span>{interactionMode === 'plan' ? '规划' : '执行'}</span><ChevronDown size={12} />
+            </button>
+            {openMenu === 'interaction' && (
+              <div className='composer-menu-popover' role='menu' aria-label='选择工作模式'>
+                {([['execute', '执行任务'], ['plan', '规划方案']] as const).map(([value, label]) => (
+                  <button key={value} className='composer-menu-option' role='menuitemradio' aria-checked={interactionMode === value} title={value === 'plan' ? '只读调研并输出计划，不执行修改' : '在权限规则内执行任务'} onClick={() => { void updateSettings({ agentInteractionMode: value }); setOpenMenu(null) }}>
+                    <span>{label}</span>{interactionMode === value && <Check size={14} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className='composer-menu'>
             <button className='toolbar-item composer-menu-trigger' aria-expanded={openMenu === 'permission'} onClick={() => setOpenMenu(openMenu === 'permission' ? null : 'permission')} title='选择权限模式'>
               {mode === 'full' ? <Unlock size={13} /> : mode === 'auto' ? <ShieldCheck size={13} /> : <ShieldQuestion size={13} />}
               <span>{modeLabel}</span><ChevronDown size={12} />
@@ -407,7 +376,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
             onSelect={(providerId, modelId) => { setCurrentModel(providerId, modelId); setOpenMenu(null) }}
             onConfigure={() => { setOpenMenu(null); onOpenSettings() }}
           />
-          <ContextMeter history={history} currentInput={text} contextWindow={contextWindow} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
+          <AgentContextMeter history={history} currentInput={text} contextWindow={contextWindow} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
           {running ? (
             <>
               {text.trim() && (

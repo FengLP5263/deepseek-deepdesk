@@ -32,7 +32,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - `store.ts`：AppStore 持有 `{ settings, providers, mcpServers, connectors, conversations, agentSessions, memories }`，写盘走「tmp + rename」原子替换，写队列串行化避免并发覆盖
 - `llm.ts`：流式会话注册表 `Map<runId, AbortController>`，支持取消 / 全局清理；根据 `finish_reason` 区分正常结束、长度截断、网络异常和内容审核终止，并在缺少终止标记时识别异常断流
 - `shared/llm/stream.ts`：普通聊天与 Agent 共用的流恢复策略；兼容模型请求默认预留 8192 个输出 token，并对以枚举顿号、逗号、斜杠、破折号或未闭合代码块结束的明显残句做保守续写；保留已接收内容，最多自动续写 3 次，并合并多次请求的 token usage
-- `agent.ts`：Agent 工具循环；单个工具异常归一化为失败结果返回模型，取消和终态事件负责清理运行中工具状态
+- `agent.ts`：Agent 工具循环；执行模式按权限策略运行完整工具集，规划模式只向模型暴露只读工具并在执行入口二次校验；单个工具异常归一化为失败结果返回模型，取消和终态事件负责清理运行中工具状态
 - `mcp.ts`：MCP Host 运行时；管理 stdio 子进程和 Streamable HTTP 会话、工具发现、Agent 工具名映射、结果收敛与退出清理
 - `ipc.ts`：全部 IPC handler；`providers:test` 通过 `GET /models` 校验凭据并导入模型
 - `platform/`：Windows/macOS 平台适配层；统一窗口参数、原生菜单、应用生命周期、命令 Shell 与参数引用
@@ -60,7 +60,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 
 | 键 | 说明 |
 | --- | --- |
-| `settings` | 默认服务 / 模型 / 温度 / 主题 / Enter 发送 |
+| `settings` | 默认服务 / 模型 / 温度 / 主题 / Agent 工作模式与权限模式 / Enter 发送 |
 | `providers` | 模型服务（含 baseUrl、apiKey、models） |
 | `mcpServers` | MCP 服务器配置、传输方式、自动恢复意图和本地凭据 |
 | `connectors` | 飞书、微信和浏览器连接器配置与启用状态 |

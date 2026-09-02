@@ -48,6 +48,7 @@ describe('platform adapters', () => {
     const windowsPrompt = buildSystemPrompt('C:\\project', windows, 'ask')
     expect(windowsPrompt).toContain('PowerShell（Windows）')
     expect(windowsPrompt).toContain('browser_type 只负责输入')
+    expect(buildSystemPrompt('C:\\project', windows, 'ask', 'plan')).toContain('只调研和分析')
   })
 
   it('recognizes Windows and macOS command risk consistently', () => {

@@ -465,7 +465,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     await window.api.memories.capture({ text: t, source: { type: 'agent', id: sessionId } }).catch(error => console.warn('Failed to capture Agent memory', error))
     const memories = await window.api.memories.search({ query: [t, workdir].filter(Boolean).join(' '), scopes: ['user', 'project', 'agent'], limit: 8 })
     const memoryContext = formatMemoryContext(memories)
-    const res = await window.api.agent.start({ runId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, history: previousHistory, memoryContext })
+    const res = await window.api.agent.start({ runId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, interactionMode: ss.settings?.agentInteractionMode ?? 'execute', history: previousHistory, memoryContext })
     if (!res.ok) {
       append(ctx, { kind: 'error', message: res.message ?? '启动失败' })
       finishRun(ctx, ctx.history, false, true)

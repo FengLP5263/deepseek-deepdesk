@@ -1,4 +1,4 @@
-import type { AgentSession } from './agent-types'
+import type { AgentInteractionMode, AgentSession } from './agent-types'
 
 export type Theme = 'dark' | 'light' | 'system'
 
@@ -233,6 +233,7 @@ export interface AppSettings {
   enterToSend: boolean
   agentWorkdir: string
   agentPermissionMode: AgentPermissionMode
+  agentInteractionMode?: AgentInteractionMode
 }
 
 export interface AppState {
