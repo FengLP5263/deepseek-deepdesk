@@ -401,6 +401,7 @@ export function createContextBreakdownUserData(): string {
       modelId: 'deepseek-v4-flash',
       createdAt: 1,
       updatedAt: 1,
+      contextUsage: { used: 6500, parts: [{ label: '系统指令 / 记忆', tokens: 1200, tone: 'system' }, { label: '用户消息', tokens: 800, tone: 'user' }, { label: 'AI 回复', tokens: 1800, tone: 'assistant' }, { label: '工具调用参数', tokens: 300, tone: 'tool-call' }, { label: '工具返回结果', tokens: 900, tone: 'tool-result' }, { label: '工具定义', tokens: 1500, tone: 'tool-schema' }] },
       steps: [
         { kind: 'task', text: '解释上下文组成' },
         { kind: 'context', beforeTokens: 146000, afterTokens: 82000 },

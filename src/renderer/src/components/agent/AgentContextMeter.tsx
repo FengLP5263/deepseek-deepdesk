@@ -1,16 +1,24 @@
-import { estimateContextUsage } from '@shared/context-manager'
+import { CONTEXT_OUTPUT_RESERVE_TOKENS, estimateContextUsage, estimateTextTokens, type ContextUsage } from '@shared/context-manager'
 import { formatTokens } from '../../lib/format'
 
 interface AgentContextMeterProps {
   history: Array<Record<string, unknown>>
   currentInput: string
   contextWindow: number
+  measuredUsage?: ContextUsage
   open: boolean
   onToggle: () => void
 }
 
-export default function AgentContextMeter({ history, currentInput, contextWindow, open, onToggle }: AgentContextMeterProps) {
-  const usage = estimateContextUsage(history, currentInput)
+export default function AgentContextMeter({ history, currentInput, contextWindow, measuredUsage, open, onToggle }: AgentContextMeterProps) {
+  const baseUsage = measuredUsage ?? estimateContextUsage(history)
+  const inputTokens = estimateTextTokens(currentInput)
+  const parts = [
+    ...baseUsage.parts,
+    ...(inputTokens > 0 ? [{ label: '当前输入', tokens: inputTokens, tone: 'input' as const }] : []),
+    { label: '回复预留', tokens: CONTEXT_OUTPUT_RESERVE_TOKENS, tone: 'output-reserve' as const }
+  ]
+  const usage = { used: parts.reduce((sum, part) => sum + part.tokens, 0), parts }
   const used = usage.used
   const percent = Math.min(100, Math.round(used / contextWindow * 100))
   const radius = 5.5
@@ -26,7 +34,7 @@ export default function AgentContextMeter({ history, currentInput, contextWindow
       {open && (
         <div className='ctx-panel'>
           <div className='ctx-header'>
-            <span>上下文已用</span>
+            <span>上下文占用</span>
             <span className='ctx-percent'>{percent}%</span>
             <span className='ctx-figures'>~{formatTokens(used)} / {formatTokens(contextWindow)}</span>
           </div>

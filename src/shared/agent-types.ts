@@ -1,3 +1,5 @@
+import type { ContextUsage } from './context-manager'
+
 export type McpAgentToolName = `mcp__${string}`
 
 export type AgentInteractionMode = 'execute' | 'plan'
@@ -75,7 +77,7 @@ export interface AgentToolResult {
   summary: string
 }
 
-export type AgentEventType = 'thinking' | 'text' | 'context_compacted' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
+export type AgentEventType = 'thinking' | 'text' | 'context_usage' | 'context_compacted' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
 
 export interface AgentEvent {
   runId: string
@@ -96,6 +98,7 @@ export interface AgentEvent {
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
   beforeTokens?: number
   afterTokens?: number
+  contextUsage?: ContextUsage
 }
 
 export type AgentStepKind = 'task' | 'thinking' | 'context' | 'text' | 'tool' | 'error'
@@ -129,6 +132,7 @@ export interface AgentSession {
   history: Array<Record<string, unknown>>
   queuedMessages?: AgentQueuedMessage[]
   hasUnread?: boolean
+  contextUsage?: ContextUsage
   source?: AgentSessionSource
 }
 

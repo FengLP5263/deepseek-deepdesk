@@ -259,14 +259,15 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
         throwIfAborted(controller.signal)
-        const managed = manageContextMessages(messages, { contextWindow })
-        messages = managed.messages
-        if (managed.compressed) send({ runId: req.runId, type: 'context_compacted', beforeTokens: managed.before.used, afterTokens: managed.after.used })
-        send({ runId: req.runId, type: 'thinking' })
-        inFlightContent = ''
         const mcpTools = listMcpAgentTools()
         const visibleMcpTools = selectMcpToolsForRequest(mcpTools, discoveredMcpToolNames, req.task)
         const tools = selectAgentToolsForMode(AGENT_TOOLS, visibleMcpTools, interactionMode)
+        const managed = manageContextMessages(messages, { contextWindow, tools })
+        messages = managed.messages
+        if (managed.compressed) send({ runId: req.runId, type: 'context_compacted', beforeTokens: managed.before.used, afterTokens: managed.after.used })
+        send({ runId: req.runId, type: 'context_usage', contextUsage: managed.after })
+        send({ runId: req.runId, type: 'thinking' })
+        inFlightContent = ''
         const { content, toolCalls, usage } = await completeAgentTurn(req, provider, messages, controller.signal, text => {
           inFlightContent += text
           send({ runId: req.runId, type: 'text', text })

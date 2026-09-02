@@ -73,13 +73,17 @@
 .ctx-breakdown-row[data-tone='assistant'] { --ctx-color: #18a66a; }
 .ctx-breakdown-row[data-tone='tool-call'] { --ctx-color: #b7791f; }
 .ctx-breakdown-row[data-tone='tool-result'] { --ctx-color: #8b5cf6; }
+.ctx-breakdown-row[data-tone='tool-schema'] { --ctx-color: #d35d9e; }
 .ctx-breakdown-row[data-tone='input'] { --ctx-color: #0f8f9d; }
+.ctx-breakdown-row[data-tone='output-reserve'] { --ctx-color: #d4af6a; }
 .ctx-bar-segment[data-tone='system'] { --ctx-color: #8b8f98; }
 .ctx-bar-segment[data-tone='user'] { --ctx-color: #5d7de8; }
 .ctx-bar-segment[data-tone='assistant'] { --ctx-color: #18a66a; }
 .ctx-bar-segment[data-tone='tool-call'] { --ctx-color: #b7791f; }
 .ctx-bar-segment[data-tone='tool-result'] { --ctx-color: #8b5cf6; }
+.ctx-bar-segment[data-tone='tool-schema'] { --ctx-color: #d35d9e; }
 .ctx-bar-segment[data-tone='input'] { --ctx-color: #0f8f9d; }
+.ctx-bar-segment[data-tone='output-reserve'] { --ctx-color: #d4af6a; }
 .ctx-breakdown-empty { color: var(--text-muted); }
 .agent-composer { max-width: 820px; margin: 0 auto; padding: 8px 0 0; display: flex; flex-direction: column; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: none; transition: border-color 150ms ease, box-shadow 150ms ease; overflow: visible; }
 .agent-composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

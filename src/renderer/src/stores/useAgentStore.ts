@@ -27,6 +27,7 @@ interface RunningAgentSession {
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
   queuedMessages: AgentQueuedMessage[]
+  contextUsage?: AgentSession['contextUsage']
 }
 
 interface AgentState {
@@ -182,6 +183,7 @@ function sessionFromContext(ctx: RunningAgentSession): AgentSession {
     steps: ctx.steps,
     history: ctx.history,
     queuedMessages: ctx.queuedMessages,
+    contextUsage: ctx.contextUsage,
     source: ctx.source
   }
 }
@@ -191,7 +193,7 @@ function mergeLiveSessions(sessions: AgentSession[]): AgentSession[] {
   const merged = sessions.map(session => {
     const runId = runIdBySessionId.get(session.id)
     const ctx = runId ? runContexts.get(runId) : undefined
-    return ctx ? { ...session, steps: ctx.steps, history: ctx.history, queuedMessages: ctx.queuedMessages, updatedAt: Date.now() } : session
+    return ctx ? { ...session, steps: ctx.steps, history: ctx.history, queuedMessages: ctx.queuedMessages, contextUsage: ctx.contextUsage, updatedAt: Date.now() } : session
   })
   for (const ctx of runContexts.values()) {
     if (!seen.has(ctx.sessionId)) merged.unshift(sessionFromContext(ctx))
@@ -261,19 +263,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
   function commitContext(ctx: RunningAgentSession): void {
     set(s => {
       const exists = s.sessions.some(item => item.id === ctx.sessionId)
-      const liveSession: AgentSession = {
-        id: ctx.sessionId,
-        task: ctx.task,
-        workdir: ctx.workdir,
-        providerId: ctx.providerId,
-        modelId: ctx.modelId,
-        createdAt: ctx.createdAt,
-        updatedAt: Date.now(),
-        steps: ctx.steps,
-        history: ctx.history,
-        queuedMessages: ctx.queuedMessages,
-        source: ctx.source
-      }
+      const liveSession = sessionFromContext(ctx)
       const sessions = exists
         ? s.sessions.map(item => (item.id === ctx.sessionId ? { ...item, ...liveSession } : item))
         : [liveSession, ...s.sessions]
@@ -535,6 +525,10 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       }
       case 'context_compacted':
         append(ctx, { kind: 'context', beforeTokens: ev.beforeTokens, afterTokens: ev.afterTokens })
+        break
+      case 'context_usage':
+        ctx.contextUsage = ev.contextUsage
+        commitContext(ctx)
         break
       case 'tool_call':
         flushStreamBuffer(ev.runId)

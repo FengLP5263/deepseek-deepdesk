@@ -251,6 +251,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const running = useAgentStore(s => s.running)
   const workdir = useAgentStore(s => s.workdir)
   const history = useAgentStore(s => s.history)
+  const contextUsage = useAgentStore(s => s.sessions.find(session => session.id === s.currentSessionId)?.contextUsage)
   const draftTask = useAgentStore(s => s.draftTask)
   const currentProviderId = useAgentStore(s => s.currentProviderId)
   const currentModelId = useAgentStore(s => s.currentModelId)
@@ -379,7 +380,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
             onSelect={(providerId, modelId) => { setCurrentModel(providerId, modelId); setOpenMenu(null) }}
             onConfigure={() => { setOpenMenu(null); onOpenSettings() }}
           />
-          <AgentContextMeter history={history} currentInput={text} contextWindow={contextWindow} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
+          <AgentContextMeter history={history} currentInput={text} contextWindow={contextWindow} measuredUsage={contextUsage} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
           {running ? (
             <>
               {text.trim() && (

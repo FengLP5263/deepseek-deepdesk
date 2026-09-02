@@ -5,7 +5,7 @@ export const CONTEXT_COMPRESSION_THRESHOLD = 0.86
 export const CONTEXT_OUTPUT_RESERVE_TOKENS = 8192
 export const MAX_TOOL_RESULT_CONTEXT_TOKENS = 8000
 
-export type ContextTone = 'system' | 'user' | 'assistant' | 'tool-call' | 'tool-result' | 'input'
+export type ContextTone = 'system' | 'user' | 'assistant' | 'tool-call' | 'tool-result' | 'tool-schema' | 'input' | 'output-reserve'
 
 export interface ContextUsagePart {
   label: string
@@ -22,6 +22,7 @@ export interface ContextManagementOptions {
   contextWindow?: number
   threshold?: number
   reserveTokens?: number
+  tools?: Array<Record<string, unknown>>
 }
 
 export interface ContextManagementResult {
@@ -183,7 +184,8 @@ function toolCallTokens(message: Record<string, unknown>): number {
     if (!call || typeof call !== 'object') continue
     const fn = (call as Record<string, unknown>).function
     if (!fn || typeof fn !== 'object') continue
-    tokens += estimateTextTokens(stringifyValue((fn as Record<string, unknown>).arguments))
+    const record = fn as Record<string, unknown>
+    tokens += 4 + estimateTextTokens(stringifyValue(record.name)) + estimateTextTokens(stringifyValue(record.arguments))
   }
   return tokens
 }
@@ -192,18 +194,23 @@ function messageTokens(message: Record<string, unknown>): number {
   return 4 + estimateTextTokens(stringifyValue(message.content)) + toolCallTokens(message)
 }
 
-export function estimateContextUsage(history: Array<Record<string, unknown>>, currentInput = ''): ContextUsage {
+export function estimateToolDefinitionsTokens(tools: Array<Record<string, unknown>> = []): number {
+  return tools.length === 0 ? 0 : tools.length * 6 + estimateTextTokens(stringifyValue(tools))
+}
+
+export function estimateContextUsage(history: Array<Record<string, unknown>>, currentInput = '', tools: Array<Record<string, unknown>> = []): ContextUsage {
   const buckets = {
     system: 0,
     user: 0,
     assistant: 0,
     toolCalls: 0,
     toolResults: 0,
+    toolSchemas: estimateToolDefinitionsTokens(tools),
     currentInput: estimateTextTokens(currentInput)
   }
   for (const message of history) {
     const role = roleOf(message)
-    const contentTokens = estimateTextTokens(stringifyValue(message.content))
+    const contentTokens = 4 + estimateTextTokens(stringifyValue(message.content))
     if (role === 'system') buckets.system += contentTokens
     else if (role === 'user') buckets.user += contentTokens
     else if (role === 'assistant') buckets.assistant += contentTokens
@@ -218,6 +225,7 @@ export function estimateContextUsage(history: Array<Record<string, unknown>>, cu
     { label: 'AI 回复', tokens: buckets.assistant, tone: 'assistant' },
     { label: '工具调用参数', tokens: buckets.toolCalls, tone: 'tool-call' },
     { label: '工具返回结果', tokens: buckets.toolResults, tone: 'tool-result' },
+    { label: '工具定义', tokens: buckets.toolSchemas, tone: 'tool-schema' },
     { label: '当前输入', tokens: buckets.currentInput, tone: 'input' }
   ]
   const parts = allParts.filter(part => part.tokens > 0)
@@ -322,7 +330,7 @@ export function manageContextMessages(input: Array<Record<string, unknown>>, opt
   const threshold = options.threshold ?? CONTEXT_COMPRESSION_THRESHOLD
   const reserveTokens = options.reserveTokens ?? CONTEXT_OUTPUT_RESERVE_TOKENS
   const budget = targetBudget(options.contextWindow ?? DEFAULT_CONTEXT_WINDOW, threshold, reserveTokens)
-  const before = estimateContextUsage(repairedInput)
+  const before = estimateContextUsage(repairedInput, '', options.tools)
   if (before.used <= budget) {
     return { messages: repairedInput, before, after: before, compressed: false }
   }
@@ -330,8 +338,9 @@ export function manageContextMessages(input: Array<Record<string, unknown>>, opt
   const systemMessages = repairedInput.filter(message => roleOf(message) === 'system' && !isCompressionSummary(message)).map(message => ({ ...message }))
   const conversationMessages = repairedInput.filter(message => roleOf(message) !== 'system' || isCompressionSummary(message))
   const systemTokens = systemMessages.reduce((sum, message) => sum + messageTokens(message), 0)
+  const toolSchemaTokens = estimateToolDefinitionsTokens(options.tools)
   const summaryAllowance = Math.min(4096, Math.max(512, Math.floor(budget * 0.12)))
-  const recentBudget = Math.max(256, budget - systemTokens - summaryAllowance)
+  const recentBudget = Math.max(256, budget - systemTokens - toolSchemaTokens - summaryAllowance)
   const recent: Array<Record<string, unknown>> = []
   let recentTokens = 0
 
@@ -347,19 +356,19 @@ export function manageContextMessages(input: Array<Record<string, unknown>>, opt
   const olderCount = conversationMessages.length - cleanedRecent.length
   if (olderCount <= 0) {
     const messages = [...systemMessages, ...cleanedRecent]
-    return { messages, before, after: estimateContextUsage(messages), compressed: false }
+    return { messages, before, after: estimateContextUsage(messages, '', options.tools), compressed: false }
   }
 
   const older = conversationMessages.slice(0, olderCount)
   const summary = buildCompressionSummary(older, older.reduce((sum, message) => sum + messageTokens(message), 0), summaryAllowance)
   let messages = [...systemMessages, summary, ...cleanedRecent]
 
-  while (messages.length > systemMessages.length + 2 && estimateContextUsage(messages).used > budget) {
+  while (messages.length > systemMessages.length + 2 && estimateContextUsage(messages, '', options.tools).used > budget) {
     const firstConversationIndex = systemMessages.length + 1
     if (roleOf(messages[firstConversationIndex]) === 'tool') messages.splice(firstConversationIndex, 1)
     else messages.splice(firstConversationIndex, 1)
     messages = [...systemMessages, summary, ...stripLeadingOrphanToolMessages(messages.slice(systemMessages.length + 1))]
   }
 
-  return { messages, before, after: estimateContextUsage(messages), compressed: true }
+  return { messages, before, after: estimateContextUsage(messages, '', options.tools), compressed: true }
 }

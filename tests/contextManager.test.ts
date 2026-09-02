@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compactToolResultForContext, estimateContextUsage, estimateTextTokens, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../src/shared/context-manager'
+import { compactToolResultForContext, estimateContextUsage, estimateTextTokens, estimateToolDefinitionsTokens, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../src/shared/context-manager'
 import type { ProviderConfig } from '../src/shared/types'
 
 describe('context-manager', () => {
@@ -17,6 +17,15 @@ describe('context-manager', () => {
 
     expect(usage.parts.map(part => part.tone)).toEqual(['system', 'user', 'assistant', 'tool-call', 'tool-result', 'input'])
     expect(usage.used).toBeGreaterThan(0)
+  })
+
+  it('将发送给模型的工具定义计入上下文组成', () => {
+    const tools = [{ type: 'function', function: { name: 'search', description: '搜索项目内容', parameters: { type: 'object', properties: { query: { type: 'string' } } } } }]
+    const usage = estimateContextUsage([{ role: 'user', content: '查一下' }], '', tools)
+
+    expect(estimateToolDefinitionsTokens(tools)).toBeGreaterThan(0)
+    expect(usage.parts).toContainEqual(expect.objectContaining({ label: '工具定义', tone: 'tool-schema' }))
+    expect(usage.used).toBeGreaterThan(estimateContextUsage([{ role: 'user', content: '查一下' }]).used)
   })
 
   it('keeps messages unchanged when they are inside the safe budget', () => {
@@ -70,6 +79,23 @@ describe('context-manager', () => {
     expect(result.messages.some(message => String(message.content).includes('[上下文压缩摘要]'))).toBe(true)
     expect(result.messages.at(-1)).toEqual({ role: 'user', content: '最新问题必须保留' })
     expect(result.after.used).toBeLessThan(result.before.used)
+  })
+
+  it('压缩预算会扣除工具定义而不是只计算消息正文', () => {
+    const history = [
+      { role: 'system', content: 'system prompt' },
+      { role: 'user', content: '旧问题'.repeat(300) },
+      { role: 'assistant', content: '旧回答'.repeat(300) },
+      { role: 'user', content: '当前问题' }
+    ]
+    const tools = [{ type: 'function', function: { name: 'large_tool', description: '工具说明'.repeat(250), parameters: { type: 'object', properties: {} } } }]
+    const withoutTools = manageContextMessages(history, { contextWindow: 3000, threshold: 1, reserveTokens: 500 })
+    const withTools = manageContextMessages(history, { contextWindow: 3000, threshold: 1, reserveTokens: 500, tools })
+
+    expect(withoutTools.compressed).toBe(false)
+    expect(withTools.compressed).toBe(true)
+    expect(withTools.after.used).toBeLessThanOrEqual(2500)
+    expect(withTools.after.parts.some(part => part.tone === 'tool-schema')).toBe(true)
   })
 
   it('does not keep orphan tool result messages at the start of recent context', () => {
