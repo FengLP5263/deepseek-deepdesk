@@ -12,6 +12,7 @@ import { continuationMessages, IncompleteStreamError, MAX_STREAM_CONTINUATIONS, 
 import { isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
 import { executeMcpAgentTool, getMcpAgentTool, getMcpInstallCandidate, inspectMcpServer, installMcpServer, listMcpAgentTools } from './mcp'
+import { assembleAgentMessages, markAgentSystemPrompt, persistableAgentHistory } from '../shared/agent-context'
 
 const MAX_TURNS = 25
 const pendingApprovals = new Map<string, { resolve: (v: boolean) => void }>()
@@ -25,7 +26,7 @@ function throwIfAborted(signal: AbortSignal): void {
   throw error
 }
 
-export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode, memoryContext?: string): string {
+export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode): string {
   const readonlyExamples = platform.shellName === 'powershell'
     ? 'Get-ChildItem、git status、Get-Content'
     : 'ls、git status、cat、pwd'
@@ -54,8 +55,7 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
     , '操作系统：' + platform.id
     , '当前权限模式：' + modeDesc
   ].join('\n')
-  const memory = memoryContext?.trim()
-  return memory ? [base, '', memory].join('\n') : base
+  return markAgentSystemPrompt(base)
 }
 
 function evaluatePermission(call: AgentToolCall, workdir: string, mode: AgentPermissionMode): { needsApproval: boolean; reason: string; allowOutside: boolean } {
@@ -221,13 +221,12 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
   const send = (ev: AgentEvent): void => { if (!win.isDestroyed()) win.webContents.send(IPC.AgentChunk, ev) }
   const mode: AgentPermissionMode = settings.agentPermissionMode ?? 'ask'
   void (async () => {
-    let messages: Array<Record<string, unknown>> = (req.history && req.history.length > 0)
-      ? [...req.history]
-      : [{ role: 'system', content: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode, req.memoryContext) }]
-    if (req.history && req.history.length > 0 && req.memoryContext?.trim()) {
-      messages.push({ role: 'system', content: req.memoryContext.trim() })
-    }
-    messages.push({ role: 'user', content: req.task })
+    let messages = assembleAgentMessages({
+      history: req.history,
+      systemPrompt: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode),
+      memoryContext: req.memoryContext,
+      task: req.task
+    })
     const contextWindow = getModelContextWindow(provider, req.modelId)
     let inFlightContent = ''
     try {
@@ -302,16 +301,16 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
         } else {
           messages.push({ role: 'assistant', content })
           inFlightContent = ''
-          send({ runId: req.runId, type: 'done', usage, history: messages })
+          send({ runId: req.runId, type: 'done', usage, history: persistableAgentHistory(messages) })
           return
         }
         inFlightContent = ''
       }
-      send({ runId: req.runId, type: 'error', message: '已达到最大执行步数（' + MAX_TURNS + '），已停止', history: messages })
+      send({ runId: req.runId, type: 'error', message: '已达到最大执行步数（' + MAX_TURNS + '），已停止', history: persistableAgentHistory(messages) })
     } catch (err) {
       const e = err as Error
       if (inFlightContent.trim()) messages.push({ role: 'assistant', content: inFlightContent })
-      const history = repairToolCallHistory(messages)
+      const history = persistableAgentHistory(repairToolCallHistory(messages))
       if (controller.signal.aborted || (e && e.name === 'AbortError')) {
         send({ runId: req.runId, type: 'done', message: '已停止', history })
       } else {
