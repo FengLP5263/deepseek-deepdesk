@@ -33,7 +33,7 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 - Windows PowerShell 与 macOS zsh 平台适配、提示词和参数引用
 - 文件工具工作目录边界
 - Zustand store 行为
-- AppStore 持久化链路
+- AppStore 持久化链路、临时文件恢复和 Windows 瞬时文件锁重试
 - 长期记忆显式捕获、偏好提取、敏感信息过滤和去重
 - 跨供应商模型搜索与选择、会话级 provider/model 持久化，以及 Max 模式的输出预算透传与重启持久化
 - 上下文预算计入工具定义与消息封装开销，主进程计算结果可在上下文面板中按类别展示

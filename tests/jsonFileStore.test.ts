@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CoalescedJsonWriter, readJsonWithTempRecovery } from '../src/main/json-file-store'
@@ -11,6 +12,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 })
 
@@ -46,5 +48,23 @@ describe('CoalescedJsonWriter', () => {
       value: { value: 4 },
       recovered: true
     })
+  })
+
+  it('Windows 短暂占用目标文件时有界重试原子替换', async () => {
+    const file = join(directory, 'state.json')
+    const rename = fs.rename.bind(fs)
+    let attempts = 0
+    const spy = vi.spyOn(fs, 'rename').mockImplementation(async (oldPath, newPath) => {
+      attempts += 1
+      if (attempts < 3) throw Object.assign(new Error('file is temporarily locked'), { code: 'EPERM' })
+      await rename(oldPath, newPath)
+    })
+    const writer = new CoalescedJsonWriter(file, () => JSON.stringify({ value: 7 }), 0)
+
+    writer.request()
+    await writer.flush()
+
+    expect(spy).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ value: 7 })
   })
 })

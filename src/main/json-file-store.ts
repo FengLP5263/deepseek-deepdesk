@@ -1,6 +1,25 @@
 import { promises as fs } from 'node:fs'
 
 const DEFAULT_WRITE_DELAY_MS = 80
+const RENAME_RETRY_DELAYS_MS = [20, 50, 100, 200, 400]
+
+function isTransientRenameError(error: unknown): boolean {
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+  return code === 'EBUSY' || code === 'EACCES' || code === 'EPERM'
+}
+
+async function renameWithRetry(temporary: string, file: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await fs.rename(temporary, file)
+      return
+    } catch (error) {
+      const delay = RENAME_RETRY_DELAYS_MS[attempt]
+      if (delay === undefined || !isTransientRenameError(error)) throw error
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+}
 
 async function parseJsonFile<T>(file: string): Promise<T> {
   return JSON.parse(await fs.readFile(file, 'utf8')) as T
@@ -49,7 +68,7 @@ export class CoalescedJsonWriter {
           const snapshot = this.serialize()
           const temporary = `${this.file}.tmp`
           await fs.writeFile(temporary, snapshot, 'utf8')
-          await fs.rename(temporary, this.file)
+          await renameWithRetry(temporary, this.file)
         }
       })
       .catch(error => {
