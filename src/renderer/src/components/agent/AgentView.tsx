@@ -374,10 +374,12 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
             selectedProviderId={effectiveProviderId}
             selectedModelId={effectiveModelId}
             auto={autoModelMode}
+            maxMode={settings?.agentMaxMode ?? false}
             open={openMenu === 'model'}
             onToggle={() => setOpenMenu(openMenu === 'model' ? null : 'model')}
             onAuto={() => { setCurrentModel('', ''); setOpenMenu(null) }}
             onSelect={(providerId, modelId) => { setCurrentModel(providerId, modelId); setOpenMenu(null) }}
+            onMaxModeChange={enabled => void updateSettings({ agentMaxMode: enabled })}
             onConfigure={() => { setOpenMenu(null); onOpenSettings() }}
           />
           <AgentContextMeter history={history} currentInput={text} contextWindow={contextWindow} measuredUsage={contextUsage} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />

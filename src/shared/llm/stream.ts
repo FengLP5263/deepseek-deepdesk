@@ -1,5 +1,12 @@
 export const MAX_STREAM_CONTINUATIONS = 3
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192
+export const MAX_MODE_OUTPUT_TOKENS = 32768
+
+export function outputTokenBudget(contextWindow: number, maxMode = false): number {
+  const safeWindow = Number.isFinite(contextWindow) && contextWindow > 0 ? contextWindow : 256000
+  const requested = maxMode ? MAX_MODE_OUTPUT_TOKENS : DEFAULT_MAX_OUTPUT_TOKENS
+  return Math.max(256, Math.min(requested, Math.floor(safeWindow * 0.25)))
+}
 
 export const STREAM_CONTINUE_PROMPT = [
   '上一段回答因输出长度限制或传输中断而未完成。',

@@ -3,7 +3,7 @@ import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { streamOpenAICompatible } from '../src/shared/llm/openai'
 import { streamChatCompletionWithTools } from '../src/shared/llm/toolcall'
-import { DEFAULT_MAX_OUTPUT_TOKENS, isLikelyIncompleteContent, streamNeedsContinuation, streamTerminationError } from '../src/shared/llm/stream'
+import { DEFAULT_MAX_OUTPUT_TOKENS, MAX_MODE_OUTPUT_TOKENS, isLikelyIncompleteContent, outputTokenBudget, streamNeedsContinuation, streamTerminationError } from '../src/shared/llm/stream'
 
 let server: Server
 let base = ''
@@ -125,6 +125,12 @@ describe('stream completion policy', () => {
 
   it('兼容模型请求默认预留足够的输出预算', () => {
     expect(DEFAULT_MAX_OUTPUT_TOKENS).toBe(8192)
+  })
+
+  it('Max 模式扩大输出预算并按上下文窗口安全封顶', () => {
+    expect(outputTokenBudget(256000, false)).toBe(DEFAULT_MAX_OUTPUT_TOKENS)
+    expect(outputTokenBudget(256000, true)).toBe(MAX_MODE_OUTPUT_TOKENS)
+    expect(outputTokenBudget(32000, true)).toBe(8000)
   })
 })
 

@@ -234,6 +234,7 @@ export interface AppSettings {
   agentWorkdir: string
   agentPermissionMode: AgentPermissionMode
   agentInteractionMode?: AgentInteractionMode
+  agentMaxMode?: boolean
 }
 
 export interface AppState {

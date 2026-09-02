@@ -11,7 +11,7 @@ import type { AgentEvent, AgentInteractionMode, AgentRunRequest, AgentToolCall, 
 import type { AgentPermissionMode, AppSettings, ProviderConfig } from '../shared/types'
 import type { PlatformInfo } from '../shared/platform'
 import { compactToolResultForContext, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../shared/context-manager'
-import { continuationMessages, IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, streamNeedsContinuation, streamTerminationError, type TokenUsage } from '../shared/llm/stream'
+import { continuationMessages, IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, outputTokenBudget, streamNeedsContinuation, streamTerminationError, type TokenUsage } from '../shared/llm/stream'
 import { isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
 import { executeMcpAgentTool, getMcpAgentTool, getMcpInstallCandidate, inspectMcpServer, installMcpServer, listMcpAgentTools } from './mcp'
@@ -204,6 +204,7 @@ async function completeAgentTurn(
   let continuations = 0
   let usage: TokenUsage | undefined
   const providerHistory: Array<Record<string, unknown>> = []
+  const maxTokens = outputTokenBudget(getModelContextWindow(provider, req.modelId), req.maxMode)
 
   while (true) {
     let finalReceived = false
@@ -217,6 +218,7 @@ async function completeAgentTurn(
             model: req.modelId,
             messages: requestMessages,
             tools,
+            maxTokens,
             signal
           })
         : provider.type === 'openai-responses'
@@ -226,6 +228,7 @@ async function completeAgentTurn(
               model: req.modelId,
               messages: requestMessages,
               tools,
+              maxTokens,
               signal
             })
         : streamChatCompletionWithTools({
@@ -235,6 +238,7 @@ async function completeAgentTurn(
             messages: requestMessages,
             tools,
             temperature: req.temperature,
+            maxTokens,
             signal
           })
       for await (const chunk of stream) {
@@ -298,7 +302,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
         const mcpTools = listMcpAgentTools()
         const visibleMcpTools = selectMcpToolsForRequest(mcpTools, discoveredMcpToolNames, req.task)
         const tools = selectAgentToolsForMode(AGENT_TOOLS, visibleMcpTools, interactionMode)
-        const managed = manageContextMessages(messages, { contextWindow, tools })
+        const managed = manageContextMessages(messages, { contextWindow, reserveTokens: outputTokenBudget(contextWindow, req.maxMode), tools })
         messages = managed.messages
         if (managed.compressed) send({ runId: req.runId, type: 'context_compacted', beforeTokens: managed.before.used, afterTokens: managed.after.used })
         send({ runId: req.runId, type: 'context_usage', contextUsage: managed.after })

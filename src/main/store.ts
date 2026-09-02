@@ -19,7 +19,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   enterToSend: true,
   agentWorkdir: '',
   agentPermissionMode: 'ask',
-  agentInteractionMode: 'execute'
+  agentInteractionMode: 'execute',
+  agentMaxMode: false
 }
 
 function cloneProviders(): ProviderConfig[] {

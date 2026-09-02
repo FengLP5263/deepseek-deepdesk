@@ -252,13 +252,14 @@ describe('useAgentStore 会话持久化', () => {
 
   it('当前会话可选择其他供应商模型并将供应商与模型一起保存', async () => {
     useAgentStore.getState().init()
-    useSettingsStore.setState(state => ({ settings: state.settings ? { ...state.settings, agentInteractionMode: 'plan' } : state.settings }))
+    useSettingsStore.setState(state => ({ settings: state.settings ? { ...state.settings, agentInteractionMode: 'plan', agentMaxMode: true } : state.settings }))
     useAgentStore.getState().setCurrentModel('zhipu', 'glm-5.3-flash')
     await useAgentStore.getState().start('用当前模型继续')
 
     expect(startReqs[0].providerId).toBe('zhipu')
     expect(startReqs[0].modelId).toBe('glm-5.3-flash')
     expect(startReqs[0].interactionMode).toBe('plan')
+    expect(startReqs[0].maxMode).toBe(true)
     chunkCb!({ runId: startReqs[0].runId, type: 'done' })
     await new Promise(r => setTimeout(r, 80))
     expect(saved[0].providerId).toBe('zhipu')

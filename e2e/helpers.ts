@@ -17,6 +17,7 @@ export interface MockChatRequest {
   messages?: Array<Record<string, unknown>>
   tools?: Array<Record<string, unknown>>
   stream?: boolean
+  max_tokens?: number
 }
 
 export interface MockChatServer {

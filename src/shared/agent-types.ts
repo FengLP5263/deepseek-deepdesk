@@ -67,6 +67,7 @@ export interface AgentRunRequest {
   task: string
   temperature: number
   interactionMode?: AgentInteractionMode
+  maxMode?: boolean
   history?: Array<Record<string, unknown>>
   memoryContext?: string
 }

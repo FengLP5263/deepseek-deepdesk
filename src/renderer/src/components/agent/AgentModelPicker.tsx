@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Check, ChevronDown, Gauge, Pencil, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelConfig, ProviderConfig } from '@shared/types'
@@ -10,10 +9,12 @@ interface AgentModelPickerProps {
   selectedProviderId: string
   selectedModelId: string
   auto: boolean
+  maxMode: boolean
   open: boolean
   onToggle: () => void
   onSelect: (providerId: string, modelId: string) => void
   onAuto: () => void
+  onMaxModeChange: (enabled: boolean) => void
   onConfigure: () => void
 }
 
@@ -39,13 +40,14 @@ export default function AgentModelPicker({
   selectedProviderId,
   selectedModelId,
   auto,
+  maxMode,
   open,
   onToggle,
   onSelect,
   onAuto,
+  onMaxModeChange,
   onConfigure
 }: AgentModelPickerProps) {
-  const [maxMode, setMaxMode] = useState(false)
   const configuredProviders = providers.filter(provider => provider.apiKey.trim() && provider.models.length > 0)
   const selectedProvider = providers.find(provider => provider.id === selectedProviderId)
   const selectedModel = selectedProvider?.models.find(model => model.id === selectedModelId)
@@ -63,7 +65,7 @@ export default function AgentModelPicker({
         <div className='composer-menu-popover composer-model-popover' role='menu' aria-label='选择模型'>
           <div className='model-menu-header'>
             <div className='model-menu-title'><Gauge size={15} /> Max 模式</div>
-            <button type='button' className={clsx('model-max-switch', maxMode && 'on')} role='switch' aria-checked={maxMode} aria-label='Max 模式' onClick={() => setMaxMode(value => !value)}>
+            <button type='button' className={clsx('model-max-switch', maxMode && 'on')} role='switch' aria-checked={maxMode} aria-label='Max 模式' title='为复杂任务提供更长输出预算' onClick={() => onMaxModeChange(!maxMode)}>
               <span />
             </button>
           </div>

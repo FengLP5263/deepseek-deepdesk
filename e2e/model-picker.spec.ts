@@ -31,7 +31,10 @@ test('shows configured models from every provider and switches the active provid
   }))
   expect(menuStyle.width).toBe(268)
   expect(menuStyle.radius).toBe('8px')
-  await expect(menu.getByRole('switch', { name: 'Max 模式' })).toBeVisible()
+  const maxSwitch = menu.getByRole('switch', { name: 'Max 模式' })
+  await expect(maxSwitch).toHaveAttribute('aria-checked', 'false')
+  await maxSwitch.click()
+  await expect(maxSwitch).toHaveAttribute('aria-checked', 'true')
   await expect(menu.getByRole('menuitemradio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true')
   await expect(menu.getByText('Mock Local', { exact: true })).toBeVisible()
   await expect(menu.getByText('智谱模型', { exact: true })).toBeVisible()
@@ -45,10 +48,17 @@ test('shows configured models from every provider and switches the active provid
   await composer.press('Enter')
   await expect(page.getByText('跨供应商模型调用成功。')).toBeVisible()
   expect(server!.requests[0]?.model).toBe('glm-5.3-flash')
+  expect(server!.requests[0]?.max_tokens).toBe(32768)
 
   await modelButton.click()
   await menu.getByRole('menuitem', { name: '配置模型服务' }).click()
   await expect(page.locator('.settings-title', { hasText: '模型服务' })).toBeVisible()
+
+  const userDataDir = ctx!.userDataDir
+  await closeDeepDeskWithoutRemovingData(ctx)
+  ctx = await launchDeepDesk(userDataDir)
+  await ctx.page.getByTitle('选择模型').click()
+  await expect(ctx.page.getByRole('switch', { name: 'Max 模式' })).toHaveAttribute('aria-checked', 'true')
 })
 
 test('switches to persistent read-only plan mode and only exposes safe tools', async () => {
