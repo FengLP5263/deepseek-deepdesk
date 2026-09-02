@@ -13,7 +13,7 @@ import { isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
 import { executeMcpAgentTool, getMcpAgentTool, getMcpInstallCandidate, inspectMcpServer, installMcpServer, listMcpAgentTools } from './mcp'
 import { assembleAgentMessages, markAgentSystemPrompt, persistableAgentHistory } from '../shared/agent-context'
-import { blockedPlanToolResult, isAgentToolAllowedInMode, selectAgentToolsForMode } from './agent-mode'
+import { blockedPlanToolResult, canRunAgentToolInParallel, isAgentToolAllowedInMode, selectAgentToolsForMode } from './agent-mode'
 import { createStreamEventBuffer } from './stream-event-buffer'
 
 const MAX_TURNS = 25
@@ -266,11 +266,34 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
             tool_calls: toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } }))
           })
           inFlightContent = ''
-          for (const rawCall of toolCalls) {
-            throwIfAborted(controller.signal)
+          const preparedCalls = toolCalls.map(rawCall => {
             const call: AgentToolCall = { id: rawCall.id, name: rawCall.name as AgentToolName, args: rawCall.args }
+            return { call, perm: evaluatePermission(call, req.workdir, mode, interactionMode, mcpTools) }
+          })
+          const parallel = preparedCalls.length > 1 && preparedCalls.every(({ call, perm }) => !perm.needsApproval && canRunAgentToolInParallel(call, mcpTools))
+          if (parallel) {
+            for (const { call } of preparedCalls) send({ runId: req.runId, type: 'tool_call', call })
+            const results = await Promise.all(preparedCalls.map(async ({ call, perm }) => {
+              try {
+                return await executeAgentTool(call, req, perm.allowOutside, controller.signal, interactionMode, mcpTools)
+              } catch (error) {
+                throwIfAborted(controller.signal)
+                const message = error instanceof Error ? error.message : String(error)
+                return { ok: false, content: message, summary: message }
+              }
+            }))
+            throwIfAborted(controller.signal)
+            for (let index = 0; index < preparedCalls.length; index += 1) {
+              const call = preparedCalls[index].call
+              const result = results[index]
+              send({ runId: req.runId, type: 'tool_result', callId: call.id, summary: result.summary, ok: result.ok, output: result.content })
+              messages.push({ role: 'tool', tool_call_id: call.id, content: compactToolResultForContext(result.content, toolResultContextTokenBudget(contextWindow)) })
+            }
+            continue
+          }
+          for (const { call, perm } of preparedCalls) {
+            throwIfAborted(controller.signal)
             send({ runId: req.runId, type: 'tool_call', call })
-            const perm = evaluatePermission(call, req.workdir, mode, interactionMode, mcpTools)
             let result: AgentToolResult
             try {
               if (perm.needsApproval) {

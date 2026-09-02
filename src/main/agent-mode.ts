@@ -13,6 +13,13 @@ const PLAN_SAFE_TOOLS = new Set([
   'browser_debug'
 ])
 
+const PARALLEL_SAFE_TOOLS = new Set([
+  'read_file',
+  'list_files',
+  'search_content',
+  'search_feishu_user'
+])
+
 function definitionName(definition: Record<string, unknown>): string {
   const fn = definition.function
   if (!fn || typeof fn !== 'object' || Array.isArray(fn)) return ''
@@ -41,6 +48,12 @@ export function selectAgentToolsForMode(
     ...baseTools.filter(tool => PLAN_SAFE_TOOLS.has(definitionName(tool))),
     ...mcpTools.filter(isReadOnlyMcpTool).map(tool => tool.definition)
   ]
+}
+
+export function canRunAgentToolInParallel(call: AgentToolCall, mcpTools: McpAgentTool[]): boolean {
+  if (call.name === 'run_command') return isReadOnlyCommand(String(call.args.command ?? ''))
+  if (call.name.startsWith('mcp__')) return isReadOnlyMcpTool(mcpTools.find(tool => tool.name === call.name))
+  return PARALLEL_SAFE_TOOLS.has(call.name)
 }
 
 export function blockedPlanToolResult(call: AgentToolCall) {

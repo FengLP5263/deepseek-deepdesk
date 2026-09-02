@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   mcpInspections: [] as Array<{ source: string; runId: string }>,
   mcpInstalls: [] as Array<{ candidateId: string; runId: string }>,
   mcpResult: 'MCP 执行结果',
+  mcpDelayMs: 0,
+  mcpActive: 0,
+  mcpMaxActive: 0,
   mcpCandidate: undefined as undefined | { candidateId: string; name: string; source: string; serverVersion?: string; toolNames: string[] }
 }))
 
@@ -45,6 +48,10 @@ vi.mock('../src/main/mcp', () => ({
   getMcpAgentTool: (name: string) => mocks.mcpTools.find(tool => tool.name === name),
   executeMcpAgentTool: async (name: string, args: Record<string, unknown>) => {
     mocks.mcpExecutions.push({ name, args })
+    mocks.mcpActive += 1
+    mocks.mcpMaxActive = Math.max(mocks.mcpMaxActive, mocks.mcpActive)
+    if (mocks.mcpDelayMs > 0) await new Promise(resolve => setTimeout(resolve, mocks.mcpDelayMs))
+    mocks.mcpActive -= 1
     return { ok: true, content: mocks.mcpResult, summary: 'MCP 执行完成' }
   },
   inspectMcpServer: async (source: string, runId: string) => {
@@ -114,6 +121,9 @@ beforeEach(() => {
   mocks.mcpInspections.length = 0
   mocks.mcpInstalls.length = 0
   mocks.mcpResult = 'MCP 执行结果'
+  mocks.mcpDelayMs = 0
+  mocks.mcpActive = 0
+  mocks.mcpMaxActive = 0
   mocks.mcpCandidate = undefined
 })
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
@@ -395,6 +405,37 @@ describe('startAgent', () => {
     expect(sent).toContain('工具结果已压缩')
     expect(sent).toContain('ERROR: retained failure')
     expect(sent).toContain('END')
+  })
+
+  it('同一轮无需审批的只读 MCP 工具会并行执行并按调用顺序回填', async () => {
+    const first = 'mcp__demo__first__11111111'
+    const second = 'mcp__demo__second__22222222'
+    for (const name of [first, second]) {
+      mocks.mcpTools.push({
+        name,
+        serverId: 'demo',
+        serverName: '演示服务器',
+        toolName: name,
+        annotations: { readOnlyHint: true, destructiveHint: false },
+        definition: { type: 'function', function: { name, description: '读取数据', parameters: { type: 'object' } } }
+      })
+    }
+    mocks.mcpDelayMs = 30
+    mocks.responses.push({ content: null, toolCalls: [
+      { id: 'parallel-first', name: first, args: { order: 1 } },
+      { id: 'parallel-second', name: second, args: { order: 2 } }
+    ] })
+    mocks.responses.push({ content: '并行读取完成', toolCalls: [] })
+    const { events, win } = makeWin()
+    const autoSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'auto' }
+
+    startAgent(win as never, { runId: 'r-mcp-parallel', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '并行读取', temperature: 1 }, provider, autoSettings)
+    await runUntilDone(events)
+
+    expect(mocks.mcpMaxActive).toBe(2)
+    const nextTurnResults = mocks.requests[1].messages.filter(message => message.role === 'tool')
+    expect(nextTurnResults.map(message => message.tool_call_id)).toEqual(['parallel-first', 'parallel-second'])
+    expect(events.some(event => event.type === 'approval_request')).toBe(false)
   })
 
   it('auto 模式：未声明只读的 MCP 工具仍需用户批准', async () => {

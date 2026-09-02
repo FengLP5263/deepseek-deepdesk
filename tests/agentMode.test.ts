@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentToolCall } from '../src/shared/agent-types'
 import type { McpAgentTool } from '../src/main/mcp'
-import { blockedPlanToolResult, isAgentToolAllowedInMode, selectAgentToolsForMode } from '../src/main/agent-mode'
+import { blockedPlanToolResult, canRunAgentToolInParallel, isAgentToolAllowedInMode, selectAgentToolsForMode } from '../src/main/agent-mode'
 
 function definition(name: string): Record<string, unknown> {
   return { type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }
@@ -50,5 +50,17 @@ describe('agent-mode', () => {
   it('执行模式保留全部工具', () => {
     const selected = selectAgentToolsForMode([definition('read_file'), definition('write_file')], [readMcp, writeMcp], 'execute')
     expect(selected).toHaveLength(4)
+  })
+
+  it('只有无副作用的读取工具允许并行调度', () => {
+    const call = (name: AgentToolCall['name'], args: Record<string, unknown> = {}): AgentToolCall => ({ id: name, name, args })
+
+    expect(canRunAgentToolInParallel(call('read_file'), [])).toBe(true)
+    expect(canRunAgentToolInParallel(call('run_command', { command: 'git status' }), [])).toBe(true)
+    expect(canRunAgentToolInParallel(call('run_command', { command: 'pnpm test' }), [])).toBe(false)
+    expect(canRunAgentToolInParallel(call('browser_snapshot'), [])).toBe(false)
+    expect(canRunAgentToolInParallel(call('write_file'), [])).toBe(false)
+    expect(canRunAgentToolInParallel(call(readMcp.name), [readMcp, writeMcp])).toBe(true)
+    expect(canRunAgentToolInParallel(call(writeMcp.name), [readMcp, writeMcp])).toBe(false)
   })
 })
