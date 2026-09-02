@@ -3,6 +3,7 @@ import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, 
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
 import { appendAgentStep, finishAgentThinking } from '../lib/agent-steps'
+import { applyAgentStreamChunks, bufferAgentStreamChunk, createAgentStreamBuffer, drainAgentStreamBuffer, type AgentStreamBufferState } from '../lib/agent-stream-buffer'
 
 interface PendingApprovalState {
   callId: string
@@ -26,11 +27,6 @@ interface RunningAgentSession {
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
   queuedMessages: AgentQueuedMessage[]
-}
-
-interface TextBufferState {
-  text: string
-  timer: number | null
 }
 
 interface AgentState {
@@ -80,7 +76,7 @@ const MAX_BACKGROUND_AGENT_RUNS = 3
 
 const runContexts = new Map<string, RunningAgentSession>()
 const runIdBySessionId = new Map<string, string>()
-const textBuffers = new Map<string, TextBufferState>()
+const streamBuffers = new Map<string, AgentStreamBufferState>()
 const connectorStatusTimers = new Map<string, number>()
 
 function makeId(prefix: string): string {
@@ -203,15 +199,15 @@ function mergeLiveSessions(sessions: AgentSession[]): AgentSession[] {
   return merged
 }
 
-function clearTextBuffer(runId: string): void {
-  const buffer = textBuffers.get(runId)
+function clearStreamBuffer(runId: string): void {
+  const buffer = streamBuffers.get(runId)
   if (!buffer) return
   if (buffer.timer !== null) clearTimeout(buffer.timer)
-  textBuffers.delete(runId)
+  streamBuffers.delete(runId)
 }
 
 function resetRuntimeState(): void {
-  for (const runId of textBuffers.keys()) clearTextBuffer(runId)
+  for (const runId of streamBuffers.keys()) clearStreamBuffer(runId)
   for (const timer of connectorStatusTimers.values()) clearTimeout(timer)
   runContexts.clear()
   runIdBySessionId.clear()
@@ -296,38 +292,30 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     })
   }
 
-  function flushTextBuffer(runId: string): void {
-    const buffer = textBuffers.get(runId)
+  function flushStreamBuffer(runId: string): void {
+    const buffer = streamBuffers.get(runId)
     if (!buffer) return
     if (buffer.timer !== null) {
       clearTimeout(buffer.timer)
       buffer.timer = null
     }
-    if (!buffer.text) return
-    const delta = buffer.text
-    buffer.text = ''
+    const chunks = drainAgentStreamBuffer(buffer)
+    if (chunks.length === 0) return
     const ctx = runContexts.get(runId)
     if (!ctx) return
-    const steps = finishAgentThinking(ctx.steps)
-    const last = steps[steps.length - 1]
-    if (last && last.kind === 'text') {
-      last.text = (last.text ?? '') + delta
-    } else {
-      steps.push({ kind: 'text', text: delta })
-    }
-    ctx.steps = steps
+    ctx.steps = applyAgentStreamChunks(ctx.steps, chunks)
     commitContext(ctx)
   }
 
-  function scheduleTextFlush(runId: string): void {
-    const existing = textBuffers.get(runId)
+  function scheduleStreamFlush(runId: string): void {
+    const existing = streamBuffers.get(runId)
     if (existing?.timer !== null && existing?.timer !== undefined) return
-    const buffer = existing ?? { text: '', timer: null }
+    const buffer = existing ?? createAgentStreamBuffer()
     buffer.timer = window.setTimeout(() => {
       buffer.timer = null
-      flushTextBuffer(runId)
+      flushStreamBuffer(runId)
     }, 50)
-    textBuffers.set(runId, buffer)
+    streamBuffers.set(runId, buffer)
   }
 
   function append(ctx: RunningAgentSession, step: AgentStep): void {
@@ -492,14 +480,14 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     shouldSyncReply: boolean,
     processQueue: boolean
   ): AgentSession {
-    flushTextBuffer(ctx.runId)
+    flushStreamBuffer(ctx.runId)
     ctx.history = history ?? ctx.history
     const nextQueuedMessage = processQueue ? ctx.queuedMessages.shift() : undefined
     const session = { ...sessionFromContext(ctx), hasUnread: true }
     const activateNextRun = get().activeSessionId === ctx.sessionId
     runContexts.delete(ctx.runId)
     runIdBySessionId.delete(ctx.sessionId)
-    clearTextBuffer(ctx.runId)
+    clearStreamBuffer(ctx.runId)
     const statusTimer = connectorStatusTimers.get(ctx.runId)
     if (statusTimer !== undefined) {
       clearTimeout(statusTimer)
@@ -528,22 +516,29 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     if (!ctx) return
     switch (ev.type) {
       case 'thinking':
-        flushTextBuffer(ev.runId)
-        append(ctx, { kind: 'thinking', text: ev.text, status: 'running' })
+        if (!ev.text) {
+          flushStreamBuffer(ev.runId)
+          append(ctx, { kind: 'thinking', status: 'running' })
+        } else {
+          const buffer = streamBuffers.get(ev.runId) ?? createAgentStreamBuffer()
+          bufferAgentStreamChunk(buffer, 'thinking', ev.text)
+          streamBuffers.set(ev.runId, buffer)
+          scheduleStreamFlush(ev.runId)
+        }
         break
       case 'text': {
-        const buffer = textBuffers.get(ev.runId) ?? { text: '', timer: null }
-        buffer.text += ev.text ?? ''
-        textBuffers.set(ev.runId, buffer)
-        scheduleTextFlush(ev.runId)
+        const buffer = streamBuffers.get(ev.runId) ?? createAgentStreamBuffer()
+        bufferAgentStreamChunk(buffer, 'text', ev.text ?? '')
+        streamBuffers.set(ev.runId, buffer)
+        scheduleStreamFlush(ev.runId)
         break
       }
       case 'tool_call':
-        flushTextBuffer(ev.runId)
+        flushStreamBuffer(ev.runId)
         append(ctx, { kind: 'tool', callId: ev.call?.id, name: ev.call?.name, args: JSON.stringify(ev.call?.args ?? {}, null, 2), status: 'running' })
         break
       case 'approval_request': {
-        flushTextBuffer(ev.runId)
+        flushStreamBuffer(ev.runId)
         const pendingApproval = { callId: ev.callId ?? '', command: ev.command ?? '', cwd: ev.cwd ?? '', target: ev.target ?? '', reason: ev.reason ?? '', mcpInstall: ev.mcpInstall }
         set(s => ({
           pendingApprovalsBySessionId: { ...s.pendingApprovalsBySessionId, [ctx.sessionId]: pendingApproval },
@@ -552,7 +547,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         break
       }
       case 'tool_result':
-        flushTextBuffer(ev.runId)
+        flushStreamBuffer(ev.runId)
         updateTool(ctx, ev.callId ?? '', { status: ev.ok ? 'ok' : 'error', summary: ev.summary ?? '', result: ev.output ?? '' })
         break
       case 'done':
@@ -560,7 +555,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         finishRun(ctx, ev.history, true, true)
         break
       case 'error': {
-        flushTextBuffer(ev.runId)
+        flushStreamBuffer(ev.runId)
         const message = ev.message ?? '未知错误'
         const hasRunningTool = ctx.steps.some(step => step.kind === 'tool' && step.status === 'running')
         ctx.steps = failedSteps(ctx.steps, message)
@@ -653,7 +648,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       const ctx = runId ? runContexts.get(runId) : undefined
       if (ctx && runId) {
         void window.api.agent.cancel(runId)
-        flushTextBuffer(runId)
+        flushStreamBuffer(runId)
         ctx.steps = stoppedSteps(ctx.steps)
         ctx.history = stoppedHistory(ctx)
         ctx.queuedMessages = queuedMessages
@@ -683,7 +678,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       if (!ctx) {
         const sessionId = get().currentSessionId
         runIdBySessionId.delete(sessionId)
-        clearTextBuffer(id)
+        clearStreamBuffer(id)
         set(s => ({
           ...removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, sessionId),
           running: false,
@@ -693,7 +688,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         }))
         return
       }
-      flushTextBuffer(id)
+      flushStreamBuffer(id)
       ctx.steps = stoppedSteps(ctx.steps)
       ctx.history = stoppedHistory(ctx)
       finishRun(ctx, ctx.history, false, false)
@@ -767,7 +762,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         void window.api.agent.cancel(runId)
         runContexts.delete(runId)
         runIdBySessionId.delete(id)
-        clearTextBuffer(runId)
+        clearStreamBuffer(runId)
       }
       await window.api.agent.deleteSession(id)
       set(s => {

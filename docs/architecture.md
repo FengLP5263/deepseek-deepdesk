@@ -48,6 +48,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 ### Renderer
 
 - `stores/useChatStore.ts`：会话列表 + 流式状态机（pending buffer / flush timer / finish 归并）
+- `stores/useAgentStore.ts`：Agent 多会话运行态；正文与思考分片进入同一有序缓冲区，按帧批量提交，避免高频流式输出放大 React / Zustand 更新成本
 - `stores/useSettingsStore.ts`：服务与设置，变更后回读保持一致
 - `stores/useMemoryStore.ts`：长期记忆的本地管理；聊天和 Agent 发送前先经 Main 捕获高置信记忆，再只注入命中的临时上下文，不写入原始会话消息
 - `stores/useMcpStore.ts`：MCP 服务器配置和运行状态；所有连接动作通过 preload IPC 交给主进程执行

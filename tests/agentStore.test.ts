@@ -147,6 +147,24 @@ describe('useAgentStore 会话持久化', () => {
     expect(saved[0].hasUnread).toBe(false)
   })
 
+  it('合并高频正文与思考分片，避免每个分片触发完整状态提交', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('分析大量流式分片')
+    const runId = startReqs[0].runId
+    let stateUpdates = 0
+    const unsubscribe = useAgentStore.subscribe(() => { stateUpdates += 1 })
+
+    for (let index = 0; index < 120; index += 1) chunkCb!({ runId, type: 'thinking', text: '思' })
+    for (let index = 0; index < 120; index += 1) chunkCb!({ runId, type: 'text', text: '答' })
+    chunkCb!({ runId, type: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 80))
+    unsubscribe()
+
+    expect(saved[0].steps.find(step => step.kind === 'thinking')).toMatchObject({ text: '思'.repeat(120), status: 'ok' })
+    expect(saved[0].steps.find(step => step.kind === 'text')?.text).toBe('答'.repeat(120))
+    expect(stateUpdates).toBeLessThan(8)
+  })
+
   it('运行中按顺序排队消息，并在上一轮完成后使用编辑后的内容继续发送', async () => {
     useAgentStore.getState().init()
     await useAgentStore.getState().start('第一问')
