@@ -1,22 +1,23 @@
-import { CONTEXT_OUTPUT_RESERVE_TOKENS, estimateContextUsage, estimateTextTokens, type ContextUsage } from '@shared/context-manager'
+import { estimateContextUsage, estimateTextTokens, type ContextUsage } from '@shared/context-manager'
 import { formatTokens } from '../../lib/format'
 
 interface AgentContextMeterProps {
   history: Array<Record<string, unknown>>
   currentInput: string
   contextWindow: number
+  reserveTokens: number
   measuredUsage?: ContextUsage
   open: boolean
   onToggle: () => void
 }
 
-export default function AgentContextMeter({ history, currentInput, contextWindow, measuredUsage, open, onToggle }: AgentContextMeterProps) {
+export default function AgentContextMeter({ history, currentInput, contextWindow, reserveTokens, measuredUsage, open, onToggle }: AgentContextMeterProps) {
   const baseUsage = measuredUsage ?? estimateContextUsage(history)
   const inputTokens = estimateTextTokens(currentInput)
   const parts = [
     ...baseUsage.parts,
     ...(inputTokens > 0 ? [{ label: '当前输入', tokens: inputTokens, tone: 'input' as const }] : []),
-    { label: '回复预留', tokens: CONTEXT_OUTPUT_RESERVE_TOKENS, tone: 'output-reserve' as const }
+    { label: '回复预留', tokens: reserveTokens, tone: 'output-reserve' as const }
   ]
   const usage = { used: parts.reduce((sum, part) => sum + part.tokens, 0), parts }
   const used = usage.used

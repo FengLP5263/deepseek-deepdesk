@@ -8,6 +8,7 @@ import { formatWorkdirName } from '../../lib/format'
 import { shouldSubmitComposer } from '../../lib/composer-keyboard'
 import useSessionDraft from '../../hooks/useSessionDraft'
 import { DEFAULT_CONTEXT_WINDOW } from '@shared/context-manager'
+import { outputTokenBudget } from '@shared/llm/stream'
 import AgentModelPicker from './AgentModelPicker'
 import AgentContextMeter from './AgentContextMeter'
 import WindowedAgentSteps from './WindowedAgentSteps'
@@ -112,6 +113,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const provider = providers.find(p => p.id === effectiveProviderId)
   const effectiveModelId = currentModelId || (settings?.defaultModelId ?? '')
   const contextWindow = provider?.models.find(m => m.id === effectiveModelId)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+  const reserveTokens = outputTokenBudget(contextWindow, settings?.agentMaxMode ?? false)
   const interactionMode = settings?.agentInteractionMode ?? 'execute'
   const mode = settings?.agentPermissionMode ?? 'ask'
   const enterToSend = settings?.enterToSend ?? true
@@ -221,7 +223,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
             onMaxModeChange={enabled => void updateSettings({ agentMaxMode: enabled })}
             onConfigure={() => { setOpenMenu(null); onOpenSettings() }}
           />
-          <AgentContextMeter history={history} currentInput={text} contextWindow={contextWindow} measuredUsage={contextUsage} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
+          <AgentContextMeter history={history} currentInput={text} contextWindow={contextWindow} reserveTokens={reserveTokens} measuredUsage={contextUsage} open={openMenu === 'context'} onToggle={() => setOpenMenu(openMenu === 'context' ? null : 'context')} />
           {running ? (
             <>
               {text.trim() && (

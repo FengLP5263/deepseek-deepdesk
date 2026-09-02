@@ -51,6 +51,10 @@ test('shows configured models from every provider and switches the active provid
 
   await menu.getByRole('menuitemradio', { name: 'GLM 5.3 Flash' }).click()
   await expect(modelButton).toContainText('GLM 5.3 Flash')
+  await page.getByTitle('上下文用量').click()
+  const reserveRow = page.locator('.ctx-breakdown-row', { hasText: '回复预留' })
+  await expect(reserveRow).toContainText('32.8K')
+  await page.getByTitle('上下文用量').click()
 
   const composer = page.getByPlaceholder('发消息，或让我帮你做点事…')
   await composer.fill('验证跨供应商模型')
