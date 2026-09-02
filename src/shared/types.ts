@@ -6,7 +6,7 @@ export type AgentPermissionMode = 'ask' | 'auto' | 'full'
 
 export type AppFont = 'default' | 'system' | 'microsoft' | 'serif' | 'mono'
 
-export type ProviderType = 'openai'
+export type ProviderType = 'openai' | 'anthropic'
 
 export interface ModelConfig {
   id: string

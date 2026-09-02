@@ -26,7 +26,7 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 
 ## 已覆盖重点
 
-- OpenAI 兼容 SSE 流式解析
+- OpenAI 兼容与 Anthropic Messages SSE 流式解析、鉴权头和工具协议转换
 - LLM 错误、usage、reasoning 内容处理
 - Agent 工具调用与权限审批
 - Windows PowerShell 与 macOS zsh 平台适配、提示词和参数引用

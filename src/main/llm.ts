@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { streamOpenAICompatible } from '../shared/llm/openai'
+import { streamAnthropicMessages } from '../shared/llm/anthropic'
 import { getModelContextWindow, manageContextMessages } from '../shared/context-manager'
 import { IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, STREAM_CONTINUE_PROMPT, streamNeedsContinuation, streamTerminationError } from '../shared/llm/stream'
 import type { ChatChunkPayload, ChatStartRequest, ProviderConfig, Usage } from '../shared/types'
@@ -37,14 +38,24 @@ export function startChat(win: BrowserWindow, req: ChatStartRequest, provider: P
         let finalReceived = false
         let finishReason: string | undefined
         try {
-          for await (const chunk of streamOpenAICompatible({
-            baseUrl: provider.baseUrl,
-            apiKey: provider.apiKey,
-            model: req.modelId,
-            messages: requestMessages,
-            temperature: req.temperature,
-            signal: controller.signal
-          })) {
+          const stream = provider.type === 'anthropic'
+            ? streamAnthropicMessages({
+                baseUrl: provider.baseUrl,
+                apiKey: provider.apiKey,
+                model: req.modelId,
+                messages: requestMessages,
+                tools: [],
+                signal: controller.signal
+              })
+            : streamOpenAICompatible({
+                baseUrl: provider.baseUrl,
+                apiKey: provider.apiKey,
+                model: req.modelId,
+                messages: requestMessages,
+                temperature: req.temperature,
+                signal: controller.signal
+              })
+          for await (const chunk of stream) {
             if (chunk.type === 'content') {
               content += chunk.text
               send({ runId: req.runId, conversationId: req.conversationId, type: 'content', text: chunk.text })

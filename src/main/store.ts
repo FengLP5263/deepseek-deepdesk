@@ -29,6 +29,15 @@ function cloneProviders(): ProviderConfig[] {
   }))
 }
 
+function normalizeProviders(providers: unknown): ProviderConfig[] {
+  if (!Array.isArray(providers)) return []
+  return (providers as ProviderConfig[]).map(provider => ({
+    ...provider,
+    type: provider.type === 'anthropic' ? 'anthropic' : 'openai',
+    models: Array.isArray(provider.models) ? provider.models : []
+  }))
+}
+
 function createConnectorConfig(id: ConnectorId): ConnectorConfig {
   return {
     id,
@@ -162,7 +171,7 @@ export class AppStore {
     if (raw?.agentAutoApprove === true && settings.agentPermissionMode === 'ask') {
       settings.agentPermissionMode = 'auto'
     }
-    const providers = Array.isArray(parsed.providers) ? parsed.providers : []
+    const providers = normalizeProviders(parsed.providers)
     const mcpServers = normalizeMcpServers(parsed.mcpServers)
     const connectors = normalizeConnectors(parsed.connectors)
     const connectorActivities = normalizeConnectorActivities(parsed.connectorActivities)
@@ -231,6 +240,7 @@ export class AppStore {
   }
 
   upsertProvider(provider: ProviderConfig): void {
+    provider = { ...provider, type: provider.type === 'anthropic' ? 'anthropic' : 'openai' }
     const idx = this.data.providers.findIndex(p => p.id === provider.id)
     if (idx >= 0) this.data.providers[idx] = structuredClone(provider)
     else this.data.providers.push(structuredClone(provider))

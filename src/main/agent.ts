@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { streamChatCompletionWithTools } from '../shared/llm/toolcall'
 import type { ToolCallItem } from '../shared/llm/toolcall'
+import { streamAnthropicMessages } from '../shared/llm/anthropic'
 import { AGENT_TOOLS } from './agent-tools'
 import { executeTool, isDangerousCommand, isReadOnlyCommand, resolvePath, toolTargetPaths } from './tools'
 import type { AgentEvent, AgentInteractionMode, AgentRunRequest, AgentToolCall, AgentToolName, AgentToolResult } from '../shared/agent-types'
@@ -195,15 +196,25 @@ async function completeAgentTurn(
     let finishReason: string | undefined
     let toolCalls: ToolCallItem[] = []
     try {
-      for await (const chunk of streamChatCompletionWithTools({
-        baseUrl: provider.baseUrl,
-        apiKey: provider.apiKey,
-        model: req.modelId,
-        messages: requestMessages,
-        tools,
-        temperature: req.temperature,
-        signal
-      })) {
+      const stream = provider.type === 'anthropic'
+        ? streamAnthropicMessages({
+            baseUrl: provider.baseUrl,
+            apiKey: provider.apiKey,
+            model: req.modelId,
+            messages: requestMessages,
+            tools,
+            signal
+          })
+        : streamChatCompletionWithTools({
+            baseUrl: provider.baseUrl,
+            apiKey: provider.apiKey,
+            model: req.modelId,
+            messages: requestMessages,
+            tools,
+            temperature: req.temperature,
+            signal
+          })
+      for await (const chunk of stream) {
         throwIfAborted(signal)
         if (chunk.type === 'content') {
           content += chunk.text

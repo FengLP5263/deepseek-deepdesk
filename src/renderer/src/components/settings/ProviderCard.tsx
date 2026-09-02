@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Eye, EyeOff, PlugZap, Save, Server, Trash2, X } from 'lucide-react'
 import type { ModelConfig, ProviderConfig } from '@shared/types'
 import { useSettingsStore } from '../../stores/useSettingsStore'
-import { Badge, Button, Input, Spinner } from '../ui'
+import { Badge, Button, Input, Select, Spinner } from '../ui'
 import { normalizeBaseUrl } from '../../lib/utils'
 import clsx from 'clsx'
 import zhipuIcon from '../../assets/icons/zhipu.svg'
@@ -77,6 +77,7 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className='provider-name'>{draft.name}</span>
             {provider.isBuiltIn ? <Badge tone='builtin'>内置</Badge> : <Badge tone='off'>自定义</Badge>}
+            <Badge tone='off'>{draft.type === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'}</Badge>
             {provider.apiKey ? <Badge tone='ok'>已配置</Badge> : <Badge tone='off'>未配置 Key</Badge>}
           </div>
           <div className='provider-sub'>{provider.baseUrl}</div>
@@ -92,8 +93,19 @@ export default function ProviderCard({ provider }: { provider: ProviderConfig })
           <Input value={draft.name} onChange={e => { setSaveResult(null); setDraft({ ...draft, name: e.target.value }) }} placeholder='例如：DeepSeek' />
         </div>
         <div>
-          <label className='field-label'>Base URL（OpenAI 兼容）</label>
-          <Input value={draft.baseUrl} onChange={e => { setSaveResult(null); setDraft({ ...draft, baseUrl: e.target.value }) }} placeholder='https://api.deepseek.com' />
+          <label className='field-label'>接口协议</label>
+          <Select value={draft.type} disabled={provider.isBuiltIn} onChange={event => {
+            setSaveResult(null)
+            setDraft({ ...draft, type: event.target.value === 'anthropic' ? 'anthropic' : 'openai' })
+          }}>
+            <option value='openai'>OpenAI 兼容</option>
+            <option value='anthropic'>Anthropic Messages</option>
+          </Select>
+        </div>
+        <div className='full'>
+          <label className='field-label'>Base URL</label>
+          <Input value={draft.baseUrl} onChange={e => { setSaveResult(null); setDraft({ ...draft, baseUrl: e.target.value }) }} placeholder={draft.type === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.deepseek.com'} />
+          {draft.type === 'anthropic' && <div className='field-hint'>使用原生 Messages API；Agent 工具调用会自动转换为 Anthropic 协议。</div>}
         </div>
         <div className='full'>
           <label className='field-label'>API Key</label>

@@ -10,6 +10,7 @@ import { setupBrowserSessionSharing } from './browser-runtime'
 import { connectMcpServer, deleteMcpServer, disconnectMcpServer, listMcpStatuses, saveMcpServer } from './mcp'
 import type { McpServerConfig } from '../shared/types'
 import { exportAgentSession } from './agent-session-export'
+import { testProviderConnection } from './provider-models'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.SettingsGet, () => store.getSnapshot().settings)
@@ -29,27 +30,7 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   })
 
   ipcMain.handle(IPC.ProviderTest, async (_event, provider: ProviderConfig): Promise<ProviderTestResult> => {
-    let base = provider.baseUrl.trim()
-    while (base.endsWith('/')) base = base.slice(0, -1)
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 8000)
-    try {
-      const res = await fetch(base + '/models', {
-        headers: { 'Authorization': 'Bearer ' + provider.apiKey },
-        signal: controller.signal
-      })
-      if (!res.ok) {
-        return { ok: false, message: 'HTTP ' + res.status }
-      }
-      const json = (await res.json()) as { data?: Array<{ id: string }> }
-      const models = (json.data ?? []).map(m => ({ id: m.id }))
-      return { ok: true, message: '连接成功，发现 ' + models.length + ' 个模型', models }
-    } catch (err) {
-      const e = err as Error
-      return { ok: false, message: e && e.message ? e.message : '连接失败' }
-    } finally {
-      clearTimeout(timer)
-    }
+    return testProviderConnection(provider)
   })
 
   ipcMain.handle(IPC.McpServersList, () => listMcpStatuses())

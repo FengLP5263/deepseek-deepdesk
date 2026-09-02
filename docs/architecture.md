@@ -18,7 +18,7 @@
 2. 渲染进程通过 `window.api.memories.capture` 请求主进程本地提取显式记忆和高置信长期偏好；主进程过滤敏感信息并按内容去重
 3. 渲染进程通过 `window.api.memories.search` 检索本地长期记忆，并把命中的记忆格式化为临时 system 上下文
 4. 渲染进程通过 `window.api.chat.start` 发起 IPC，主进程 `startChat` 创建 `AbortController`
-5. 主进程调用 `streamOpenAICompatible`（fetch + ReadableStream + SSE 解析），逐块产出 `content` / `reasoning_content`；收到响应前的临时网络错误、限流和服务端短暂故障会有限重试，余额不足与鉴权错误不会重试
+5. 主进程按服务协议调用 OpenAI 兼容或 Anthropic Messages 流式适配器（fetch + ReadableStream + SSE 解析），统一产出正文、思考、工具调用与用量；收到响应前的临时网络错误、限流和服务端短暂故障会有限重试，余额不足与鉴权错误不会重试
 6. 主进程按 24ms 短时间窗合并连续同类文本，再经 `webContents.send(chat:chunk)` 推回渲染进程；工具、结束、错误和停止事件前强制刷新，保证事件顺序
 7. 渲染进程按 runId 匹配，写入 50ms 节流的 pending buffer，`useThrottledText` 控制 Markdown 重渲染频率，避免 IPC 和 React 更新被细碎 token 放大
 8. 结束（done / error / abort）时 flush 剩余内容、持久化会话、清理流状态
@@ -32,10 +32,11 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - `store.ts`：AppStore 持有 `{ settings, providers, mcpServers, connectors, conversations, agentSessions, memories }`，写盘走「tmp + rename」原子替换，写队列串行化避免并发覆盖
 - `llm.ts`：流式会话注册表 `Map<runId, AbortController>`，支持取消 / 全局清理；根据 `finish_reason` 区分正常结束、长度截断、网络异常和内容审核终止，并在缺少终止标记时识别异常断流
 - `desktop-presence.ts`：管理系统托盘、全局唤起快捷键和退出清理；托盘发出的新建任务事件通过受控 IPC 交给 Renderer
-- `shared/llm/stream.ts`：普通聊天与 Agent 共用的流恢复策略；兼容模型请求默认预留 8192 个输出 token，并对以枚举顿号、逗号、斜杠、破折号或未闭合代码块结束的明显残句做保守续写；保留已接收内容，最多自动续写 3 次，并合并多次请求的 token usage
+- `shared/llm/openai.ts` / `anthropic.ts`：将两类模型协议统一为 DeepDesk 流事件；Anthropic 适配器负责顶层系统指令、工具定义、工具历史、流式事件与终止原因转换，并使用官方鉴权头
+- `shared/llm/stream.ts`：普通聊天与 Agent 共用的流恢复策略；模型请求默认预留 8192 个输出 token，并对以枚举顿号、逗号、斜杠、破折号或未闭合代码块结束的明显残句做保守续写；保留已接收内容，最多自动续写 3 次，并合并多次请求的 token usage
 - `agent.ts`：Agent 工具循环；执行模式按权限策略运行完整工具集，规划模式只向模型暴露只读工具并在执行入口二次校验；同一轮全部为无需审批的只读工具时并行执行并按原始调用顺序回填结果，包含写入、交互或审批时保持串行；单个工具异常归一化为失败结果返回模型，取消和终态事件负责清理运行中工具状态
 - `mcp.ts`：MCP Host 运行时；管理 stdio 子进程和 Streamable HTTP 会话、工具发现、Agent 工具名映射、结果收敛与退出清理
-- `ipc.ts`：全部 IPC handler；`providers:test` 通过 `GET /models` 校验凭据并导入模型
+- `ipc.ts`：全部 IPC handler；`providers:test` 按服务协议使用 Bearer 或 Anthropic 鉴权头，通过 `GET /models` 校验凭据并导入模型名称与上下文窗口
 - `platform/`：Windows/macOS 平台适配层；统一窗口参数、原生菜单、应用生命周期、命令 Shell 与参数引用
 - `browser-runtime.ts`：浏览器连接器运行时；读取持久化启用状态、检查当前浏览器扩展连接，并在离线时阻止工具调用
 - `browser-extension-bridge.ts`：当前浏览器扩展桥接；在本机回环地址提供带随机路径令牌的 CDP 兼容接口
@@ -64,7 +65,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 | 键 | 说明 |
 | --- | --- |
 | `settings` | 默认服务 / 模型 / 温度 / 主题 / Agent 工作模式与权限模式 / Enter 发送 |
-| `providers` | 模型服务（含 baseUrl、apiKey、models） |
+| `providers` | 模型服务（含协议类型、baseUrl、apiKey、models） |
 | `mcpServers` | MCP 服务器配置、传输方式、自动恢复意图和本地凭据 |
 | `connectors` | 飞书、微信和浏览器连接器配置与启用状态 |
 | `connectorActivities` | 连接器消息和浏览器调试页面活动 |
@@ -116,7 +117,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 
 ## 9. 路线图
 
-- [ ] Anthropic / 非 OpenAI 协议适配器
+- [x] Anthropic Messages 协议适配器
 - [x] safeStorage 加密 API Key
 - [x] 对话导出（Markdown / JSON）
 - [x] 本地记忆近义合并与冲突更新标记
