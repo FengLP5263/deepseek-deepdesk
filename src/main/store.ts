@@ -1,5 +1,4 @@
 import { app } from 'electron'
-import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityStatus, ConnectorConfig, ConnectorConfigPatch, ConnectorId, McpServerConfig } from '../shared/types'
 import type { AgentSession } from '../shared/agent-types'
@@ -7,6 +6,7 @@ import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
 import { extractMemoryCandidates, relateMemory, searchMemories, type MemoryCandidate } from '../shared/memory'
 import { normalizeAppFontScale } from '../shared/font-scale'
 import { mapAppStateSecrets, plaintextSecretCodec, SecretStorageError, type SecretCodec } from './secret-storage'
+import { CoalescedJsonWriter, readJsonWithTempRecovery } from './json-file-store'
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
@@ -110,8 +110,8 @@ function normalizeMcpServers(servers: unknown): McpServerConfig[] {
 export class AppStore {
   private file: string
   private data: AppState
-  private writing: Promise<void> = Promise.resolve()
   private secrets: SecretCodec
+  private writer: CoalescedJsonWriter
 
   constructor(storageDir?: string, secrets: SecretCodec = plaintextSecretCodec) {
     const dir = storageDir ?? app.getPath('userData')
@@ -127,13 +127,14 @@ export class AppStore {
       agentSessions: [],
       memories: []
     }
+    this.writer = new CoalescedJsonWriter(this.file, () => JSON.stringify(mapAppStateSecrets(this.data, this.secrets, 'protect'), null, 2))
   }
 
   async init(): Promise<void> {
     try {
-      const raw = await fs.readFile(this.file, 'utf-8')
-      const parsed = JSON.parse(raw) as Partial<AppState>
-      this.data = mapAppStateSecrets(this.migrate(parsed), this.secrets, 'reveal')
+      const loaded = await readJsonWithTempRecovery<Partial<AppState>>(this.file)
+      this.data = mapAppStateSecrets(this.migrate(loaded.value), this.secrets, 'reveal')
+      if (loaded.recovered) console.warn('[store] 已从未完成写入的临时文件恢复本地数据')
     } catch (error) {
       if (error instanceof SecretStorageError) throw error
     }
@@ -150,7 +151,8 @@ export class AppStore {
     this.migrateDeepSeekV4()
     this.hydrateBuiltInProviderModels()
     this.backfillMemories()
-    await this.persist()
+    this.persist()
+    await this.flush()
   }
 
   private migrate(parsed: Partial<AppState>): AppState {
@@ -482,22 +484,11 @@ export class AppStore {
     this.persist()
   }
 
-  private persist(): Promise<void> {
-    const snapshot = JSON.stringify(mapAppStateSecrets(this.data, this.secrets, 'protect'), null, 2)
-    const write = this.writing
-      .then(async () => {
-        const tmp = this.file + '.tmp'
-        await fs.writeFile(tmp, snapshot, 'utf-8')
-        await fs.rename(tmp, this.file)
-      })
-      .catch(err => {
-        console.error('[store] 持久化失败:', err)
-      })
-    this.writing = write
-    return write
+  private persist(): void {
+    this.writer.request()
   }
 
   flush(): Promise<void> {
-    return this.writing
+    return this.writer.flush()
   }
 }

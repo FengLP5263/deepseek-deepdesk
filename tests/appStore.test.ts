@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -54,6 +54,23 @@ describe('AppStore', () => {
     expect(store2.getSnapshot().settings.temperature).toBe(0.5)
     expect(store2.getSnapshot().settings.appFont).toBe('system')
     expect(store2.getSnapshot().settings.appFontScale).toBe(1.3)
+  })
+
+  it('主存储损坏时从原子写临时文件恢复并重建主文件', async () => {
+    writeFileSync(join(dir, 'deepdesk.json'), '{bad json', 'utf8')
+    writeFileSync(join(dir, 'deepdesk.json.tmp'), JSON.stringify({
+      settings: { version: 1, theme: 'light', defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-flash' },
+      providers: [],
+      conversations: [],
+      agentSessions: [],
+      memories: []
+    }), 'utf8')
+
+    const store = createStore()
+    await store.init()
+
+    expect(store.getSnapshot().settings.theme).toBe('light')
+    expect(() => JSON.parse(readFileSync(join(dir, 'deepdesk.json'), 'utf8'))).not.toThrow()
   })
 
   it('upsert / delete 提供商', async () => {
