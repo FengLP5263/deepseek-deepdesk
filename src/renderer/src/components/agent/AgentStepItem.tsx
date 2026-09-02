@@ -131,6 +131,17 @@ function TextStep({ step, index, isLastMessage }: { step: AgentStep; index: numb
   )
 }
 
+function ErrorStep({ step, index }: { step: AgentStep; index: number }) {
+  const regenerateFrom = useAgentStore(state => state.regenerateFrom)
+  const running = useAgentStore(state => state.running)
+  return (
+    <div className='agent-error agent-error-step' role='alert'>
+      <span>{step.message}</span>
+      <button type='button' className='btn btn-ghost btn-sm' disabled={running} onClick={() => void regenerateFrom(index)}><RefreshCw size={13} /> 重试</button>
+    </div>
+  )
+}
+
 export default function AgentStepItem({ step, index, isLastMessage }: { step: AgentStep; index: number; isLastMessage: boolean }) {
   switch (step.kind) {
     case 'task': return <TaskStep step={step} index={index} isLastMessage={isLastMessage} />
@@ -138,7 +149,7 @@ export default function AgentStepItem({ step, index, isLastMessage }: { step: Ag
     case 'context': return <ContextCompactionNotice beforeTokens={step.beforeTokens} afterTokens={step.afterTokens} />
     case 'text': return <TextStep step={step} index={index} isLastMessage={isLastMessage} />
     case 'tool': return <ToolCard step={step} />
-    case 'error': return <div className='agent-error'>{step.message}</div>
+    case 'error': return <ErrorStep step={step} index={index} />
     default: return null
   }
 }

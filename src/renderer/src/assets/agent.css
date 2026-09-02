@@ -97,6 +97,9 @@
 .agent-task svg { margin-top: 2px; flex-shrink: 0; color: var(--accent-text); }
 .agent-text { font-size: var(--fs-base); line-height: 1.7; white-space: pre-wrap; word-break: break-word; user-select: text; }
 .agent-error { padding: 10px 14px; border-radius: 10px; background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.4); font-size: var(--fs-sm); }
+.agent-error-step { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.agent-error-step > span { min-width: 0; overflow-wrap: anywhere; }
+.agent-error-step .btn { flex: none; color: inherit; border-color: currentColor; }
 
 .agent-tool { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-panel); overflow: hidden; }
 .agent-tool.running { border-color: var(--accent); }
