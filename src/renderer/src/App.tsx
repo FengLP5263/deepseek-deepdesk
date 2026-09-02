@@ -1,10 +1,8 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import TitleBar from './components/titlebar/TitleBar'
 import Sidebar from './components/sidebar/Sidebar'
 import AgentView from './components/agent/AgentView'
-import SettingsView from './components/settings/SettingsView'
 import type { SettingsTab } from './components/settings/SettingsView'
-import FeatureHub from './components/hub/FeatureHub'
 import DeepSeekLogo from './components/DeepSeekLogo'
 import { useSettingsStore } from './stores/useSettingsStore'
 import { useAgentStore } from './stores/useAgentStore'
@@ -12,7 +10,15 @@ import { Loader2 } from 'lucide-react'
 import { useAppFontScale } from './hooks/useAppFontScale'
 import SessionSearch from './components/sidebar/SessionSearch'
 
+const SettingsView = lazy(() => import('./components/settings/SettingsView'))
+const FeatureHub = lazy(() => import('./components/hub/FeatureHub'))
+
 type View = 'chat' | 'settings' | 'connectors' | 'skills' | 'more'
+
+function ViewLoader() {
+  return <div className='splash' role='status' aria-label='正在加载页面'><Loader2 className='spin' size={18} /></div>
+}
+
 export default function App() {
   useAppFontScale()
   const ready = useSettingsStore(s => s.loaded)
@@ -149,8 +155,8 @@ export default function App() {
         )}
         <main className={view === 'settings' ? 'app-main settings-main' : 'app-main'}>
           {view === 'chat' && <AgentView onOpenSettings={() => openSettings('providers')} />}
-          {view === 'settings' && <SettingsView onBack={() => setView('chat')} tab={settingsTab} onTabChange={setSettingsTab} />}
-          {(view === 'connectors' || view === 'skills' || view === 'more') && <FeatureHub view={view} onNavigate={setView} onOpenChat={openChat} onOpenSettings={openSettings} />}
+          {view === 'settings' && <Suspense fallback={<ViewLoader />}><SettingsView onBack={() => setView('chat')} tab={settingsTab} onTabChange={setSettingsTab} /></Suspense>}
+          {(view === 'connectors' || view === 'skills' || view === 'more') && <Suspense fallback={<ViewLoader />}><FeatureHub view={view} onNavigate={setView} onOpenChat={openChat} onOpenSettings={openSettings} /></Suspense>}
         </main>
       </div>
       <SessionSearch
