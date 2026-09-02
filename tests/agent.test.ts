@@ -242,6 +242,7 @@ describe('startAgent', () => {
     await runUntilDone(events)
 
     const sent = mocks.requests[0].messages
+    expect(events.find(event => event.type === 'context_compacted')).toEqual(expect.objectContaining({ beforeTokens: expect.any(Number), afterTokens: expect.any(Number) }))
     expect(sent.some(message => String(message.content).includes('[上下文压缩摘要]'))).toBe(true)
     expect(sent.at(-1)).toEqual({ role: 'user', content: '最新问题必须保留' })
     expect(JSON.stringify(sent).length).toBeLessThan('较早上下文'.repeat(500).length + '较早回答'.repeat(500).length)

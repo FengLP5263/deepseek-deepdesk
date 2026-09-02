@@ -13,6 +13,7 @@ import { copyText } from '../../lib/utils'
 import AgentModelPicker from './AgentModelPicker'
 import AgentContextMeter from './AgentContextMeter'
 import WindowedAgentSteps from './WindowedAgentSteps'
+import ContextCompactionNotice from './ContextCompactionNotice'
 import '../../assets/agent.css'
 
 function parseArgs(args?: string): Record<string, unknown> {
@@ -168,6 +169,7 @@ function StepItem({ step, index, isLastMessage }: { step: AgentStep; index: numb
   switch (step.kind) {
     case 'task': return <TaskStep step={step} index={index} isLastMessage={isLastMessage} />
     case 'thinking': return <ThinkingBlock text={step.text ?? ''} streaming={step.status === 'running'} />
+    case 'context': return <ContextCompactionNotice beforeTokens={step.beforeTokens} afterTokens={step.afterTokens} />
     case 'text': return <TextStep step={step} index={index} isLastMessage={isLastMessage} />
     case 'tool': return <ToolCard step={step} />
     case 'error': return <div className='agent-error'>{step.message}</div>

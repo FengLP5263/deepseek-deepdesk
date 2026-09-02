@@ -75,7 +75,7 @@ export interface AgentToolResult {
   summary: string
 }
 
-export type AgentEventType = 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
+export type AgentEventType = 'thinking' | 'text' | 'context_compacted' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
 
 export interface AgentEvent {
   runId: string
@@ -94,9 +94,11 @@ export interface AgentEvent {
   mcpInstall?: McpInstallApproval
   history?: Array<Record<string, unknown>>
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+  beforeTokens?: number
+  afterTokens?: number
 }
 
-export type AgentStepKind = 'task' | 'thinking' | 'text' | 'tool' | 'error'
+export type AgentStepKind = 'task' | 'thinking' | 'context' | 'text' | 'tool' | 'error'
 
 export interface AgentStep {
   kind: AgentStepKind
@@ -111,6 +113,8 @@ export interface AgentStep {
   feedback?: 'positive' | 'negative'
   sourceActivityId?: string
   sourceConnectorId?: 'lark' | 'wechat'
+  beforeTokens?: number
+  afterTokens?: number
 }
 
 export interface AgentSession {

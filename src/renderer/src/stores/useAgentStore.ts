@@ -533,6 +533,9 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         scheduleStreamFlush(ev.runId)
         break
       }
+      case 'context_compacted':
+        append(ctx, { kind: 'context', beforeTokens: ev.beforeTokens, afterTokens: ev.afterTokens })
+        break
       case 'tool_call':
         flushStreamBuffer(ev.runId)
         append(ctx, { kind: 'tool', callId: ev.call?.id, name: ev.call?.name, args: JSON.stringify(ev.call?.args ?? {}, null, 2), status: 'running' })

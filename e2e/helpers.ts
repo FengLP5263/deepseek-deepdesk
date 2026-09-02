@@ -403,6 +403,7 @@ export function createContextBreakdownUserData(): string {
       updatedAt: 1,
       steps: [
         { kind: 'task', text: '解释上下文组成' },
+        { kind: 'context', beforeTokens: 146000, afterTokens: 82000 },
         { kind: 'tool', callId: 'call-1', name: 'read_file', args: JSON.stringify({ path: 'src/main/store.ts' }), status: 'ok', result: 'store.ts 中包含持久化逻辑。' },
         { kind: 'text', text: '上下文由系统指令、用户消息、AI 回复和工具信息共同组成。' }
       ],

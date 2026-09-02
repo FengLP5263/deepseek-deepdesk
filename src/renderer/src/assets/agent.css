@@ -155,6 +155,9 @@
 .agent-load-earlier { align-self: center; margin: 2px auto 12px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-panel); color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer; }
 .agent-load-earlier:hover { border-color: var(--border-strong); background: var(--bg-hover); color: var(--text-secondary); }
 
+.agent-context-compaction { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-panel); color: var(--text-muted); font-size: var(--fs-xs); }
+.agent-context-compaction-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
 .sidebar-modes { display: flex; margin: 0 12px 4px; padding: 3px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 10px; gap: 2px; }
 .mode-tab { flex: 1; padding: 5px 0; border-radius: 7px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; transition: all 0.13s ease; }
 .mode-tab:hover { color: var(--text); }
