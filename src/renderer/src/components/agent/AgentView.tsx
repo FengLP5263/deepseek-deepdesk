@@ -6,6 +6,7 @@ import { useSettingsStore } from '../../stores/useSettingsStore'
 import clsx from 'clsx'
 import { formatWorkdirName } from '../../lib/format'
 import { shouldSubmitComposer } from '../../lib/composer-keyboard'
+import useSessionDraft from '../../hooks/useSessionDraft'
 import { DEFAULT_CONTEXT_WINDOW } from '@shared/context-manager'
 import AgentModelPicker from './AgentModelPicker'
 import AgentContextMeter from './AgentContextMeter'
@@ -91,6 +92,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const draftTask = useAgentStore(s => s.draftTask)
   const currentProviderId = useAgentStore(s => s.currentProviderId)
   const currentModelId = useAgentStore(s => s.currentModelId)
+  const currentSessionId = useAgentStore(s => s.currentSessionId)
   const start = useAgentStore(s => s.start)
   const enqueueMessage = useAgentStore(s => s.enqueueMessage)
   const stop = useAgentStore(s => s.stop)
@@ -100,7 +102,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const settings = useSettingsStore(s => s.settings)
   const providers = useSettingsStore(s => s.providers)
   const updateSettings = useSettingsStore(s => s.updateSettings)
-  const [text, setText] = useState('')
+  const [text, setText] = useSessionDraft(currentSessionId || 'new-task')
   const [openMenu, setOpenMenu] = useState<'model' | 'interaction' | 'permission' | 'context' | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)

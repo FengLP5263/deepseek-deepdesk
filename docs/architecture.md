@@ -53,6 +53,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - `App.tsx`：首屏只同步加载聊天工作区；设置页与技能/连接器功能页使用独立动态 chunk，在首次访问时按需加载，减少启动阶段的脚本解析量
 - `components/agent/AgentModelPicker.tsx`：统一展示所有已配置服务的模型，并在渲染前按服务名、地址、模型名和模型 ID 本地过滤；搜索不发起网络请求
 - `components/agent/AgentView.tsx`：只负责 Agent 工作区、滚动区、审批与输入区组合；消息渲染、编辑、反馈和工具卡片由 `AgentStepItem.tsx` 独立管理
+- `hooks/useSessionDraft.ts`：在 Chromium 本地存储中维护会话级未发送草稿，限制条目数与单条长度，并以短延迟合并连续键入产生的写入
 - `stores/useChatStore.ts`：会话列表 + 流式状态机（pending buffer / flush timer / finish 归并）
 - `stores/useAgentStore.ts`：Agent 多会话运行态；正文与思考分片进入同一有序缓冲区，按帧批量提交，避免高频流式输出放大 React / Zustand 更新成本
 - `stores/useSettingsStore.ts`：服务与设置，变更后回读保持一致
