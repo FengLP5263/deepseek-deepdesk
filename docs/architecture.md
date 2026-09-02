@@ -18,7 +18,7 @@
 2. 渲染进程通过 `window.api.memories.capture` 请求主进程本地提取显式记忆和高置信长期偏好；主进程过滤敏感信息并按内容去重
 3. 渲染进程通过 `window.api.memories.search` 检索本地长期记忆，并把命中的记忆格式化为临时 system 上下文
 4. 渲染进程通过 `window.api.chat.start` 发起 IPC，主进程 `startChat` 创建 `AbortController`
-5. 主进程调用 `streamOpenAICompatible`（fetch + ReadableStream + SSE 解析），逐块产出 `content` / `reasoning_content`
+5. 主进程调用 `streamOpenAICompatible`（fetch + ReadableStream + SSE 解析），逐块产出 `content` / `reasoning_content`；收到响应前的临时网络错误、限流和服务端短暂故障会有限重试，余额不足与鉴权错误不会重试
 6. 主进程按 24ms 短时间窗合并连续同类文本，再经 `webContents.send(chat:chunk)` 推回渲染进程；工具、结束、错误和停止事件前强制刷新，保证事件顺序
 7. 渲染进程按 runId 匹配，写入 50ms 节流的 pending buffer，`useThrottledText` 控制 Markdown 重渲染频率，避免 IPC 和 React 更新被细碎 token 放大
 8. 结束（done / error / abort）时 flush 剩余内容、持久化会话、清理流状态

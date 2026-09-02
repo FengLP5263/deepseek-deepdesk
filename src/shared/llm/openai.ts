@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_OUTPUT_TOKENS, IncompleteStreamError } from './stream'
+import { fetchLlmResponse } from './request'
 
 export interface StreamContentChunk {
   type: 'content'
@@ -45,7 +46,7 @@ export async function* streamOpenAICompatible(req: StreamRequest): AsyncGenerato
   let base = req.baseUrl.trim()
   while (base.endsWith('/')) base = base.slice(0, -1)
   const url = base + '/chat/completions'
-  const res = await fetch(url, {
+  const res = await fetchLlmResponse(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -60,17 +61,7 @@ export async function* streamOpenAICompatible(req: StreamRequest): AsyncGenerato
       stream_options: { include_usage: true }
     }),
     signal: req.signal
-  })
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.text()).slice(0, 600)
-    } catch {
-      detail = ''
-    }
-    throwIfAborted(req.signal)
-    throw new Error('HTTP ' + res.status + ': ' + (detail || res.statusText))
-  }
+  }, req.signal)
   if (!res.body) throw new Error('响应为空')
   const reader = res.body.getReader()
   const decoder = new TextDecoder('utf-8')

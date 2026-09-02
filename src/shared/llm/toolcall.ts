@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_OUTPUT_TOKENS, IncompleteStreamError } from './stream'
+import { fetchLlmResponse } from './request'
 
 export interface ToolCallItem {
   id: string
@@ -26,7 +27,7 @@ export interface ToolCallRequest {
 export async function chatCompletionWithTools(req: ToolCallRequest): Promise<ToolCallResult> {
   let base = req.baseUrl.trim()
   while (base.endsWith('/')) base = base.slice(0, -1)
-  const res = await fetch(base + '/chat/completions', {
+  const res = await fetchLlmResponse(base + '/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -41,16 +42,7 @@ export async function chatCompletionWithTools(req: ToolCallRequest): Promise<Too
       stream: false
     }),
     signal: req.signal
-  })
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.text()).slice(0, 600)
-    } catch {
-      detail = ''
-    }
-    throw new Error('HTTP ' + res.status + ': ' + (detail || res.statusText))
-  }
+  }, req.signal)
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: unknown; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
@@ -105,7 +97,7 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
   throwIfAborted(req.signal)
   let base = req.baseUrl.trim()
   while (base.endsWith('/')) base = base.slice(0, -1)
-  const res = await fetch(base + '/chat/completions', {
+  const res = await fetchLlmResponse(base + '/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -121,17 +113,7 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
       stream_options: { include_usage: true }
     }),
     signal: req.signal
-  })
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.text()).slice(0, 600)
-    } catch {
-      detail = ''
-    }
-    throwIfAborted(req.signal)
-    throw new Error('HTTP ' + res.status + ': ' + (detail || res.statusText))
-  }
+  }, req.signal)
   if (!res.body) throw new Error('响应为空')
   const reader = res.body.getReader()
   const decoder = new TextDecoder('utf-8')
