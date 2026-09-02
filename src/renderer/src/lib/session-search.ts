@@ -1,4 +1,5 @@
 import type { AgentSession, AgentStep } from '@shared/agent-types'
+import { orderSidebarSessions } from './session-order'
 
 export interface SessionSearchResult {
   session: AgentSession
@@ -29,6 +30,9 @@ function findSnippet(session: AgentSession, terms: string[]): string {
 
 export function searchAgentSessions(sessions: AgentSession[], query: string, limit = 8): SessionSearchResult[] {
   const terms = query.split(/\s+/u).map(normalized).filter(Boolean)
+  if (terms.length === 0) {
+    return orderSidebarSessions(sessions).slice(0, Math.max(1, limit)).map(session => ({ session, snippet: findSnippet(session, terms), score: 0 }))
+  }
   return sessions
     .map(session => {
       const title = normalized(session.task)

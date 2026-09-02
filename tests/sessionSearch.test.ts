@@ -27,6 +27,11 @@ describe('session-search', () => {
     expect(searchAgentSessions(sessions, '').map(result => result.session.id)).toEqual(['recent', 'content', 'title'])
   })
 
+  it('keeps pinned sessions first in the recent-task view', () => {
+    const pinned = { ...sessions[2], pinnedAt: 500 }
+    expect(searchAgentSessions([sessions[0], sessions[1], pinned], '').map(result => result.session.id)).toEqual(['content', 'recent', 'title'])
+  })
+
   it('searches both titles and message content and ranks a title match first', () => {
     const results = searchAgentSessions(sessions, '浏览器')
     expect(results.map(result => result.session.id)).toEqual(['title', 'content'])
