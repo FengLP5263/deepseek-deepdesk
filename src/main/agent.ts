@@ -7,7 +7,7 @@ import { executeTool, isDangerousCommand, isReadOnlyCommand, resolvePath, toolTa
 import type { AgentEvent, AgentInteractionMode, AgentRunRequest, AgentToolCall, AgentToolName, AgentToolResult } from '../shared/agent-types'
 import type { AgentPermissionMode, AppSettings, ProviderConfig } from '../shared/types'
 import type { PlatformInfo } from '../shared/platform'
-import { getModelContextWindow, manageContextMessages, repairToolCallHistory } from '../shared/context-manager'
+import { compactToolResultForContext, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../shared/context-manager'
 import { continuationMessages, IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, streamNeedsContinuation, streamTerminationError, type TokenUsage } from '../shared/llm/stream'
 import { isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
@@ -312,7 +312,11 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
             }
             throwIfAborted(controller.signal)
             send({ runId: req.runId, type: 'tool_result', callId: call.id, summary: result.summary, ok: result.ok, output: result.content })
-            messages.push({ role: 'tool', tool_call_id: call.id, content: result.content })
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: compactToolResultForContext(result.content, toolResultContextTokenBudget(contextWindow))
+            })
           }
         } else {
           messages.push({ role: 'assistant', content })

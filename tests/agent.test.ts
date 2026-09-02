@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   mcpExecutions: [] as Array<{ name: string; args: Record<string, unknown> }>,
   mcpInspections: [] as Array<{ source: string; runId: string }>,
   mcpInstalls: [] as Array<{ candidateId: string; runId: string }>,
+  mcpResult: 'MCP 执行结果',
   mcpCandidate: undefined as undefined | { candidateId: string; name: string; source: string; serverVersion?: string; toolNames: string[] }
 }))
 
@@ -44,7 +45,7 @@ vi.mock('../src/main/mcp', () => ({
   getMcpAgentTool: (name: string) => mocks.mcpTools.find(tool => tool.name === name),
   executeMcpAgentTool: async (name: string, args: Record<string, unknown>) => {
     mocks.mcpExecutions.push({ name, args })
-    return { ok: true, content: 'MCP 执行结果', summary: 'MCP 执行完成' }
+    return { ok: true, content: mocks.mcpResult, summary: 'MCP 执行完成' }
   },
   inspectMcpServer: async (source: string, runId: string) => {
     mocks.mcpInspections.push({ source, runId })
@@ -112,6 +113,7 @@ beforeEach(() => {
   mocks.mcpExecutions.length = 0
   mocks.mcpInspections.length = 0
   mocks.mcpInstalls.length = 0
+  mocks.mcpResult = 'MCP 执行结果'
   mocks.mcpCandidate = undefined
 })
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
@@ -365,6 +367,34 @@ describe('startAgent', () => {
     expect(mocks.mcpExecutions).toEqual([{ name, args: { id: 7 } }])
     expect(mocks.requests[0].tools).toContainEqual(expect.objectContaining({ type: 'function', function: expect.objectContaining({ name }) }))
     expect(events).toContainEqual(expect.objectContaining({ type: 'tool_result', callId: 'mcp-read', ok: true }))
+  })
+
+  it('超长工具结果完整展示，但进入下一轮模型上下文前会压缩', async () => {
+    const name = 'mcp__demo__large__12345678'
+    mocks.mcpTools.push({
+      name,
+      serverId: 'demo',
+      serverName: '演示服务器',
+      toolName: 'large',
+      annotations: { readOnlyHint: true, destructiveHint: false },
+      definition: { type: 'function', function: { name, description: '读取大量数据', parameters: { type: 'object' } } }
+    })
+    mocks.mcpResult = `BEGIN\n${'large result '.repeat(12000)}\nERROR: retained failure\nEND`
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'mcp-large', name, args: {} }] })
+    mocks.responses.push({ content: '已处理', toolCalls: [] })
+    const { events, win } = makeWin()
+    const autoSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'auto' }
+
+    startAgent(win as never, { runId: 'r-mcp-large', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '读取大量 MCP 数据', temperature: 1 }, provider, autoSettings)
+    await runUntilDone(events)
+
+    const shown = events.find(event => event.type === 'tool_result')?.output ?? ''
+    const sent = String(mocks.requests[1].messages.find(message => message.role === 'tool')?.content ?? '')
+    expect(shown).toBe(mocks.mcpResult)
+    expect(sent.length).toBeLessThan(shown.length)
+    expect(sent).toContain('工具结果已压缩')
+    expect(sent).toContain('ERROR: retained failure')
+    expect(sent).toContain('END')
   })
 
   it('auto 模式：未声明只读的 MCP 工具仍需用户批准', async () => {

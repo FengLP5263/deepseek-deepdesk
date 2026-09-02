@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateContextUsage, getModelContextWindow, manageContextMessages, repairToolCallHistory } from '../src/shared/context-manager'
+import { compactToolResultForContext, estimateContextUsage, estimateTextTokens, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../src/shared/context-manager'
 import type { ProviderConfig } from '../src/shared/types'
 
 describe('context-manager', () => {
@@ -140,5 +140,23 @@ describe('context-manager', () => {
 
     expect(getModelContextWindow(provider, 'small')).toBe(32000)
     expect(getModelContextWindow(provider, 'missing')).toBe(256000)
+  })
+
+  it('compacts oversized tool results while preserving boundaries and key failures', () => {
+    const content = `BEGIN\n${'ordinary output '.repeat(800)}\nERROR: important failure\n${'tail output '.repeat(800)}\nEND`
+    const compacted = compactToolResultForContext(content, 500)
+
+    expect(estimateTextTokens(compacted)).toBeLessThanOrEqual(500)
+    expect(compacted).toContain('BEGIN')
+    expect(compacted).toContain('ERROR: important failure')
+    expect(compacted).toContain('END')
+    expect(compacted).toContain('工具结果已压缩')
+  })
+
+  it('scales a single tool result budget with the model context window', () => {
+    expect(toolResultContextTokenBudget(256000)).toBe(8000)
+    expect(toolResultContextTokenBudget(32000)).toBe(1920)
+    expect(toolResultContextTokenBudget(900)).toBe(128)
+    expect(compactToolResultForContext('short result', 128)).toBe('short result')
   })
 })

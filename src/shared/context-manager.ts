@@ -3,6 +3,7 @@ import type { ProviderConfig } from './types'
 export const DEFAULT_CONTEXT_WINDOW = 256000
 export const CONTEXT_COMPRESSION_THRESHOLD = 0.86
 export const CONTEXT_OUTPUT_RESERVE_TOKENS = 8192
+export const MAX_TOOL_RESULT_CONTEXT_TOKENS = 8000
 
 export type ContextTone = 'system' | 'user' | 'assistant' | 'tool-call' | 'tool-result' | 'input'
 
@@ -42,6 +43,60 @@ export function estimateTextTokens(text: string): number {
     tokens += (code >= 0x2e80 && code <= 0x9fff) ? 1 : 0.25
   }
   return Math.max(0, Math.round(tokens))
+}
+
+function takeTokenPrefix(text: string, budget: number): string {
+  if (budget <= 0) return ''
+  let used = 0
+  let result = ''
+  for (const character of text) {
+    const code = character.charCodeAt(0)
+    const next = code >= 0x2e80 && code <= 0x9fff ? 1 : 0.25
+    if (used + next > budget) break
+    result += character
+    used += next
+  }
+  return result
+}
+
+function takeTokenSuffix(text: string, budget: number): string {
+  if (budget <= 0) return ''
+  let used = 0
+  let result = ''
+  for (let index = text.length - 1; index >= 0; index -= 1) {
+    const character = text[index]
+    const code = character.charCodeAt(0)
+    const next = code >= 0x2e80 && code <= 0x9fff ? 1 : 0.25
+    if (used + next > budget) break
+    result = character + result
+    used += next
+  }
+  return result
+}
+
+export function toolResultContextTokenBudget(contextWindow: number): number {
+  return Math.max(128, Math.min(MAX_TOOL_RESULT_CONTEXT_TOKENS, Math.floor(contextWindow * 0.06)))
+}
+
+export function compactToolResultForContext(content: string, maxTokens = MAX_TOOL_RESULT_CONTEXT_TOKENS): string {
+  const originalTokens = estimateTextTokens(content)
+  if (originalTokens <= maxTokens) return content
+
+  const marker = `[工具结果已压缩：原始约 ${originalTokens} tokens，仅保留开头、关键状态行和结尾]`
+  const usable = Math.max(24, maxTokens - estimateTextTokens(marker) - 16)
+  const important = content
+    .split(/\r?\n/u)
+    .filter(line => /(?:error|warning|failed|failure|exception|exit code|错误|失败|异常|警告|退出码)/iu.test(line))
+    .slice(0, 8)
+    .join('\n')
+  const importantText = takeTokenPrefix(important, Math.floor(usable * 0.16)).trim()
+  const remaining = usable - estimateTextTokens(importantText)
+  const prefix = takeTokenPrefix(content, Math.floor(remaining * 0.65)).trimEnd()
+  const suffix = takeTokenSuffix(content, remaining - estimateTextTokens(prefix)).trimStart()
+  const sections = [prefix, marker]
+  if (importantText) sections.push('[关键状态行]\n' + importantText)
+  sections.push(suffix)
+  return sections.join('\n\n')
 }
 
 function stringifyValue(value: unknown): string {
