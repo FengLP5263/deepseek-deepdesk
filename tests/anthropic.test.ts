@@ -43,7 +43,7 @@ beforeAll(async () => {
       response.end()
       return
     }
-    response.write(sse({ type: 'message_start', message: { model: 'claude-tool', usage: { input_tokens: 12, output_tokens: 1 } } }))
+    response.write(sse({ type: 'message_start', message: { model: 'claude-tool', usage: { input_tokens: 2, cache_creation_input_tokens: 4, cache_read_input_tokens: 6, output_tokens: 1 } } }))
     response.write(sse({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'write_file', input: {} } }))
     response.write(sse({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"path":"a.txt"' } }))
     response.write(sse({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: ',"content":"hi"}' } }))
@@ -76,6 +76,7 @@ describe('Anthropic Messages adapter', () => {
     expect(body.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'old-call', name: 'read_file', input: { path: 'old.txt' } }] })
     expect(body.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'old-call', content: '旧内容' }] })
     expect(body.tools).toEqual([{ name: 'write_file', description: '写入文件', input_schema: { type: 'object', properties: { path: { type: 'string' } } } }])
+    expect(body.cache_control).toEqual({ type: 'ephemeral' })
     expect(body).not.toHaveProperty('temperature')
   })
 
@@ -103,6 +104,7 @@ describe('Anthropic Messages adapter', () => {
     expect(receivedHeaders['x-api-key']).toBe('anthropic-key')
     expect(receivedHeaders['anthropic-version']).toBe('2023-06-01')
     expect(receivedBody).not.toHaveProperty('temperature')
+    expect(receivedBody.cache_control).toEqual({ type: 'ephemeral' })
   })
 
   it('将文本和 thinking 增量交给现有界面并映射正常结束', async () => {

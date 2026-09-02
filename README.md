@@ -13,7 +13,7 @@ DeepDesk 是一个基于 Electron、React 和 TypeScript 构建的开源桌面 A
 
 ### 模型与会话
 
-- 原生接入 Anthropic Claude Messages API，也支持 DeepSeek、智谱等 OpenAI 兼容服务；所有服务均可配置 Base URL、API Key 和模型列表。
+- 原生接入 Anthropic Claude Messages API，也支持 DeepSeek、智谱等 OpenAI 兼容服务；所有服务均可配置 Base URL、API Key 和模型列表。Claude 多轮请求会启用服务端 prompt caching，降低稳定上下文重复处理的首字延迟与成本。
 - 对话框模型菜单会汇总所有已配置服务的模型，可在同一会话入口直接跨供应商切换；会话同时持久化供应商和模型选择。
 - 支持 SSE 流式响应、Markdown、表格、代码高亮、复制和安全外链；模型推理过程会被完整保留，生成时使用轻量扫光状态，完成后可按需展开或收起。
 - 模型请求默认预留 8192 个输出 token；识别输出长度上限、异常断流以及“正常结束但留下明显残句”的错误终态，可恢复时自动续写并合并为一条回复。

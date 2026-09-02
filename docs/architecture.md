@@ -32,7 +32,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - `store.ts`：AppStore 持有 `{ settings, providers, mcpServers, connectors, conversations, agentSessions, memories }`，写盘走「tmp + rename」原子替换，写队列串行化避免并发覆盖
 - `llm.ts`：流式会话注册表 `Map<runId, AbortController>`，支持取消 / 全局清理；根据 `finish_reason` 区分正常结束、长度截断、网络异常和内容审核终止，并在缺少终止标记时识别异常断流
 - `desktop-presence.ts`：管理系统托盘、全局唤起快捷键和退出清理；托盘发出的新建任务事件通过受控 IPC 交给 Renderer
-- `shared/llm/openai.ts` / `anthropic.ts`：将两类模型协议统一为 DeepDesk 流事件；Anthropic 适配器负责顶层系统指令、工具定义、工具历史、流式事件与终止原因转换，并使用官方鉴权头
+- `shared/llm/openai.ts` / `anthropic.ts`：将两类模型协议统一为 DeepDesk 流事件；Anthropic 适配器负责顶层系统指令、工具定义、工具历史、流式事件与终止原因转换，使用官方鉴权头和自动 prompt caching，并将未缓存、缓存创建与缓存命中 token 合并为真实输入用量
 - `shared/llm/stream.ts`：普通聊天与 Agent 共用的流恢复策略；模型请求默认预留 8192 个输出 token，并对以枚举顿号、逗号、斜杠、破折号或未闭合代码块结束的明显残句做保守续写；保留已接收内容，最多自动续写 3 次，并合并多次请求的 token usage
 - `agent.ts`：Agent 工具循环；执行模式按权限策略运行完整工具集，规划模式只向模型暴露只读工具并在执行入口二次校验；同一轮全部为无需审批的只读工具时并行执行并按原始调用顺序回填结果，包含写入、交互或审批时保持串行；单个工具异常归一化为失败结果返回模型，取消和终态事件负责清理运行中工具状态
 - `project-instructions.ts`：有界读取工作目录中的 `AGENTS.override.md` / `AGENTS.md`，拒绝符号链接和目录项，把项目协作约定交给 Agent 上下文装配

@@ -15,6 +15,7 @@ interface AnthropicRequestBody {
   system?: string
   messages: AnthropicMessage[]
   tools?: JsonObject[]
+  cache_control: { type: 'ephemeral' }
   stream: true
 }
 
@@ -113,8 +114,16 @@ export function createAnthropicRequestBody(req: ToolCallRequest): AnthropicReque
     ...(systems.length > 0 ? { system: systems.join('\n\n') } : {}),
     messages,
     ...(tools.length > 0 ? { tools } : {}),
+    cache_control: { type: 'ephemeral' },
     stream: true
   }
+}
+
+function inputTokenCount(usage: JsonObject | undefined): number | undefined {
+  if (!usage) return undefined
+  const parts = [usage.input_tokens, usage.cache_creation_input_tokens, usage.cache_read_input_tokens]
+    .filter((value): value is number => typeof value === 'number')
+  return parts.length > 0 ? parts.reduce((sum, value) => sum + value, 0) : undefined
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -179,7 +188,7 @@ export async function* streamAnthropicMessages(req: ToolCallRequest): AsyncGener
       if (event.type === 'message_start') {
         const message = isObject(event.message) ? event.message : undefined
         const usage = isObject(message?.usage) ? message.usage : undefined
-        if (typeof usage?.input_tokens === 'number') promptTokens = usage.input_tokens
+        promptTokens = inputTokenCount(usage)
       } else if (event.type === 'content_block_start') {
         const index = typeof event.index === 'number' ? event.index : 0
         const block = isObject(event.content_block) ? event.content_block : undefined
