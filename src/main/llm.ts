@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { streamOpenAICompatible } from '../shared/llm/openai'
 import { streamAnthropicMessages } from '../shared/llm/anthropic'
+import { streamOpenAIResponses } from '../shared/llm/openai-responses'
 import { getModelContextWindow, manageContextMessages } from '../shared/context-manager'
 import { IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, STREAM_CONTINUE_PROMPT, streamNeedsContinuation, streamTerminationError } from '../shared/llm/stream'
 import type { ChatChunkPayload, ChatStartRequest, ProviderConfig, Usage } from '../shared/types'
@@ -47,6 +48,15 @@ export function startChat(win: BrowserWindow, req: ChatStartRequest, provider: P
                 tools: [],
                 signal: controller.signal
               })
+            : provider.type === 'openai-responses'
+              ? streamOpenAIResponses({
+                  baseUrl: provider.baseUrl,
+                  apiKey: provider.apiKey,
+                  model: req.modelId,
+                  messages: requestMessages,
+                  tools: [],
+                  signal: controller.signal
+                })
             : streamOpenAICompatible({
                 baseUrl: provider.baseUrl,
                 apiKey: provider.apiKey,

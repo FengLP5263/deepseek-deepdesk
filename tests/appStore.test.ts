@@ -288,12 +288,13 @@ describe('AppStore', () => {
     expect(ds.models.map(m => m.contextWindow)).toEqual([256000, 256000])
   })
 
-  it('迁移旧服务时补齐 OpenAI 协议并保留 Anthropic 协议', async () => {
+  it('迁移旧服务时补齐兼容协议并保留原生协议', async () => {
     writeFileSync(join(dir, 'deepdesk.json'), JSON.stringify({
       settings: { version: 1, defaultProviderId: 'legacy', defaultModelId: 'legacy-model', temperature: 1, theme: 'dark', enterToSend: true },
       providers: [
         { id: 'legacy', name: 'Legacy', baseUrl: 'https://legacy.invalid/v1', apiKey: '', models: [{ id: 'legacy-model' }], createdAt: 1 },
-        { id: 'claude', name: 'Claude', type: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', apiKey: '', models: [{ id: 'claude-test' }], createdAt: 2 }
+        { id: 'claude', name: 'Claude', type: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', apiKey: '', models: [{ id: 'claude-test' }], createdAt: 2 },
+        { id: 'openai', name: 'OpenAI', type: 'openai-responses', baseUrl: 'https://api.openai.com/v1', apiKey: '', models: [{ id: 'gpt-test' }], createdAt: 3 }
       ],
       conversations: [],
       agentSessions: [],
@@ -304,5 +305,6 @@ describe('AppStore', () => {
     const providers = store.getSnapshot().providers
     expect(providers.find(provider => provider.id === 'legacy')?.type).toBe('openai')
     expect(providers.find(provider => provider.id === 'claude')?.type).toBe('anthropic')
+    expect(providers.find(provider => provider.id === 'openai')?.type).toBe('openai-responses')
   })
 })

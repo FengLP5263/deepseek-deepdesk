@@ -7,7 +7,16 @@ const mocks = vi.hoisted(() => ({
     finishReason: string
     usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
   }>,
-  requests: [] as Array<{ messages: Array<{ role: string; content: string }> }>
+  requests: [] as Array<{ messages: Array<{ role: string; content: string }> }>,
+  responsesRequests: [] as Array<{ model: string }>
+}))
+
+vi.mock('../src/shared/llm/openai-responses', () => ({
+  streamOpenAIResponses: async function* (req: { model: string }) {
+    mocks.responsesRequests.push({ model: req.model })
+    yield { type: 'content', text: 'Responses 回复。' }
+    yield { type: 'final', finishReason: 'stop', toolCalls: [] }
+  }
 }))
 
 vi.mock('../src/shared/llm/openai', () => ({
@@ -51,6 +60,7 @@ async function waitForTerminalEvent(events: ChatChunkPayload[]): Promise<void> {
 beforeEach(() => {
   mocks.responses.length = 0
   mocks.requests.length = 0
+  mocks.responsesRequests.length = 0
 })
 
 describe('main chat streaming', () => {
@@ -93,5 +103,22 @@ describe('main chat streaming', () => {
     expect(events.filter(event => event.type === 'content').map(event => event.text).join('')).toBe('第一项、第二项。')
     expect(events.some(event => event.type === 'error')).toBe(false)
     expect(mocks.requests).toHaveLength(2)
+  })
+
+  it('按服务协议调度 OpenAI Responses 流', async () => {
+    const events: ChatChunkPayload[] = []
+    const win = {
+      isDestroyed: () => false,
+      webContents: { send: (_channel: string, payload: ChatChunkPayload) => events.push(payload) }
+    }
+    const responsesProvider: ProviderConfig = { ...provider, type: 'openai-responses' }
+
+    startChat(win as never, request, responsesProvider)
+    await waitForTerminalEvent(events)
+
+    expect(mocks.responsesRequests).toEqual([{ model: 'mock-model' }])
+    expect(events.filter(event => event.type === 'content').map(event => event.text).join('')).toBe('Responses 回复。')
+    expect(events.some(event => event.type === 'done')).toBe(true)
+    expect(mocks.requests).toHaveLength(0)
   })
 })

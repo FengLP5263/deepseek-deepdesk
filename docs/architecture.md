@@ -18,7 +18,7 @@
 2. 渲染进程通过 `window.api.memories.capture` 请求主进程本地提取显式记忆和高置信长期偏好；主进程过滤敏感信息并按内容去重
 3. 渲染进程通过 `window.api.memories.search` 检索本地长期记忆，并把命中的记忆格式化为临时 system 上下文
 4. 渲染进程通过 `window.api.chat.start` 发起 IPC，主进程 `startChat` 创建 `AbortController`
-5. 主进程按服务协议调用 OpenAI 兼容或 Anthropic Messages 流式适配器（fetch + ReadableStream + SSE 解析），统一产出正文、思考、工具调用与用量；收到响应前的临时网络错误、限流和服务端短暂故障会有限重试，余额不足与鉴权错误不会重试
+5. 主进程按服务协议调用 OpenAI 兼容、OpenAI Responses 或 Anthropic Messages 流式适配器（fetch + ReadableStream + SSE 解析），统一产出正文、思考、工具调用与用量；收到响应前的临时网络错误、限流和服务端短暂故障会有限重试，余额不足与鉴权错误不会重试
 6. 主进程按 24ms 短时间窗合并连续同类文本，再经 `webContents.send(chat:chunk)` 推回渲染进程；工具、结束、错误和停止事件前强制刷新，保证事件顺序
 7. 渲染进程按 runId 匹配，写入 50ms 节流的 pending buffer，`useThrottledText` 控制 Markdown 重渲染频率，避免 IPC 和 React 更新被细碎 token 放大
 8. 结束（done / error / abort）时 flush 剩余内容、持久化会话、清理流状态
@@ -32,7 +32,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - `store.ts`：AppStore 持有 `{ settings, providers, mcpServers, connectors, conversations, agentSessions, memories }`，写盘走「tmp + rename」原子替换，写队列串行化避免并发覆盖
 - `llm.ts`：流式会话注册表 `Map<runId, AbortController>`，支持取消 / 全局清理；根据 `finish_reason` 区分正常结束、长度截断、网络异常和内容审核终止，并在缺少终止标记时识别异常断流
 - `desktop-presence.ts`：管理系统托盘、全局唤起快捷键和退出清理；托盘发出的新建任务事件通过受控 IPC 交给 Renderer
-- `shared/llm/openai.ts` / `anthropic.ts`：将两类模型协议统一为 DeepDesk 流事件；Anthropic 适配器负责顶层系统指令、工具定义、工具历史、流式事件与终止原因转换，使用官方鉴权头和自动 prompt caching，并将未缓存、缓存创建与缓存命中 token 合并为真实输入用量
+- `shared/llm/openai.ts` / `openai-responses.ts` / `anthropic.ts`：将三类模型协议统一为 DeepDesk 流事件；Responses 适配器使用无状态请求，在本地回放服务返回的加密推理项并统一转换工具历史；Anthropic 适配器负责顶层系统指令、工具定义、工具历史、流式事件与终止原因转换，使用官方鉴权头和自动 prompt caching，并将未缓存、缓存创建与缓存命中 token 合并为真实输入用量
 - `shared/llm/stream.ts`：普通聊天与 Agent 共用的流恢复策略；模型请求默认预留 8192 个输出 token，并对以枚举顿号、逗号、斜杠、破折号或未闭合代码块结束的明显残句做保守续写；保留已接收内容，最多自动续写 3 次，并合并多次请求的 token usage
 - `agent.ts`：Agent 工具循环；执行模式按权限策略运行完整工具集，规划模式只向模型暴露只读工具并在执行入口二次校验；同一轮全部为无需审批的只读工具时并行执行并按原始调用顺序回填结果，包含写入、交互或审批时保持串行；单个工具异常归一化为失败结果返回模型，取消和终态事件负责清理运行中工具状态
 - `project-instructions.ts`：有界读取工作目录中的 `AGENTS.override.md` / `AGENTS.md`，拒绝符号链接和目录项，把项目协作约定交给 Agent 上下文装配
@@ -119,6 +119,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 ## 9. 路线图
 
 - [x] Anthropic Messages 协议适配器
+- [x] OpenAI Responses 无状态协议适配器
 - [x] safeStorage 加密 API Key
 - [x] 对话导出（Markdown / JSON）
 - [x] 本地记忆近义合并与冲突更新标记

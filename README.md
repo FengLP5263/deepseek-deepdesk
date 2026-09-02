@@ -1,6 +1,6 @@
 # DeepDesk
 
-DeepDesk 是一个基于 Electron、React 和 TypeScript 构建的开源桌面 AI 客户端。项目提供 Anthropic Messages 与 OpenAI 兼容模型服务接入、本地多轮会话、编码 Agent、MCP、连接器、浏览器调试和本地记忆等能力，面向需要在桌面环境中完成对话、代码处理与工具调用的用户。
+DeepDesk 是一个基于 Electron、React 和 TypeScript 构建的开源桌面 AI 客户端。项目提供 OpenAI Responses、Anthropic Messages 与 OpenAI 兼容模型服务接入、本地多轮会话、编码 Agent、MCP、连接器、浏览器调试和本地记忆等能力，面向需要在桌面环境中完成对话、代码处理与工具调用的用户。
 
 [![CI](https://github.com/FengLP5263/deepseek-deepdesk/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/FengLP5263/deepseek-deepdesk/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-2f363d.svg)](./LICENSE)
@@ -13,7 +13,7 @@ DeepDesk 是一个基于 Electron、React 和 TypeScript 构建的开源桌面 A
 
 ### 模型与会话
 
-- 原生接入 Anthropic Claude Messages API，也支持 DeepSeek、智谱等 OpenAI 兼容服务；所有服务均可配置 Base URL、API Key 和模型列表。Claude 多轮请求会启用服务端 prompt caching，降低稳定上下文重复处理的首字延迟与成本。
+- 原生接入 OpenAI Responses API 和 Anthropic Claude Messages API，也支持 DeepSeek、智谱等 OpenAI 兼容服务；所有服务均可配置 Base URL、API Key 和模型列表。Responses 请求默认关闭服务端存储，并在本地安全回放加密推理项；Claude 多轮请求会启用 prompt caching，降低稳定上下文重复处理的延迟与成本。
 - 对话框模型菜单会汇总所有已配置服务的模型，可在同一会话入口直接跨供应商切换；会话同时持久化供应商和模型选择。
 - 支持 SSE 流式响应、Markdown、表格、代码高亮、复制和安全外链；模型推理过程会被完整保留，生成时使用轻量扫光状态，完成后可按需展开或收起。
 - 模型请求默认预留 8192 个输出 token；识别输出长度上限、异常断流以及“正常结束但留下明显残句”的错误终态，可恢复时自动续写并合并为一条回复。
@@ -82,7 +82,7 @@ pnpm flow -- doctor
 pnpm dev
 ```
 
-首次启动后，在“设置 → 模型服务”中选择接口协议并配置服务地址、API Key 和模型。Anthropic 官方服务的 Base URL 为 `https://api.anthropic.com/v1`；配置通过连接测试并保存后，即可创建任务。
+首次启动后，在“设置 → 模型服务”中选择接口协议并配置服务地址、API Key 和模型。OpenAI 官方服务的 Base URL 为 `https://api.openai.com/v1`，Anthropic 官方服务为 `https://api.anthropic.com/v1`；配置通过连接测试并保存后，即可创建任务。
 
 如需接入 MCP 工具，可以在“设置 → MCP”中添加本地进程或远程服务并点击“保存并连接”；也可以在会话中发送可直接连接的 HTTP MCP 服务端点，并明确要求 DeepDesk 安装。会话安装会先展示服务地址与工具清单，确认后才会持久化。GitHub、npm、MCP Registry 或普通介绍页不能作为 HTTP 端点直接安装，涉及本地命令、Token 或自定义请求头的服务仍需在设置页配置。本地服务器的启动命令、远程 Token 和请求头仅保存在当前系统账号的 Electron `userData` 中，请勿填写来源不可信的命令或凭据。
 

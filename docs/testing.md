@@ -26,7 +26,7 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 
 ## 已覆盖重点
 
-- OpenAI 兼容与 Anthropic Messages SSE 流式解析、鉴权头、prompt caching、缓存用量和工具协议转换
+- OpenAI 兼容、OpenAI Responses 与 Anthropic Messages SSE 流式解析、鉴权头、无状态加密推理回放、prompt caching、缓存用量和工具协议转换
 - LLM 错误、usage、reasoning 内容处理
 - Agent 工具调用与权限审批
 - 工作目录 `AGENTS.md` / `AGENTS.override.md` 的优先级、有界读取与系统上下文装配

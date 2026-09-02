@@ -28,6 +28,15 @@ describe('context-manager', () => {
     expect(usage.used).toBeGreaterThan(estimateContextUsage([{ role: 'user', content: '查一下' }]).used)
   })
 
+  it('将 Responses API 的加密推理历史计入 AI 上下文', () => {
+    const usage = estimateContextUsage([
+      { role: 'user', content: '继续' },
+      { type: 'reasoning', id: 'rs_1', encrypted_content: 'encrypted-context'.repeat(80), summary: [] }
+    ])
+
+    expect(usage.parts.find(part => part.tone === 'assistant')?.tokens).toBeGreaterThan(100)
+  })
+
   it('keeps messages unchanged when they are inside the safe budget', () => {
     const messages = [
       { role: 'system', content: 'system prompt' },

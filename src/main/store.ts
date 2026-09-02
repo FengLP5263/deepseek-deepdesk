@@ -33,7 +33,7 @@ function normalizeProviders(providers: unknown): ProviderConfig[] {
   if (!Array.isArray(providers)) return []
   return (providers as ProviderConfig[]).map(provider => ({
     ...provider,
-    type: provider.type === 'anthropic' ? 'anthropic' : 'openai',
+    type: provider.type === 'anthropic' || provider.type === 'openai-responses' ? provider.type : 'openai',
     models: Array.isArray(provider.models) ? provider.models : []
   }))
 }
@@ -240,7 +240,7 @@ export class AppStore {
   }
 
   upsertProvider(provider: ProviderConfig): void {
-    provider = { ...provider, type: provider.type === 'anthropic' ? 'anthropic' : 'openai' }
+    provider = { ...provider, type: provider.type === 'anthropic' || provider.type === 'openai-responses' ? provider.type : 'openai' }
     const idx = this.data.providers.findIndex(p => p.id === provider.id)
     if (idx >= 0) this.data.providers[idx] = structuredClone(provider)
     else this.data.providers.push(structuredClone(provider))

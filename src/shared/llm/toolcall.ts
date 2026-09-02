@@ -35,7 +35,7 @@ export async function chatCompletionWithTools(req: ToolCallRequest): Promise<Too
     },
     body: JSON.stringify({
       model: req.model,
-      messages: req.messages,
+      messages: req.messages.filter(message => typeof message.role === 'string'),
       tools: req.tools,
       temperature: req.temperature ?? 1,
       max_tokens: req.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
@@ -82,6 +82,7 @@ export interface StreamFinalChunk {
   toolCalls: ToolCallItem[]
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
   finishReason?: string
+  providerHistory?: Array<Record<string, unknown>>
 }
 
 export type StreamChunk = StreamContentChunk | StreamReasoningChunk | StreamFinalChunk
@@ -105,7 +106,7 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
     },
     body: JSON.stringify({
       model: req.model,
-      messages: req.messages,
+      messages: req.messages.filter(message => typeof message.role === 'string'),
       tools: req.tools,
       temperature: req.temperature ?? 1,
       max_tokens: req.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,

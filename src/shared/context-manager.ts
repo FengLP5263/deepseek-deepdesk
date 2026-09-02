@@ -190,8 +190,13 @@ function toolCallTokens(message: Record<string, unknown>): number {
   return tokens
 }
 
+function providerHistoryTokens(message: Record<string, unknown>): number {
+  if (roleOf(message) || message.type !== 'reasoning') return 0
+  return estimateTextTokens(stringifyValue(message))
+}
+
 function messageTokens(message: Record<string, unknown>): number {
-  return 4 + estimateTextTokens(stringifyValue(message.content)) + toolCallTokens(message)
+  return 4 + estimateTextTokens(stringifyValue(message.content)) + toolCallTokens(message) + providerHistoryTokens(message)
 }
 
 export function estimateToolDefinitionsTokens(tools: Array<Record<string, unknown>> = []): number {
@@ -210,11 +215,12 @@ export function estimateContextUsage(history: Array<Record<string, unknown>>, cu
   }
   for (const message of history) {
     const role = roleOf(message)
-    const contentTokens = 4 + estimateTextTokens(stringifyValue(message.content))
+    const contentTokens = 4 + estimateTextTokens(stringifyValue(message.content)) + providerHistoryTokens(message)
     if (role === 'system') buckets.system += contentTokens
     else if (role === 'user') buckets.user += contentTokens
     else if (role === 'assistant') buckets.assistant += contentTokens
     else if (role === 'tool') buckets.toolResults += contentTokens
+    else if (providerHistoryTokens(message) > 0) buckets.assistant += contentTokens
     else buckets.system += contentTokens
     buckets.toolCalls += toolCallTokens(message)
   }

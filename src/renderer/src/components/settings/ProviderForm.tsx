@@ -47,21 +47,26 @@ export default function ProviderForm({ onClose }: { onClose: () => void }) {
           <label className='field-label'>接口协议</label>
           <Select value={type} onChange={event => {
             const next = event.target.value as ProviderType
-            if (baseUrl === 'https://api.deepseek.com' || baseUrl === 'https://api.anthropic.com/v1') {
-              setBaseUrl(next === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.deepseek.com')
+            if (['https://api.deepseek.com', 'https://api.anthropic.com/v1', 'https://api.openai.com/v1'].includes(baseUrl)) {
+              setBaseUrl(next === 'anthropic'
+                ? 'https://api.anthropic.com/v1'
+                : next === 'openai-responses' ? 'https://api.openai.com/v1' : 'https://api.deepseek.com')
             }
             setType(next)
           }}>
             <option value='openai'>OpenAI 兼容</option>
+            <option value='openai-responses'>OpenAI Responses</option>
             <option value='anthropic'>Anthropic Messages</option>
           </Select>
         </div>
         <div>
           <label className='field-label'>Base URL</label>
-          <Input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={type === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.deepseek.com'} />
+          <Input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={type === 'anthropic' ? 'https://api.anthropic.com/v1' : type === 'openai-responses' ? 'https://api.openai.com/v1' : 'https://api.deepseek.com'} />
           <div className='field-hint'>{type === 'anthropic'
             ? '原生支持 Claude Messages API、流式回复和 Agent 工具调用。'
-            : '支持 DeepSeek、智谱、Kimi、OpenAI、Ollama 等 OpenAI 兼容服务。'}</div>
+            : type === 'openai-responses'
+              ? '原生支持 OpenAI Responses API、推理摘要和 Agent 工具调用。'
+              : '支持 DeepSeek、智谱、Kimi、OpenAI、Ollama 等 OpenAI 兼容服务。'}</div>
         </div>
         <div>
           <label className='field-label'>API Key</label>

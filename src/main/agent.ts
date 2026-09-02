@@ -4,6 +4,7 @@ import { IPC } from '../shared/ipc-channels'
 import { streamChatCompletionWithTools } from '../shared/llm/toolcall'
 import type { ToolCallItem } from '../shared/llm/toolcall'
 import { streamAnthropicMessages } from '../shared/llm/anthropic'
+import { streamOpenAIResponses } from '../shared/llm/openai-responses'
 import { AGENT_TOOLS } from './agent-tools'
 import { executeTool, isDangerousCommand, isReadOnlyCommand, resolvePath, toolTargetPaths } from './tools'
 import type { AgentEvent, AgentInteractionMode, AgentRunRequest, AgentToolCall, AgentToolName, AgentToolResult } from '../shared/agent-types'
@@ -186,6 +187,7 @@ interface AgentTurnResult {
   content: string
   toolCalls: ToolCallItem[]
   usage?: TokenUsage
+  providerHistory: Array<Record<string, unknown>>
 }
 
 async function completeAgentTurn(
@@ -201,6 +203,7 @@ async function completeAgentTurn(
   let requestMessages = messages
   let continuations = 0
   let usage: TokenUsage | undefined
+  const providerHistory: Array<Record<string, unknown>> = []
 
   while (true) {
     let finalReceived = false
@@ -216,6 +219,15 @@ async function completeAgentTurn(
             tools,
             signal
           })
+        : provider.type === 'openai-responses'
+          ? streamOpenAIResponses({
+              baseUrl: provider.baseUrl,
+              apiKey: provider.apiKey,
+              model: req.modelId,
+              messages: requestMessages,
+              tools,
+              signal
+            })
         : streamChatCompletionWithTools({
             baseUrl: provider.baseUrl,
             apiKey: provider.apiKey,
@@ -237,6 +249,7 @@ async function completeAgentTurn(
           toolCalls = chunk.toolCalls
           finishReason = chunk.finishReason
           usage = mergeTokenUsage(usage, chunk.usage)
+          if (chunk.providerHistory) providerHistory.push(...chunk.providerHistory)
         }
       }
       if (!finalReceived) throw new IncompleteStreamError()
@@ -244,17 +257,17 @@ async function completeAgentTurn(
       throwIfAborted(signal)
       if (!(error instanceof IncompleteStreamError) || continuations >= MAX_STREAM_CONTINUATIONS) throw error
       continuations += 1
-      requestMessages = continuationMessages(messages, content)
+      requestMessages = continuationMessages([...messages, ...providerHistory], content)
       continue
     }
 
     const terminationError = streamTerminationError(finishReason)
     if (terminationError) throw new Error(terminationError)
-    if (!streamNeedsContinuation(finishReason, content, toolCalls.length > 0)) return { content, toolCalls, usage }
+    if (!streamNeedsContinuation(finishReason, content, toolCalls.length > 0)) return { content, toolCalls, usage, providerHistory }
     if (toolCalls.length > 0) throw new Error('模型工具调用未完整生成，已停止执行不完整的工具参数')
     if (continuations >= MAX_STREAM_CONTINUATIONS) throw new Error('模型回复多次未完整结束，请缩小任务范围后重试')
     continuations += 1
-    requestMessages = continuationMessages(messages, content)
+    requestMessages = continuationMessages([...messages, ...providerHistory], content)
   }
 }
 
@@ -291,11 +304,12 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
         send({ runId: req.runId, type: 'context_usage', contextUsage: managed.after })
         send({ runId: req.runId, type: 'thinking' })
         inFlightContent = ''
-        const { content, toolCalls, usage } = await completeAgentTurn(req, provider, messages, controller.signal, text => {
+        const { content, toolCalls, usage, providerHistory } = await completeAgentTurn(req, provider, messages, controller.signal, text => {
           inFlightContent += text
           send({ runId: req.runId, type: 'text', text })
         }, text => send({ runId: req.runId, type: 'thinking', text }), tools)
         throwIfAborted(controller.signal)
+        if (providerHistory.length > 0) messages.push(...providerHistory)
         if (toolCalls.length > 0) {
           messages.push({
             role: 'assistant',
