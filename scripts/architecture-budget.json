@@ -30,11 +30,6 @@
       "targetLines": 500,
       "reason": "历史功能广场页面集中，后续按连接器、技能和设置卡片拆分"
     },
-    "src/renderer/src/components/agent/AgentView.tsx": {
-      "maxLines": 547,
-      "targetLines": 500,
-      "reason": "已抽离模型选择器，剩余消息流与输入区将在后续重构继续拆分"
-    },
     "e2e/app.spec.ts": {
       "maxLines": 963,
       "targetLines": 600,
