@@ -5,19 +5,13 @@ import { useAgentStore } from '../../stores/useAgentStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import type { AgentStep } from '@shared/agent-types'
 import clsx from 'clsx'
-import { formatTokens } from '../../lib/format'
+import { formatTokens, formatWorkdirName } from '../../lib/format'
 import { DEFAULT_CONTEXT_WINDOW, estimateContextUsage } from '@shared/context-manager'
 import Markdown from '../chat/Markdown'
+import ThinkingBlock from '../chat/ThinkingBlock'
 import { copyText } from '../../lib/utils'
 import AgentModelPicker from './AgentModelPicker'
 import '../../assets/agent.css'
-
-function formatWorkdirName(workdir: string): string {
-  const normalized = workdir.trim().replace(/[\\/]+$/, '')
-  if (!normalized) return ''
-  const parts = normalized.split(/[\\/]+/).filter(Boolean)
-  return parts.at(-1) ?? normalized
-}
 
 function ContextMeter({ history, currentInput, contextWindow, open, onToggle }: { history: Array<Record<string, unknown>>; currentInput: string; contextWindow: number; open: boolean; onToggle: () => void }) {
   const usage = estimateContextUsage(history, currentInput)
@@ -219,7 +213,7 @@ function TextStep({ step, index, isLastMessage }: { step: AgentStep; index: numb
 function StepItem({ step, index, isLastMessage }: { step: AgentStep; index: number; isLastMessage: boolean }) {
   switch (step.kind) {
     case 'task': return <TaskStep step={step} index={index} isLastMessage={isLastMessage} />
-    case 'thinking': return <div className='agent-thinking'><span className='thinking-icon' />思考中…</div>
+    case 'thinking': return <ThinkingBlock text={step.text ?? ''} streaming={step.status === 'running'} />
     case 'text': return <TextStep step={step} index={index} isLastMessage={isLastMessage} />
     case 'tool': return <ToolCard step={step} />
     case 'error': return <div className='agent-error'>{step.message}</div>

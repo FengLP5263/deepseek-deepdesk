@@ -14,6 +14,8 @@ export type AgentToolName =
   | 'browser_snapshot'
   | 'browser_click'
   | 'browser_type'
+  | 'browser_hover'
+  | 'browser_scroll'
   | 'browser_debug'
   | 'browser_evaluate'
   | 'inspect_mcp_server'
@@ -118,5 +120,6 @@ export interface AgentSession {
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
   queuedMessages?: AgentQueuedMessage[]
+  hasUnread?: boolean
   source?: AgentSessionSource
 }

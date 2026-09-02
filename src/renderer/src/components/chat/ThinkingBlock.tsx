@@ -1,19 +1,20 @@
-import { useState } from 'react'
-import { ChevronDown, Brain } from 'lucide-react'
+import { useId, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import '../../assets/thinking.css'
 
 export default function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
+  const bodyId = useId()
   const display = text.trim()
   if (!display && !streaming) return null
   return (
-    <div className='thinking'>
-      <div className='thinking-header' onClick={() => setOpen(o => !o)}>
-        {streaming ? <span className='thinking-icon' /> : <Brain size={13} />}
-        思考过程
+    <div className={`thinking${streaming ? ' is-streaming' : ''}${open ? ' is-open' : ''}`}>
+      <button type='button' className='thinking-header' aria-expanded={display ? open : false} aria-controls={display ? bodyId : undefined} onClick={() => { if (display) setOpen(value => !value) }}>
+        <span className='thinking-status'>{streaming ? '思考中' : '已思考'}</span>
         {display.length > 0 && <span className='muted fs-2xs'>{display.length} 字</span>}
-        <ChevronDown size={14} style={{ marginLeft: 'auto', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
-      </div>
-      {open && <div className='thinking-body'>{display}</div>}
+        {display.length > 0 && <ChevronDown size={14} className='thinking-chevron' aria-hidden />}
+      </button>
+      {open && display && <div className='thinking-body' id={bodyId}>{display}</div>}
     </div>
   )
 }

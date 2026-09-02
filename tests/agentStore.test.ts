@@ -128,12 +128,23 @@ describe('useAgentStore 会话持久化', () => {
     await useAgentStore.getState().start('写一个文件')
     expect(startReqs.length).toBe(1)
     const req = startReqs[0]
+    chunkCb!({ runId: req.runId, type: 'thinking' })
+    chunkCb!({ runId: req.runId, type: 'thinking', text: '先分析需求，' })
+    chunkCb!({ runId: req.runId, type: 'thinking', text: '再执行任务。' })
+    chunkCb!({ runId: req.runId, type: 'text', text: '已完成' })
     chunkCb!({ runId: req.runId, type: 'done' })
     await new Promise(r => setTimeout(r, 80))
     expect(saved.length).toBe(1)
     expect(saved[0].task).toBe('写一个文件')
     expect(saved[0].steps[0].kind).toBe('task')
     expect(saved[0].modelId).toBe('deepseek-v4-pro')
+    expect(saved[0].steps.find(step => step.kind === 'thinking')).toMatchObject({ text: '先分析需求，再执行任务。', status: 'ok' })
+    expect(saved[0].hasUnread).toBe(true)
+    expect(useAgentStore.getState().sessions[0].hasUnread).toBe(true)
+    useAgentStore.getState().loadSession(saved[0].id)
+    await new Promise(r => setTimeout(r, 20))
+    expect(useAgentStore.getState().sessions[0].hasUnread).toBe(false)
+    expect(saved[0].hasUnread).toBe(false)
   })
 
   it('运行中按顺序排队消息，并在上一轮完成后使用编辑后的内容继续发送', async () => {

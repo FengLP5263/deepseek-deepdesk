@@ -80,6 +80,11 @@ export interface StreamContentChunk {
   text: string
 }
 
+export interface StreamReasoningChunk {
+  type: 'reasoning'
+  text: string
+}
+
 export interface StreamFinalChunk {
   type: 'final'
   toolCalls: ToolCallItem[]
@@ -87,7 +92,7 @@ export interface StreamFinalChunk {
   finishReason?: string
 }
 
-export type StreamChunk = StreamContentChunk | StreamFinalChunk
+export type StreamChunk = StreamContentChunk | StreamReasoningChunk | StreamFinalChunk
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return
@@ -157,7 +162,7 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
           }
           try {
             const json = JSON.parse(data) as {
-              choices?: Array<{ delta?: { content?: string; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }>
+              choices?: Array<{ delta?: { content?: string; reasoning_content?: string; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }>
               usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
             }
             const delta = json.choices && json.choices[0] && json.choices[0].delta
@@ -165,6 +170,9 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
             if (delta) {
               if (typeof delta.content === 'string' && delta.content !== '') {
                 yield { type: 'content', text: delta.content }
+              }
+              if (typeof delta.reasoning_content === 'string' && delta.reasoning_content !== '') {
+                yield { type: 'reasoning', text: delta.reasoning_content }
               }
               if (Array.isArray(delta.tool_calls)) {
                 for (const tc of delta.tool_calls) {

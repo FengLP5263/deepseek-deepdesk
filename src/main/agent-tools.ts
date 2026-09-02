@@ -160,7 +160,7 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
     type: 'function',
     function: {
       name: 'browser_click',
-      description: '点击页面中的元素。点击可能提交表单或触发外部操作，需遵守权限审批。',
+      description: '点击页面中的元素。操作前会在用户浏览器中显示 DeepDesk 可视指针；点击可能提交表单或触发外部操作，需遵守权限审批。',
       parameters: {
         type: 'object',
         properties: {
@@ -175,16 +175,46 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
     type: 'function',
     function: {
       name: 'browser_type',
-      description: '在输入框或可编辑元素中输入文本，可选提交表单。',
+      description: '在输入框或可编辑元素中输入文本，但不提交。聚焦输入位置时会显示 DeepDesk 可视指针；如需搜索、发送或提交，输入完成后必须再调用 browser_click 点击 browser_snapshot 返回的可见按钮。',
       parameters: {
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'browser_snapshot 返回的 CSS selector' },
           text: { type: 'string', description: '要输入的文本' },
-          submit: { type: 'boolean', description: '输入后是否提交表单' },
           target_id: { type: 'string', description: '可选，页面 ID' }
         },
         required: ['selector', 'text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_hover',
+      description: '把 DeepDesk 可视指针移动到页面元素并悬停，用于展开菜单、显示提示或检查悬停状态。',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'browser_snapshot 返回的 CSS selector' },
+          target_id: { type: 'string', description: '可选，页面 ID' }
+        },
+        required: ['selector']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_scroll',
+      description: '在当前页面中执行可见滚动。DeepDesk 指针会先移动到页面滚动区域，再通过浏览器原生滚轮事件平滑滚动。',
+      parameters: {
+        type: 'object',
+        properties: {
+          direction: { type: 'string', enum: ['up', 'down'], description: '滚动方向' },
+          amount: { type: 'number', description: '滚动距离，单位像素，默认 640' },
+          target_id: { type: 'string', description: '可选，页面 ID' }
+        },
+        required: ['direction']
       }
     }
   },
@@ -234,7 +264,7 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
     type: 'function',
     function: {
       name: 'browser_evaluate',
-      description: '在页面上下文执行 JavaScript 调试表达式并返回可序列化结果。该能力权限较高，通常需要用户批准。',
+      description: '在页面上下文执行只读 JavaScript 调试表达式并返回可序列化结果。禁止用脚本点击、输入、滚动或导航，交互必须改用 browser_click、browser_type、browser_hover、browser_scroll 或 browser_navigate，以确保用户能看见 DeepDesk 指针的操作过程。该能力权限较高，通常需要用户批准。',
       parameters: {
         type: 'object',
         properties: {

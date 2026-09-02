@@ -132,9 +132,10 @@ describe('AppStore', () => {
   it('Agent 会话增删', async () => {
     const store = createStore()
     await store.init()
-    store.upsertAgentSession({ id: 's1', task: '任务', workdir: dir, modelId: 'deepseek-v4-pro', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task', text: '任务' }], history: [] })
+    store.upsertAgentSession({ id: 's1', task: '任务', workdir: dir, modelId: 'deepseek-v4-pro', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task', text: '任务' }], history: [], hasUnread: true })
     expect(store.getSnapshot().agentSessions.length).toBe(1)
     expect(store.getSnapshot().agentSessions[0].task).toBe('任务')
+    expect(store.getSnapshot().agentSessions[0].hasUnread).toBe(true)
     store.deleteAgentSession('s1')
     expect(store.getSnapshot().agentSessions.length).toBe(0)
   })

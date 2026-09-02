@@ -86,7 +86,6 @@
 
 .agent-task { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border-radius: var(--radius-md); background: var(--accent-soft); border: 1px solid var(--accent-soft); font-size: var(--fs-base); line-height: 1.6; user-select: text; }
 .agent-task svg { margin-top: 2px; flex-shrink: 0; color: var(--accent-text); }
-.agent-thinking { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-muted); padding: 4px 2px; }
 .agent-text { font-size: var(--fs-base); line-height: 1.7; white-space: pre-wrap; word-break: break-word; user-select: text; }
 .agent-error { padding: 10px 14px; border-radius: 10px; background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.4); font-size: var(--fs-sm); }
 

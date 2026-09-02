@@ -41,9 +41,13 @@ describe('platform adapters', () => {
     const macos = platformInfoFromNode('darwin')
     const windows = platformInfoFromNode('win32')
     expect(JSON.stringify(createAgentTools(macos))).toContain('zsh')
-    expect(JSON.stringify(createAgentTools(windows))).toContain('PowerShell')
+    const windowsTools = JSON.stringify(createAgentTools(windows))
+    expect(windowsTools).toContain('PowerShell')
+    expect(windowsTools).not.toContain('"submit"')
     expect(buildSystemPrompt('/tmp/project', macos, 'ask')).toContain('zsh（macOS）')
-    expect(buildSystemPrompt('C:\\project', windows, 'ask')).toContain('PowerShell（Windows）')
+    const windowsPrompt = buildSystemPrompt('C:\\project', windows, 'ask')
+    expect(windowsPrompt).toContain('PowerShell（Windows）')
+    expect(windowsPrompt).toContain('browser_type 只负责输入')
   })
 
   it('recognizes Windows and macOS command risk consistently', () => {

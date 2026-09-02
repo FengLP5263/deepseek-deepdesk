@@ -150,6 +150,8 @@ describe('streamChatCompletionWithTools', () => {
         return
       }
       if (req.url === '/plain/chat/completions') {
+        res.write(sse({ choices: [{ index: 0, delta: { reasoning_content: '先分析，' } }] }))
+        res.write(sse({ choices: [{ index: 0, delta: { reasoning_content: '再回答。' } }] }))
         res.write(sse({ choices: [{ index: 0, delta: { content: '流式' } }] }))
         res.write(sse({ choices: [{ index: 0, delta: { content: '输出' } }] }))
         res.write(sse({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } }))
@@ -178,7 +180,7 @@ describe('streamChatCompletionWithTools', () => {
     let finishReason = ''
     for await (const chunk of streamChatCompletionWithTools({ baseUrl: base2 + '/tools', apiKey: 'k', model: 'm', messages: [], tools: [] })) {
       if (chunk.type === 'content') content += chunk.text
-      else { toolCalls = chunk.toolCalls; usage = chunk.usage; finishReason = chunk.finishReason ?? '' }
+      else if (chunk.type === 'final') { toolCalls = chunk.toolCalls; usage = chunk.usage; finishReason = chunk.finishReason ?? '' }
     }
     expect(content).toBe('')
     expect(toolCalls).toHaveLength(1)
@@ -190,12 +192,15 @@ describe('streamChatCompletionWithTools', () => {
 
   it('纯文本流式增量并返回空工具调用', async () => {
     let content = ''
+    let reasoning = ''
     let toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> = []
     for await (const chunk of streamChatCompletionWithTools({ baseUrl: base2 + '/plain', apiKey: 'k', model: 'm', messages: [], tools: [] })) {
       if (chunk.type === 'content') content += chunk.text
+      else if (chunk.type === 'reasoning') reasoning += chunk.text
       else toolCalls = chunk.toolCalls
     }
     expect(content).toBe('流式输出')
+    expect(reasoning).toBe('先分析，再回答。')
     expect(toolCalls).toHaveLength(0)
   })
 

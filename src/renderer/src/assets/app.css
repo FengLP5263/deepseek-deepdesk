@@ -148,7 +148,7 @@ input, textarea { user-select: text; }
 
 .splash { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--bg); }
 .splash-logo { display: flex; align-items: center; gap: 10px; font-size: var(--fs-2xl); font-weight: 700; letter-spacing: 0.3px; }
-.spin { animation: spin 1s linear infinite; color: var(--text-muted); }
+.spin { animation: spin 1s linear infinite; color: var(--text-muted); flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .app-shell { height: 100%; display: flex; flex-direction: column; background: var(--sidebar-surface); }
@@ -194,7 +194,7 @@ input, textarea { user-select: text; }
 .conv-item.active { background: var(--accent-soft); color: var(--text); }
 .conv-item.active::before { content: ''; position: absolute; left: -8px; top: 22%; bottom: 22%; width: 3px; border-radius: 2px; background: var(--accent); }
 .conv-title { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.conv-title > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.conv-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .conv-source { flex: none; color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 650; }
 .conv-time { font-size: var(--fs-2xs); color: var(--text-muted); flex-shrink: 0; }
 .conv-action { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-right: -4px; flex-shrink: 0; border: none; border-radius: var(--radius-xs); background: transparent; color: var(--text-muted); cursor: pointer; opacity: 0; transition: opacity 120ms ease, background 120ms ease, color 120ms ease; }
@@ -429,13 +429,6 @@ input, textarea { user-select: text; }
 .msg-actions { display: flex; align-items: center; gap: 4px; opacity: 0; transition: opacity 0.13s ease; margin-top: 2px; }
 .msg-row:hover .msg-actions { opacity: 1; }
 .msg-error { border: 1px solid rgba(248, 113, 113, 0.4); background: var(--danger-soft); color: var(--danger); padding: 10px 14px; border-radius: 12px; font-size: var(--fs-sm); line-height: 1.6; }
-
-/* 思考过程 */
-.thinking { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg-panel); }
-.thinking-header { display: flex; align-items: center; gap: 6px; padding: 7px 12px; cursor: pointer; font-size: var(--fs-xs); color: var(--text-muted); user-select: none; transition: color 0.12s ease; }
-.thinking-header:hover { color: var(--text-secondary); }
-.thinking-body { padding: 0 12px 10px; font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; word-break: break-word; user-select: text; max-height: 320px; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 0; }
-.thinking-icon { width: 14px; height: 14px; border: 2px solid var(--text-muted); border-top-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; flex-shrink: 0; }
 
 /* markdown */
 .markdown { user-select: text; word-break: break-word; }

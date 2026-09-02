@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateContextUsage, getModelContextWindow, manageContextMessages } from '../src/shared/context-manager'
+import { estimateContextUsage, getModelContextWindow, manageContextMessages, repairToolCallHistory } from '../src/shared/context-manager'
 import type { ProviderConfig } from '../src/shared/types'
 
 describe('context-manager', () => {
@@ -29,6 +29,29 @@ describe('context-manager', () => {
 
     expect(result.compressed).toBe(false)
     expect(result.messages).toEqual(messages)
+  })
+
+  it('repairs incomplete tool call history before switching models', () => {
+    const repaired = repairToolCallHistory([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'call-1', type: 'function', function: { name: 'browser_snapshot', arguments: '{}' } },
+          { id: 'call-2', type: 'function', function: { name: 'browser_navigate', arguments: '{"url":"https://example.com"}' } }
+        ]
+      },
+      { role: 'tool', tool_call_id: 'call-1', content: '页面读取完成' },
+      { role: 'user', content: '怎么了' },
+      { role: 'tool', tool_call_id: 'orphan', content: '孤立结果' }
+    ])
+
+    expect(repaired).toEqual([
+      expect.objectContaining({ role: 'assistant' }),
+      { role: 'tool', tool_call_id: 'call-1', content: '页面读取完成' },
+      { role: 'tool', tool_call_id: 'call-2', content: '工具调用结果缺失；DeepDesk 已将其标记为未完成。' },
+      { role: 'user', content: '怎么了' }
+    ])
   })
 
   it('compresses older turns and keeps the latest user request', () => {

@@ -58,6 +58,65 @@ function roleOf(message: Record<string, unknown>): string {
   return typeof message.role === 'string' ? message.role : ''
 }
 
+function toolCallId(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+  const id = (value as Record<string, unknown>).id
+  return typeof id === 'string' ? id.trim() : ''
+}
+
+export function repairToolCallHistory(input: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const repaired: Array<Record<string, unknown>> = []
+  let index = 0
+  while (index < input.length) {
+    const message = input[index]
+    const role = roleOf(message)
+    if (role === 'tool') {
+      index += 1
+      continue
+    }
+    if (role !== 'assistant' || !Array.isArray(message.tool_calls)) {
+      repaired.push({ ...message })
+      index += 1
+      continue
+    }
+
+    const seenIds = new Set<string>()
+    const calls = message.tool_calls.filter(call => {
+      const id = toolCallId(call)
+      if (!id || seenIds.has(id)) return false
+      seenIds.add(id)
+      return true
+    })
+    let nextIndex = index + 1
+    const resultsByCallId = new Map<string, Record<string, unknown>>()
+    while (nextIndex < input.length && roleOf(input[nextIndex]) === 'tool') {
+      const result = input[nextIndex]
+      const callId = typeof result.tool_call_id === 'string' ? result.tool_call_id.trim() : ''
+      if (seenIds.has(callId) && !resultsByCallId.has(callId)) resultsByCallId.set(callId, result)
+      nextIndex += 1
+    }
+
+    if (calls.length === 0) {
+      const assistant = { ...message }
+      delete assistant.tool_calls
+      if (stringifyValue(assistant.content).trim()) repaired.push(assistant)
+      index = nextIndex
+      continue
+    }
+
+    repaired.push({ ...message, tool_calls: calls })
+    for (const call of calls) {
+      const callId = toolCallId(call)
+      const result = resultsByCallId.get(callId)
+      repaired.push(result
+        ? { ...result, role: 'tool', tool_call_id: callId }
+        : { role: 'tool', tool_call_id: callId, content: '工具调用结果缺失；DeepDesk 已将其标记为未完成。' })
+    }
+    index = nextIndex
+  }
+  return repaired
+}
+
 function isCompressionSummary(message: Record<string, unknown>): boolean {
   return roleOf(message) === 'system' && stringifyValue(message.content).trim().startsWith('[上下文压缩摘要]')
 }
@@ -165,16 +224,17 @@ function targetBudget(contextWindow: number, threshold: number, reserveTokens: n
 }
 
 export function manageContextMessages(input: Array<Record<string, unknown>>, options: ContextManagementOptions = {}): ContextManagementResult {
+  const repairedInput = repairToolCallHistory(input)
   const threshold = options.threshold ?? CONTEXT_COMPRESSION_THRESHOLD
   const reserveTokens = options.reserveTokens ?? CONTEXT_OUTPUT_RESERVE_TOKENS
   const budget = targetBudget(options.contextWindow ?? DEFAULT_CONTEXT_WINDOW, threshold, reserveTokens)
-  const before = estimateContextUsage(input)
+  const before = estimateContextUsage(repairedInput)
   if (before.used <= budget) {
-    return { messages: input.map(message => ({ ...message })), before, after: before, compressed: false }
+    return { messages: repairedInput, before, after: before, compressed: false }
   }
 
-  const systemMessages = input.filter(message => roleOf(message) === 'system' && !isCompressionSummary(message)).map(message => ({ ...message }))
-  const conversationMessages = input.filter(message => roleOf(message) !== 'system' || isCompressionSummary(message))
+  const systemMessages = repairedInput.filter(message => roleOf(message) === 'system' && !isCompressionSummary(message)).map(message => ({ ...message }))
+  const conversationMessages = repairedInput.filter(message => roleOf(message) !== 'system' || isCompressionSummary(message))
   const systemTokens = systemMessages.reduce((sum, message) => sum + messageTokens(message), 0)
   const summaryAllowance = Math.min(4096, Math.max(512, Math.floor(budget * 0.12)))
   const recentBudget = Math.max(256, budget - systemTokens - summaryAllowance)

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const mocks = vi.hoisted(() => ({
-  responses: [] as Array<{ content: string | null; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>; finishReason?: string; interrupt?: boolean; waitForAbort?: boolean }>,
+  responses: [] as Array<{ content: string | null; reasoning?: string; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>; finishReason?: string; interrupt?: boolean; waitForAbort?: boolean }>,
   requests: [] as Array<{ messages: Array<Record<string, unknown>>; tools: Array<Record<string, unknown>> }>,
   mcpTools: [] as Array<{ name: string; definition: Record<string, unknown>; serverId: string; serverName: string; toolName: string; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } }>,
   mcpExecutions: [] as Array<{ name: string; args: Record<string, unknown> }>,
@@ -29,6 +29,7 @@ vi.mock('../src/shared/llm/toolcall', () => ({
         else req.signal?.addEventListener('abort', rejectAbort, { once: true })
       })
     }
+    if (resp.reasoning) yield { type: 'reasoning', text: resp.reasoning }
     if (resp.content) yield { type: 'content', text: resp.content }
     if (resp.interrupt) {
       const { IncompleteStreamError } = await import('../src/shared/llm/stream')
@@ -133,7 +134,7 @@ describe('startAgent', () => {
 
   it('工具调用循环：写文件后产出最终答案', async () => {
     const target = join(dir, 'hello.txt')
-    mocks.responses.push({ content: null, toolCalls: [{ id: 'c1', name: 'write_file', args: { path: 'hello.txt', content: 'hello agent' } }] })
+    mocks.responses.push({ content: null, reasoning: '先创建目标文件。', toolCalls: [{ id: 'c1', name: 'write_file', args: { path: 'hello.txt', content: 'hello agent' } }] })
     mocks.responses.push({ content: '已完成', toolCalls: [] })
     const { events, win } = makeWin()
     startAgent(win as never, { runId: 'r1', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '写个文件', temperature: 1 }, provider, baseSettings)
@@ -143,6 +144,7 @@ describe('startAgent', () => {
     expect(events.some(e => e.type === 'tool_call')).toBe(true)
     expect(events.some(e => e.type === 'tool_result' && e.ok === true)).toBe(true)
     expect(events.some(e => e.type === 'text' && e.text === '已完成')).toBe(true)
+    expect(events.filter(e => e.type === 'thinking').map(e => e.text ?? '').join('')).toContain('先创建目标文件。')
     expect(events.some(e => e.type === 'done')).toBe(true)
   })
 
@@ -231,6 +233,37 @@ describe('startAgent', () => {
     expect(sent.some(message => String(message.content).includes('[上下文压缩摘要]'))).toBe(true)
     expect(sent.at(-1)).toEqual({ role: 'user', content: '最新问题必须保留' })
     expect(JSON.stringify(sent).length).toBeLessThan('较早上下文'.repeat(500).length + '较早回答'.repeat(500).length)
+  })
+
+  it('切换模型后发送前会补齐上次异常中断的工具结果', async () => {
+    mocks.responses.push({ content: '已恢复', toolCalls: [] })
+    const { events, win } = makeWin()
+    startAgent(win as never, {
+      runId: 'r-repair-history',
+      providerId: 'deepseek',
+      modelId: 'deepseek-v4-pro',
+      workdir: dir,
+      task: '怎么了',
+      temperature: 1,
+      history: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            { id: 'call-complete', type: 'function', function: { name: 'browser_snapshot', arguments: '{}' } },
+            { id: 'call-missing', type: 'function', function: { name: 'browser_navigate', arguments: '{"url":"https://example.com"}' } }
+          ]
+        },
+        { role: 'tool', tool_call_id: 'call-complete', content: '页面读取完成' }
+      ]
+    }, provider, baseSettings)
+    await runUntilDone(events)
+
+    const sent = mocks.requests[0].messages
+    expect(sent).toContainEqual({ role: 'tool', tool_call_id: 'call-complete', content: '页面读取完成' })
+    expect(sent).toContainEqual({ role: 'tool', tool_call_id: 'call-missing', content: '工具调用结果缺失；DeepDesk 已将其标记为未完成。' })
+    expect(sent.at(-1)).toEqual({ role: 'user', content: '怎么了' })
+    expect(events.some(event => event.type === 'error')).toBe(false)
   })
 
   it('ask 模式：run_command 默认需批准，拒绝后不执行', async () => {

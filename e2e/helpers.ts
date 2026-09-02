@@ -48,7 +48,7 @@ function writeSse(res: ServerResponse, payload: unknown): void {
   res.write('data: ' + JSON.stringify(payload) + '\n\n')
 }
 
-export async function startMockChatServer(reply = '已收到记忆上下文。'): Promise<MockChatServer> {
+export async function startMockChatServer(reply = '已收到记忆上下文。', responseDelayMs = 0, reasoning = ''): Promise<MockChatServer> {
   const requests: MockChatRequest[] = []
   const server = createServer(async (req, res) => {
     if (req.url === '/models') {
@@ -64,7 +64,9 @@ export async function startMockChatServer(reply = '已收到记忆上下文。')
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive'
       })
+      if (responseDelayMs > 0) await new Promise(resolve => setTimeout(resolve, responseDelayMs))
       writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { role: 'assistant' } }] })
+      if (reasoning) writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { reasoning_content: reasoning } }] })
       writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { content: reply } }] })
       writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } })
       res.write('data: [DONE]\n\n')

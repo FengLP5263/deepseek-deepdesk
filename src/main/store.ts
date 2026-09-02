@@ -164,6 +164,7 @@ export class AppStore {
     const agentSessions = Array.isArray(parsed.agentSessions)
       ? parsed.agentSessions.map(session => ({
           ...session,
+          hasUnread: session.hasUnread === true,
           providerId: session.providerId || providers.find(provider => provider.models?.some(model => model.id === session.modelId))?.id || settings.defaultProviderId
         }))
       : []

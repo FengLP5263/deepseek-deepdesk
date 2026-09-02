@@ -866,7 +866,7 @@ test('shows ChatGPT-style queued messages, keeps approval above the composer, an
     await stopButton.click()
     await expect(stopButton).toBeHidden()
     await expect(approval).toBeHidden()
-    await expect(page.getByText('思考中…')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /思考中/ })).toHaveCount(0)
     await expect(queue).toContainText('稍后检查完整测试')
   } finally {
     await mock.close()

@@ -19,3 +19,9 @@ export function formatTokens(n: number | undefined): string {
   if (n < 1000000) return scaled(n / 1000) + 'K'
   return scaled(n / 1000000) + 'M'
 }
+
+export function formatWorkdirName(workdir: string): string {
+  const normalized = workdir.trim().replace(/[\\/]+$/, '')
+  if (!normalized) return ''
+  return normalized.split(/[\\/]+/).filter(Boolean).at(-1) ?? normalized
+}

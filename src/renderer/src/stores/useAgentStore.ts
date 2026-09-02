@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, AgentStep, McpInstallApproval } from '@shared/agent-types'
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
+import { appendAgentStep, finishAgentThinking } from '../lib/agent-steps'
 
 interface PendingApprovalState {
   callId: string
@@ -173,7 +174,6 @@ function removeRunFromState(
   delete nextApprovals[sessionId]
   return { runningSessions: nextRunning, pendingApprovalsBySessionId: nextApprovals }
 }
-
 function sessionFromContext(ctx: RunningAgentSession): AgentSession {
   return {
     id: ctx.sessionId,
@@ -228,16 +228,14 @@ function stoppedSteps(steps: AgentStep[]): AgentStep[] {
   const next = steps.map(step => step.kind === 'tool' && step.status === 'running'
     ? { ...step, status: 'cancelled' as const }
     : step)
-  while (next.at(-1)?.kind === 'thinking') next.pop()
-  return next
+  return finishAgentThinking(next)
 }
 
 function failedSteps(steps: AgentStep[], message: string): AgentStep[] {
   const next = steps.map(step => step.kind === 'tool' && step.status === 'running'
     ? { ...step, status: 'error' as const, summary: message, result: message }
     : step)
-  while (next.at(-1)?.kind === 'thinking') next.pop()
-  return next
+  return finishAgentThinking(next)
 }
 
 function stoppedHistory(ctx: RunningAgentSession): Array<Record<string, unknown>> {
@@ -310,8 +308,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     buffer.text = ''
     const ctx = runContexts.get(runId)
     if (!ctx) return
-    const steps = [...ctx.steps]
-    if (steps.length > 0 && steps[steps.length - 1].kind === 'thinking') steps.pop()
+    const steps = finishAgentThinking(ctx.steps)
     const last = steps[steps.length - 1]
     if (last && last.kind === 'text') {
       last.text = (last.text ?? '') + delta
@@ -334,13 +331,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
   }
 
   function append(ctx: RunningAgentSession, step: AgentStep): void {
-    const steps = [...ctx.steps]
-    if (step.kind !== 'thinking' && steps.length > 0 && steps[steps.length - 1].kind === 'thinking') {
-      steps.pop()
-    }
-    if (step.kind === 'thinking' && steps.length > 0 && steps[steps.length - 1].kind === 'thinking') return
-    steps.push(step)
-    ctx.steps = steps
+    ctx.steps = appendAgentStep(ctx.steps, step)
     commitContext(ctx)
   }
 
@@ -495,7 +486,6 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     if (!activate) scheduleConnectorStatusMessage(ctx)
     return true
   }
-
   function finishRun(
     ctx: RunningAgentSession,
     history: Array<Record<string, unknown>> | undefined,
@@ -505,7 +495,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     flushTextBuffer(ctx.runId)
     ctx.history = history ?? ctx.history
     const nextQueuedMessage = processQueue ? ctx.queuedMessages.shift() : undefined
-    const session = sessionFromContext(ctx)
+    const session = { ...sessionFromContext(ctx), hasUnread: true }
     const activateNextRun = get().activeSessionId === ctx.sessionId
     runContexts.delete(ctx.runId)
     runIdBySessionId.delete(ctx.sessionId)
@@ -521,6 +511,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       return {
         ...cleared,
         ...activeRunState(s.activeSessionId),
+        sessions: s.sessions.map(item => item.id === ctx.sessionId ? session : item),
         pendingApproval: active ? null : s.pendingApproval,
         history: active ? ctx.history : s.history,
         steps: active ? ctx.steps : s.steps,
@@ -532,14 +523,13 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     if (nextQueuedMessage) void startSession(session, nextQueuedMessage.text, activateNextRun)
     return session
   }
-
   function handleEvent(ev: AgentEvent): void {
     const ctx = runContexts.get(ev.runId)
     if (!ctx) return
     switch (ev.type) {
       case 'thinking':
         flushTextBuffer(ev.runId)
-        append(ctx, { kind: 'thinking' })
+        append(ctx, { kind: 'thinking', text: ev.text, status: 'running' })
         break
       case 'text': {
         const buffer = textBuffers.get(ev.runId) ?? { text: '', timer: null }
@@ -581,7 +571,6 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       }
     }
   }
-
   return {
     initialized: false,
     workdir: '',
@@ -746,13 +735,15 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       }
     },
     loadSession: (id) => {
-      const s = get().sessions.find(x => x.id === id)
-      if (!s) return
+      const session = get().sessions.find(x => x.id === id)
+      if (!session) return
+      const s = session.hasUnread ? { ...session, hasUnread: false } : session
       const defaultProviderId = useSettingsStore.getState().settings?.defaultProviderId ?? 'deepseek'
       const runId = runIdBySessionId.get(id)
       const ctx = runId ? runContexts.get(runId) : undefined
       const active = activeRunState(id)
       set(state => ({
+        sessions: state.sessions.map(item => item.id === id ? s : item),
         steps: ctx?.steps ?? stoppedSteps(s.steps),
         currentTask: ctx?.task ?? s.task,
         currentProviderId: ctx?.providerId ?? s.providerId ?? defaultProviderId,
@@ -768,6 +759,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         pendingApproval: state.pendingApprovalsBySessionId[id] ?? null,
         error: null
       }))
+      if (session.hasUnread) saveSession(s)
     },
     deleteSession: async (id) => {
       const runId = runIdBySessionId.get(id)

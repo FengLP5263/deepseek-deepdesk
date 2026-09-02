@@ -165,7 +165,7 @@ function seedUiSessionSteps(flags) {
 }
 
 function e2eArgs(mode) {
-  if (mode === 'isolated') return ['exec', 'playwright', 'test', 'e2e/app.spec.ts', 'e2e/model-picker.spec.ts', 'e2e/memory.spec.ts', 'e2e/font-scale.spec.ts']
+  if (mode === 'isolated') return ['exec', 'playwright', 'test', 'e2e/app.spec.ts', 'e2e/model-picker.spec.ts', 'e2e/memory.spec.ts', 'e2e/font-scale.spec.ts', 'e2e/browser-cursor.spec.ts', 'e2e/session-running-indicator.spec.ts']
   if (mode === 'session') return ['exec', 'playwright', 'test', 'e2e/session.spec.ts']
   if (mode === 'all') return ['exec', 'playwright', 'test']
   throw new Error(`Invalid --mode: ${mode}`)

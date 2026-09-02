@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Blocks, ChevronDown, Link2, MoreHorizontal, Settings, SquarePen, UserRound } from 'lucide-react'
 import DeepSeekLogo from '../DeepSeekLogo'
 import { useAgentStore } from '../../stores/useAgentStore'
@@ -8,6 +8,28 @@ import type { SettingsTab } from '../settings/SettingsView'
 import clsx from 'clsx'
 
 type AppView = 'chat' | 'settings' | 'connectors' | 'skills' | 'more'
+
+function SessionRunningIndicator() {
+  const dots = [
+    { cx: 7, cy: 1.5, opacity: 1 },
+    { cx: 10.9, cy: 3.1, opacity: 0.86 },
+    { cx: 12.5, cy: 7, opacity: 0.72 },
+    { cx: 10.9, cy: 10.9, opacity: 0.6 },
+    { cx: 7, cy: 12.5, opacity: 0.48 },
+    { cx: 3.1, cy: 10.9, opacity: 0.38 },
+    { cx: 1.5, cy: 7, opacity: 0.3 },
+    { cx: 3.1, cy: 3.1, opacity: 0.22 }
+  ]
+  return (
+    <svg className='session-running-indicator spin' style={{ animationDuration: '1.8s' }} width='14' height='14' viewBox='0 0 14 14' role='status' aria-label='任务进行中'>
+      {dots.map(dot => <circle key={`${dot.cx}-${dot.cy}`} cx={dot.cx} cy={dot.cy} r='1.15' fill='currentColor' opacity={dot.opacity} />)}
+    </svg>
+  )
+}
+
+function SessionUnreadIndicator() {
+  return <span className='session-unread-indicator' style={{ width: '0.5em', height: '0.5em', flex: 'none', borderRadius: '50%', background: '#34c759', boxShadow: '0 0 0 2px rgba(52, 199, 89, 0.16)' }} role='status' aria-label='未读更新' />
+}
 
 export default function Sidebar({
   view,
@@ -24,6 +46,7 @@ export default function Sidebar({
 }) {
   const sessions = useAgentStore(s => s.sessions)
   const activeSessionId = useAgentStore(s => s.activeSessionId)
+  const runningSessions = useAgentStore(s => s.runningSessions)
   const loadSession = useAgentStore(s => s.loadSession)
   const deleteSession = useAgentStore(s => s.deleteSession)
   const renameSession = useAgentStore(s => s.renameSession)
@@ -48,6 +71,10 @@ export default function Sidebar({
     document.addEventListener('pointerdown', closeMenu)
     return () => document.removeEventListener('pointerdown', closeMenu)
   }, [])
+
+  useLayoutEffect(() => {
+    if (view === 'chat' && activeSessionId && sessions.find(session => session.id === activeSessionId)?.hasUnread) loadSession(activeSessionId)
+  }, [activeSessionId, loadSession, sessions, view])
 
   const commitRename = (id: string): void => {
     const t = renameText.trim()
@@ -87,7 +114,9 @@ export default function Sidebar({
       ) : (
         <div className='conv-title'>
           {s.source?.type === 'connector' && <span className='conv-source'>{connectorLabel(s)}</span>}
-          <span>{s.task}</span>
+          <span className='conv-title-text'>{s.task}</span>
+          {runningSessions[s.id] && !(activeSessionId === s.id && view === 'chat') && <SessionRunningIndicator />}
+          {!runningSessions[s.id] && s.hasUnread && !(activeSessionId === s.id && view === 'chat') && <SessionUnreadIndicator />}
         </div>
       )}
       {renamingId !== s.id && <div className='conv-time'>{formatTime(s.updatedAt)}</div>}
