@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MemoryItem } from '../src/shared/types'
-import { extractMemoryCandidates, formatMemoryContext, normalizeMemoryContent, searchMemories } from '../src/shared/memory'
+import { extractMemoryCandidates, formatMemoryContext, normalizeMemoryContent, relateMemory, searchMemories } from '../src/shared/memory'
 
 function memory(patch: Partial<MemoryItem>): MemoryItem {
   return {
@@ -44,6 +44,23 @@ describe('memory helpers', () => {
     const result = searchMemories(items, 'deepdesk', ['project'], 3)
 
     expect(result.map(item => item.id)).toEqual(['b'])
+  })
+
+  it('中文近义请求可命中记忆，用户偏好可作为全局低权重背景', () => {
+    const preference = memory({ id: 'preference', kind: 'preference', content: '我喜欢简洁回答，先给结论', updatedAt: 2 })
+    const project = memory({ id: 'project', scope: 'project', kind: 'decision', content: '项目发布前必须完成测试', updatedAt: 1 })
+
+    expect(searchMemories([preference, project], '请用简洁的方式回答这个问题')[0].id).toBe('preference')
+    expect(searchMemories([preference, project], '你好').map(item => item.id)).toEqual(['preference'])
+    expect(searchMemories([project], '发布之前要先把测试做完', ['project']).map(item => item.id)).toEqual(['project'])
+  })
+
+  it('识别近义记忆和明确冲突，不合并无关内容', () => {
+    const existing = memory({ kind: 'preference', content: '我喜欢回答先给结论再解释' })
+    expect(relateMemory(existing, { scope: 'user', kind: 'preference', content: '以后回答请先给结论，然后再解释', tags: [] })).toBe('same')
+    expect(relateMemory(existing, { scope: 'user', kind: 'preference', content: '我不喜欢回答先给结论再解释', tags: [] })).toBe('conflict')
+    expect(relateMemory(memory({ kind: 'preference', content: '我希望默认使用中文回答' }), { scope: 'user', kind: 'preference', content: '以后默认使用英文回答', tags: [] })).toBe('conflict')
+    expect(relateMemory(existing, { scope: 'user', kind: 'preference', content: '我喜欢深色主题', tags: [] })).toBe('distinct')
   })
 
   it('格式化为可注入的 system 上下文', () => {

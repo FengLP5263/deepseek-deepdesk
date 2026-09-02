@@ -118,6 +118,6 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - [ ] Anthropic / 非 OpenAI 协议适配器
 - [ ] safeStorage 加密 API Key
 - [ ] 对话导出（Markdown / JSON）
-- [ ] 记忆语义合并与冲突提示
+- [x] 本地记忆近义合并与冲突更新标记
 - [ ] 多会话并行（分页 Tab）
 - [ ] 系统托盘与全局快捷键唤起

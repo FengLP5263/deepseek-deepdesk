@@ -168,6 +168,16 @@ describe('AppStore', () => {
     expect(store.listMemories()).toHaveLength(1)
   })
 
+  it('相似偏好合并，冲突偏好用最新明确表达更新', async () => {
+    const store = createStore()
+    await store.init()
+    store.captureMemories({ text: '帮我记住：我喜欢回答先给结论再解释', source: { type: 'agent', id: 's1' } })
+    store.captureMemories({ text: '请记住，以后回答请先给结论，然后再解释', source: { type: 'agent', id: 's2' } })
+    store.captureMemories({ text: '帮我记住：我不喜欢回答先给结论再解释', source: { type: 'agent', id: 's3' } })
+
+    expect(store.listMemories()).toEqual([expect.objectContaining({ content: '我不喜欢回答先给结论再解释', tags: expect.arrayContaining(['已更新']) })])
+  })
+
   it('启动时从已有 Agent 会话回填高置信长期记忆', async () => {
     const first = new AppStore(dir)
     stores.push(first)

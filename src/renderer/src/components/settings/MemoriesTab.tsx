@@ -42,7 +42,7 @@ export default function MemoriesTab() {
   return (
     <div className='settings-section'>
       <div className='settings-section-title'>长期记忆</div>
-      <div className='settings-section-desc'>显式要求记住的内容和高置信长期偏好会自动保存在本地；你可以在这里编辑、停用或删除。</div>
+      <div className='settings-section-desc'>显式记忆和高置信长期偏好会保存在本地；相似表达自动合并，明确冲突以最新表达为准。</div>
 
       <div className='settings-card memory-editor'>
         <div className='memory-editor-grid'>

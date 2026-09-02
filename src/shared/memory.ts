@@ -7,6 +7,8 @@ export interface MemoryCandidate {
   tags: string[]
 }
 
+export type MemoryRelationship = 'same' | 'conflict' | 'distinct'
+
 const scopeLabels: Record<MemoryScope, string> = {
   user: '用户',
   project: '项目',
@@ -42,7 +44,7 @@ function classifyExplicitMemory(content: string): Omit<MemoryCandidate, 'content
   if (/(?:项目|仓库|代码|提交|合并|发布|版本|测试|架构|组件|文件组织)/u.test(content)) {
     return { scope: 'project', kind: /(?:决定|约定|统一|必须|规范)/u.test(content) ? 'decision' : 'procedure', tags: ['显式记忆', '项目'] }
   }
-  if (/(?:喜欢|偏好|习惯|不喜欢|希望你|回答时|称呼我|默认)/u.test(content)) {
+  if (/(?:喜欢|偏好|习惯|不喜欢|希望你|回答时|称呼我|默认|以后|今后|每次|始终)/u.test(content)) {
     return { scope: 'user', kind: 'preference', tags: ['显式记忆', '偏好'] }
   }
   return { scope: 'user', kind: 'fact', tags: ['显式记忆'] }
@@ -97,6 +99,55 @@ export function normalizeMemoryContent(text: string): string {
   return normalize(cleanCandidate(text)).replace(/[，,。；;！？!?\s]+/gu, '')
 }
 
+const oppositeValues = [
+  ['中文', '英文'],
+  ['简洁', '详细'],
+  ['深色', '浅色'],
+  ['开启', '关闭'],
+  ['自动', '手动']
+] as const
+
+function memoryCore(text: string): string {
+  return normalizeMemoryContent(text)
+    .replace(/^(?:用户|我|我们|本项目|这个项目)/u, '')
+    .replace(/(?:以后|今后|一直|通常|默认|请|希望|要求|偏好|回答时|回复时)/gu, '')
+    .replace(/(?:不喜欢|喜欢|不要|避免|禁止|需要|必须|使用)/gu, '')
+}
+
+function bigrams(text: string): Set<string> {
+  if (text.length < 2) return new Set(text ? [text] : [])
+  return new Set(Array.from({ length: text.length - 1 }, (_, index) => text.slice(index, index + 2)))
+}
+
+function similarity(left: string, right: string): number {
+  if (!left || !right) return 0
+  if (left === right) return 1
+  const a = bigrams(left)
+  const b = bigrams(right)
+  let overlap = 0
+  for (const token of a) if (b.has(token)) overlap += 1
+  return (2 * overlap) / (a.size + b.size)
+}
+
+function hasOppositeMeaning(left: string, right: string): boolean {
+  const negative = (text: string): boolean => /(?:不喜欢|不要|避免|禁止|无需|不需要|关闭)/u.test(text)
+  if (negative(left) !== negative(right) && similarity(memoryCore(left), memoryCore(right)) >= 0.68) return true
+  return oppositeValues.some(([a, b]) => {
+    if (!((left.includes(a) && right.includes(b)) || (left.includes(b) && right.includes(a)))) return false
+    const stripValues = (text: string): string => memoryCore(text).replaceAll(a, '').replaceAll(b, '')
+    const leftCore = stripValues(left)
+    const rightCore = stripValues(right)
+    return leftCore === rightCore || similarity(leftCore, rightCore) >= 0.6
+  })
+}
+
+export function relateMemory(memory: Pick<MemoryItem, 'scope' | 'kind' | 'content'>, candidate: MemoryCandidate): MemoryRelationship {
+  if (memory.scope !== candidate.scope || memory.kind !== candidate.kind) return 'distinct'
+  if (normalizeMemoryContent(memory.content) === normalizeMemoryContent(candidate.content)) return 'same'
+  if (hasOppositeMeaning(memory.content, candidate.content)) return 'conflict'
+  return similarity(memoryCore(memory.content), memoryCore(candidate.content)) >= 0.72 ? 'same' : 'distinct'
+}
+
 function tokenize(text: string): string[] {
   const normalized = normalize(text)
   if (!normalized) return []
@@ -117,13 +168,15 @@ function scoreMemory(memory: MemoryItem, query: string): number {
     ...memory.tags
   ].join(' '))
   const tokens = tokenize(query)
-  let score = 0
+  let score = memory.scope === 'user' && (memory.kind === 'preference' || memory.kind === 'fact') ? 1 : 0
   if (haystack.includes(q)) score += 6
   for (const token of tokens) {
     if (memory.content.toLowerCase().includes(token)) score += 3
     if (memory.tags.some(tag => tag.toLowerCase().includes(token))) score += 2
     if (memory.kind.includes(token) || memory.scope.includes(token)) score += 1
   }
+  const semanticScore = similarity(memoryCore(memory.content), memoryCore(query))
+  if (semanticScore >= 0.18) score += semanticScore * 4
   return score
 }
 

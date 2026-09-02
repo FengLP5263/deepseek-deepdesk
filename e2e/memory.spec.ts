@@ -39,3 +39,28 @@ test('captures an explicit memory and shows it in settings without manual entry'
   await expect(memoryCard).toContainText('自动记录')
   await expect(memoryCard).toContainText('偏好')
 })
+
+test('merges paraphrased preferences and marks the latest conflict', async () => {
+  const page = ctx!.page
+  const composer = page.getByPlaceholder('发消息，或让我帮你做点事…')
+  const inputs = [
+    '帮我记住：我喜欢回答先给结论再解释',
+    '请记住，以后回答请先给结论，然后再解释',
+    '帮我记住：我不喜欢回答先给结论再解释'
+  ]
+  for (let index = 0; index < inputs.length; index += 1) {
+    await composer.fill(inputs[index])
+    await composer.press('Enter')
+    await expect(page.locator('.agent-message.assistant')).toHaveCount(index + 1)
+    await expect(page.getByRole('button', { name: '发送' })).toBeVisible()
+  }
+  const injected = server!.requests[2].messages?.filter(message => message.role === 'system').map(message => message.content).join('\n') ?? ''
+  expect(injected).toContain('[用户/偏好] 我不喜欢回答先给结论再解释')
+
+  await page.getByRole('button', { name: '设置' }).click()
+  await page.getByRole('button', { name: '记忆' }).click()
+  await expect(page.locator('.memory-card')).toHaveCount(1)
+  const memoryCard = page.locator('.memory-card')
+  await expect(memoryCard).toContainText('我不喜欢回答先给结论再解释')
+  await expect(memoryCard).toContainText('#已更新')
+})

@@ -4,7 +4,7 @@ import path from 'node:path'
 import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityStatus, ConnectorConfig, ConnectorConfigPatch, ConnectorId, McpServerConfig } from '../shared/types'
 import type { AgentSession } from '../shared/agent-types'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
-import { extractMemoryCandidates, normalizeMemoryContent, searchMemories, type MemoryCandidate } from '../shared/memory'
+import { extractMemoryCandidates, relateMemory, searchMemories, type MemoryCandidate } from '../shared/memory'
 import { normalizeAppFontScale } from '../shared/font-scale'
 import { mapAppStateSecrets, plaintextSecretCodec, SecretStorageError, type SecretCodec } from './secret-storage'
 
@@ -413,13 +413,17 @@ export class AppStore {
   private captureMemoryCandidates(candidates: MemoryCandidate[], source: NonNullable<MemoryItem['source']>): MemoryItem[] {
     const captured: MemoryItem[] = []
     for (const candidate of candidates) {
-      const key = normalizeMemoryContent(candidate.content)
-      const existing = this.data.memories.find(memory => normalizeMemoryContent(memory.content) === key)
+      const related = this.data.memories
+        .map(memory => ({ memory, relationship: relateMemory(memory, candidate) }))
+        .find(item => item.relationship !== 'distinct')
       const now = Date.now()
-      if (existing) {
+      if (related) {
+        const existing = related.memory
+        existing.content = candidate.content
         existing.enabled = true
         existing.updatedAt = now
-        existing.tags = Array.from(new Set([...existing.tags, ...candidate.tags]))
+        existing.source = source
+        existing.tags = Array.from(new Set([...existing.tags, ...candidate.tags, ...(related.relationship === 'conflict' ? ['已更新'] : [])]))
         captured.push(existing)
         continue
       }
