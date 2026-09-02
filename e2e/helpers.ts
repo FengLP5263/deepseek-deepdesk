@@ -310,7 +310,10 @@ export function createMultiProviderUserData(baseUrl: string): string {
 
 export function createLongAgentSessionUserData(): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
-  const content = Array.from({ length: 36 }, (_, index) => `第 ${index + 1} 段本地验收内容，用于验证长对话阅读和回到底部操作。`).join('\n\n')
+  const steps = Array.from({ length: 180 }, (_, index) => ({
+    kind: index % 2 === 0 ? 'task' : 'text',
+    text: `第 ${index + 1} 条本地验收内容，用于验证长对话阅读和分批加载。`
+  }))
   const state = {
     settings: {
       version: 1,
@@ -332,10 +335,7 @@ export function createLongAgentSessionUserData(): string {
       modelId: 'deepseek-v4-flash',
       createdAt: 1,
       updatedAt: 1,
-      steps: [
-        { kind: 'task', text: '请展示一段较长的本地会话内容。' },
-        { kind: 'text', text: content }
-      ],
+      steps,
       history: []
     }]
   }

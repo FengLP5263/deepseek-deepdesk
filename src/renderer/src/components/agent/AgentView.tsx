@@ -12,6 +12,7 @@ import ThinkingBlock from '../chat/ThinkingBlock'
 import { copyText } from '../../lib/utils'
 import AgentModelPicker from './AgentModelPicker'
 import AgentContextMeter from './AgentContextMeter'
+import WindowedAgentSteps from './WindowedAgentSteps'
 import '../../assets/agent.css'
 
 function parseArgs(args?: string): Record<string, unknown> {
@@ -395,6 +396,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
 
 export default function AgentView({ onOpenSettings }: { onOpenSettings: () => void }) {
   const steps = useAgentStore(s => s.steps)
+  const activeSessionId = useAgentStore(s => s.activeSessionId)
   const workdir = useAgentStore(s => s.workdir)
   const pendingApproval = useAgentStore(s => s.pendingApproval)
   const error = useAgentStore(s => s.error)
@@ -452,7 +454,7 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
       ) : (
         <div className='agent-scroll' ref={scrollRef}>
           <div className='agent-inner'>
-            {steps.map((st, i) => <StepItem key={i} step={st} index={i} isLastMessage={i === lastMessageIndex} />)}
+            <WindowedAgentSteps sessionId={activeSessionId} steps={steps} renderStep={(step, index) => <StepItem step={step} index={index} isLastMessage={index === lastMessageIndex} />} />
           </div>
         </div>
       )}

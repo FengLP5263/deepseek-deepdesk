@@ -152,6 +152,9 @@
 .agent-history-item:hover { background: var(--bg-hover); }
 .agent-history-task { flex: 1; font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 
+.agent-load-earlier { align-self: center; margin: 2px auto 12px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-panel); color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer; }
+.agent-load-earlier:hover { border-color: var(--border-strong); background: var(--bg-hover); color: var(--text-secondary); }
+
 .sidebar-modes { display: flex; margin: 0 12px 4px; padding: 3px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 10px; gap: 2px; }
 .mode-tab { flex: 1; padding: 5px 0; border-radius: 7px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; transition: all 0.13s ease; }
 .mode-tab:hover { color: var(--text); }
