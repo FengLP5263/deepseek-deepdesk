@@ -1,4 +1,5 @@
-import { Check, ChevronDown, Gauge, Pencil, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { Check, ChevronDown, Gauge, Pencil, RefreshCw, Search } from 'lucide-react'
 import clsx from 'clsx'
 import type { ModelConfig, ProviderConfig } from '@shared/types'
 import DeepSeekLogo from '../DeepSeekLogo'
@@ -48,7 +49,12 @@ export default function AgentModelPicker({
   onMaxModeChange,
   onConfigure
 }: AgentModelPickerProps) {
+  const [query, setQuery] = useState('')
   const configuredProviders = providers.filter(provider => provider.apiKey.trim() && provider.models.length > 0)
+  const term = query.trim().toLocaleLowerCase()
+  const visibleProviders = configuredProviders
+    .map(provider => ({ provider, models: term ? provider.models.filter(model => matchesModel(provider, model, [term])) : provider.models }))
+    .filter(group => group.models.length > 0)
   const selectedProvider = providers.find(provider => provider.id === selectedProviderId)
   const selectedModel = selectedProvider?.models.find(model => model.id === selectedModelId)
   const selectedLabel = (selectedModel?.name ?? selectedModelId) || '选择模型'
@@ -69,18 +75,22 @@ export default function AgentModelPicker({
               <span />
             </button>
           </div>
+          <label className='model-menu-search'>
+            <Search size={14} aria-hidden />
+            <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder='搜索模型' aria-label='搜索模型' />
+          </label>
           <button className='model-menu-option auto' role='menuitemradio' aria-checked={auto} onClick={onAuto}>
             <span className='model-option-main'><RefreshCw size={16} /><span>Auto</span></span>
             {auto && <Check size={15} />}
           </button>
           <div className='model-menu-list'>
-            {configuredProviders.map(provider => (
+            {visibleProviders.map(({ provider, models }) => (
               <section className='model-provider-group' aria-label={provider.name} key={provider.id}>
                 <div className='model-provider-heading'>
                   <span>{provider.name}</span>
-                  <span>{provider.models.length}</span>
+                  <span>{models.length}</span>
                 </div>
-                {provider.models.map(model => {
+                {models.map(model => {
                   const selected = !auto && provider.id === selectedProviderId && model.id === selectedModelId
                   return (
                     <button key={`${provider.id}:${model.id}`} className='model-menu-option' role='menuitemradio' aria-checked={selected} onClick={() => onSelect(provider.id, model.id)}>
@@ -95,6 +105,7 @@ export default function AgentModelPicker({
               </section>
             ))}
             {configuredProviders.length === 0 && <div className='model-menu-empty'>还没有已配置的模型服务</div>}
+            {configuredProviders.length > 0 && visibleProviders.length === 0 && <div className='model-menu-empty'>未找到匹配模型</div>}
           </div>
           <button className='model-menu-config' role='menuitem' onClick={onConfigure}>
             <Pencil size={15} />

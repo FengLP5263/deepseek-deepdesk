@@ -17,7 +17,7 @@ test.afterEach(async () => {
   server = null
 })
 
-test('shows configured models from every provider and switches the active provider', async () => {
+test('shows configured models from every provider and switches the active provider', async ({ browserName: _browserName }, testInfo) => {
   const page = ctx!.page
   const modelButton = page.getByTitle('选择模型')
   await expect(modelButton).toContainText('Auto')
@@ -39,6 +39,15 @@ test('shows configured models from every provider and switches the active provid
   await expect(menu.getByText('Mock Local', { exact: true })).toBeVisible()
   await expect(menu.getByText('智谱模型', { exact: true })).toBeVisible()
   await expect(menu.getByRole('menuitemradio', { name: 'Mock Chat' })).toBeVisible()
+
+  const search = menu.getByRole('textbox', { name: '搜索模型' })
+  await search.fill('glm')
+  await expect(menu.getByRole('menuitemradio', { name: 'GLM 5.3 Flash' })).toBeVisible()
+  await expect(menu.getByRole('menuitemradio', { name: 'Mock Chat' })).toBeHidden()
+  await page.screenshot({ path: testInfo.outputPath('model-search.png') })
+  await search.fill('不存在的模型')
+  await expect(menu.getByText('未找到匹配模型')).toBeVisible()
+  await search.fill('')
 
   await menu.getByRole('menuitemradio', { name: 'GLM 5.3 Flash' }).click()
   await expect(modelButton).toContainText('GLM 5.3 Flash')
