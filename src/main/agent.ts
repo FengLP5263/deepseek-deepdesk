@@ -10,7 +10,7 @@ import { executeTool, isDangerousCommand, isReadOnlyCommand, resolvePath, toolTa
 import type { AgentEvent, AgentInteractionMode, AgentRunRequest, AgentToolCall, AgentToolName, AgentToolResult } from '../shared/agent-types'
 import type { AgentPermissionMode, AppSettings, ProviderConfig } from '../shared/types'
 import type { PlatformInfo } from '../shared/platform'
-import { compactToolResultForContext, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../shared/context-manager'
+import { compactToolResultForContext, estimateContextUsage, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../shared/context-manager'
 import { continuationMessages, IncompleteStreamError, MAX_STREAM_CONTINUATIONS, mergeTokenUsage, outputTokenBudget, streamNeedsContinuation, streamTerminationError, type TokenUsage } from '../shared/llm/stream'
 import { isBrowserToolName } from './browser-cdp'
 import { getPlatformAdapter } from './platform'
@@ -399,6 +399,7 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
         } else {
           messages.push({ role: 'assistant', content })
           inFlightContent = ''
+          send({ runId: req.runId, type: 'context_usage', contextUsage: estimateContextUsage(messages, '', tools) })
           send({ runId: req.runId, type: 'done', usage, history: persistableAgentHistory(messages) })
           return
         }

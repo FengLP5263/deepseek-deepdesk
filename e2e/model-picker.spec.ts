@@ -62,6 +62,9 @@ test('shows configured models from every provider and switches the active provid
   await expect(page.getByText('跨供应商模型调用成功。')).toBeVisible()
   expect(server!.requests[0]?.model).toBe('glm-5.3-flash')
   expect(server!.requests[0]?.max_tokens).toBe(32768)
+  await page.getByTitle('上下文用量').click()
+  await expect(page.locator('.ctx-breakdown-row', { hasText: 'AI 回复' })).toBeVisible()
+  await page.getByTitle('上下文用量').click()
 
   await modelButton.click()
   await menu.getByRole('menuitem', { name: '配置模型服务' }).click()
