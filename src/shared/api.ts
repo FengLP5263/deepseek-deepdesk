@@ -1,5 +1,5 @@
 import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus, McpActionResult, McpServerConfig, McpServerStatus } from './types'
-import type { AgentEvent, AgentRunRequest, AgentSession } from './agent-types'
+import type { AgentEvent, AgentRunRequest, AgentSession, AgentSessionExportFormat, AgentSessionExportResult } from './agent-types'
 import type { PlatformInfo } from './platform'
 
 export interface DeepDeskApi {
@@ -60,6 +60,7 @@ export interface DeepDeskApi {
     saveSession: (session: AgentSession) => Promise<void>
     deleteSession: (id: string) => Promise<void>
     renameSession: (id: string, title: string) => Promise<void>
+    exportSession: (id: string, format: AgentSessionExportFormat) => Promise<AgentSessionExportResult>
   }
   window: {
     minimize: () => Promise<void>

@@ -105,6 +105,12 @@ export default function Sidebar({
     setMenuId(null)
   }
 
+  const exportSession = async (id: string, format: 'markdown' | 'json'): Promise<void> => {
+    const result = await window.api.agent.exportSession(id, format)
+    if (!result.ok && !result.canceled) console.warn('Failed to export session', result.message)
+    setMenuId(null)
+  }
+
   const connectorLabel = (session: (typeof sessions)[number]): string => {
     if (session.source?.type !== 'connector') return ''
     return session.source.connectorId === 'wechat' ? '微信' : '飞书'
@@ -151,6 +157,8 @@ export default function Sidebar({
           ) : (
             <>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => beginRename(s.id, s.task)}>编辑标题</button>
+              <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'markdown')}>导出 Markdown</button>
+              <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'json')}>导出 JSON</button>
               <button type='button' className='conv-menu-item danger' role='menuitem' onClick={() => setConfirmId(s.id)}>删除会话</button>
             </>
           )}

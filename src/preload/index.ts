@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type { DeepDeskApi } from '../shared/api'
-import type { AgentEvent, AgentRunRequest, AgentSession } from '../shared/agent-types'
+import type { AgentEvent, AgentRunRequest, AgentSession, AgentSessionExportFormat, AgentSessionExportResult } from '../shared/agent-types'
 import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus, McpActionResult, McpServerConfig, McpServerStatus } from '../shared/types'
 import { platformInfoFromNode } from '../shared/platform'
 
@@ -66,6 +66,7 @@ const api: DeepDeskApi = {
     saveSession: (session: AgentSession) => ipcRenderer.invoke(IPC.AgentSessionUpsert, session) as Promise<void>,
     deleteSession: (id: string) => ipcRenderer.invoke(IPC.AgentSessionDelete, id) as Promise<void>,
     renameSession: (id: string, title: string) => ipcRenderer.invoke(IPC.AgentSessionRename, id, title) as Promise<void>,
+    exportSession: (id: string, format: AgentSessionExportFormat) => ipcRenderer.invoke(IPC.AgentSessionExport, id, format) as Promise<AgentSessionExportResult>,
     onChunk: (cb: (event: AgentEvent) => void) => {
       const listener = (_event: unknown, event: AgentEvent): void => cb(event)
       ipcRenderer.on(IPC.AgentChunk, listener)

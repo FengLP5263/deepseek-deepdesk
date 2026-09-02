@@ -484,7 +484,7 @@ export function createConnectorSessionUserData(): string {
   return userDataDir
 }
 
-export async function launchDeepDesk(userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))): Promise<DeepDeskE2EApp> {
+export async function launchDeepDesk(userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-')), extraEnv: Record<string, string> = {}): Promise<DeepDeskE2EApp> {
   const app = await electron.launch({
     args: ['.'],
     env: {
@@ -495,7 +495,8 @@ export async function launchDeepDesk(userDataDir = mkdtempSync(join(tmpdir(), 'd
       DEEPDESK_DISABLE_BROWSER_EXTENSION_BRIDGE: '1',
       DEEPDESK_BROWSER_CONNECT_TIMEOUT_MS: '0',
       DEEPDESK_BROWSER_EXECUTABLE: process.execPath,
-      DEEPDESK_BROWSER_NAME: 'E2E Browser'
+      DEEPDESK_BROWSER_NAME: 'E2E Browser',
+      ...extraEnv
     }
   })
   const page = await app.firstWindow()

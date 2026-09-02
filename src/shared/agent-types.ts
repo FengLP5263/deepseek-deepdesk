@@ -131,3 +131,12 @@ export interface AgentSession {
   hasUnread?: boolean
   source?: AgentSessionSource
 }
+
+export type AgentSessionExportFormat = 'markdown' | 'json'
+
+export interface AgentSessionExportResult {
+  ok: boolean
+  canceled?: boolean
+  filePath?: string
+  message?: string
+}

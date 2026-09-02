@@ -5,10 +5,11 @@ import { startAgent, cancelAgent, approveCommand } from './agent'
 import { connectConnector, disconnectConnector, getConnectorActivityFeed, getConnectorAuthStatus, listConnectors, sendConnectorMessage, startConnectorAuth } from './connectors'
 import type { AppStore } from './store'
 import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage } from '../shared/types'
-import type { AgentRunRequest, AgentSession } from '../shared/agent-types'
+import type { AgentRunRequest, AgentSession, AgentSessionExportFormat, AgentSessionExportResult } from '../shared/agent-types'
 import { setupBrowserSessionSharing } from './browser-runtime'
 import { connectMcpServer, deleteMcpServer, disconnectMcpServer, listMcpStatuses, saveMcpServer } from './mcp'
 import type { McpServerConfig } from '../shared/types'
+import { exportAgentSession } from './agent-session-export'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.SettingsGet, () => store.getSnapshot().settings)
@@ -147,6 +148,15 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
 
   ipcMain.handle(IPC.AgentSessionRename, (_event, id: string, title: string) => {
     store.renameAgentSession(id, title)
+  })
+
+  ipcMain.handle(IPC.AgentSessionExport, async (event, id: string, format: AgentSessionExportFormat): Promise<AgentSessionExportResult> => {
+    const session = store.getSnapshot().agentSessions.find(item => item.id === id)
+    const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow()
+    if (!session) return { ok: false, message: '未找到会话' }
+    if (!win) return { ok: false, message: '窗口不可用' }
+    if (format !== 'markdown' && format !== 'json') return { ok: false, message: '不支持的导出格式' }
+    return exportAgentSession(win, session, format)
   })
 
   ipcMain.handle(IPC.AgentPickDirectory, async (event) => {
