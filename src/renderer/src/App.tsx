@@ -10,14 +10,17 @@ import { useSettingsStore } from './stores/useSettingsStore'
 import { useAgentStore } from './stores/useAgentStore'
 import { Loader2 } from 'lucide-react'
 import { useAppFontScale } from './hooks/useAppFontScale'
+import SessionSearch from './components/sidebar/SessionSearch'
 
 type View = 'chat' | 'settings' | 'connectors' | 'skills' | 'more'
 export default function App() {
   useAppFontScale()
   const ready = useSettingsStore(s => s.loaded)
+  const sessions = useAgentStore(s => s.sessions)
   const [view, setView] = useState<View>('chat')
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
   const [collapsed, setCollapsed] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
     void useSettingsStore.getState().load()
@@ -74,6 +77,9 @@ export default function App() {
         e.preventDefault()
         useAgentStore.getState().clear()
         setView('chat')
+      } else if (mod && e.key.toLocaleLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(open => !open)
       } else if (mod && e.key === ',') {
         e.preventDefault()
         setView(v => {
@@ -82,6 +88,10 @@ export default function App() {
           return 'settings'
         })
       } else if (e.key === 'Escape') {
+        if (searchOpen) {
+          setSearchOpen(false)
+          return
+        }
         const agent = useAgentStore.getState()
         if (agent.running) agent.stop()
         else setView(v => (v === 'settings' ? 'chat' : v))
@@ -89,7 +99,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [searchOpen])
 
   if (!ready) {
     return (
@@ -126,6 +136,7 @@ export default function App() {
             view={view}
             onNavigate={setView}
             onNewTask={newTask}
+            onSearch={() => setSearchOpen(true)}
             onOpenSettings={openSettings}
             collapsed={collapsed}
           />
@@ -136,6 +147,15 @@ export default function App() {
           {(view === 'connectors' || view === 'skills' || view === 'more') && <FeatureHub view={view} onNavigate={setView} onOpenChat={openChat} onOpenSettings={openSettings} />}
         </main>
       </div>
+      <SessionSearch
+        open={searchOpen}
+        sessions={sessions}
+        onClose={() => setSearchOpen(false)}
+        onOpenSession={id => {
+          useAgentStore.getState().loadSession(id)
+          setView('chat')
+        }}
+      />
     </div>
   )
 }

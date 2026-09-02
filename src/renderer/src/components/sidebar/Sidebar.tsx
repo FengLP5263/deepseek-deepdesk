@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Blocks, ChevronDown, Link2, MoreHorizontal, Settings, SquarePen, UserRound } from 'lucide-react'
+import { Blocks, ChevronDown, Link2, MoreHorizontal, Search, Settings, SquarePen, UserRound } from 'lucide-react'
 import DeepSeekLogo from '../DeepSeekLogo'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { formatTime } from '../../lib/format'
@@ -35,12 +35,14 @@ export default function Sidebar({
   view,
   onNavigate,
   onNewTask,
+  onSearch,
   onOpenSettings,
   collapsed
 }: {
   view: AppView
   onNavigate: (view: AppView) => void
   onNewTask: () => void
+  onSearch: () => void
   onOpenSettings: (tab?: SettingsTab) => void
   collapsed: boolean
 }) {
@@ -58,6 +60,7 @@ export default function Sidebar({
   const [connectorSessionsOpen, setConnectorSessionsOpen] = useState(true)
   const menuRef = useRef<HTMLDivElement>(null)
   const settingsShortcut = window.api.platform.id === 'macos' ? '⌘,' : 'Ctrl+,'
+  const searchShortcut = window.api.platform.id === 'macos' ? '⌘ K' : 'Ctrl K'
   const normalSessions = sessions.filter(session => session.source?.type !== 'connector')
   const connectorSessions = sessions.filter(session => session.source?.type === 'connector')
 
@@ -171,6 +174,7 @@ export default function Sidebar({
           </div>
           <div className='sidebar-nav'>
             <button className={clsx('sidebar-nav-item', view === 'chat' && !activeSessionId && 'active')} onClick={onNewTask}><SquarePen className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 新建任务</button>
+            <button className='sidebar-nav-item' onClick={onSearch} title={'搜索任务 (' + searchShortcut + ')'}><Search className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 搜索任务 <span className='sidebar-shortcut'>{searchShortcut}</span></button>
             <button className={clsx('sidebar-nav-item', view === 'connectors' && 'active')} onClick={() => onNavigate('connectors')}><Link2 className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 连接器</button>
             <button className={clsx('sidebar-nav-item', view === 'skills' && 'active')} onClick={() => onNavigate('skills')}><Blocks className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 技能广场</button>
             <button className={clsx('sidebar-nav-item', view === 'more' && 'active')} onClick={() => onNavigate('more')}><MoreHorizontal className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 更多</button>
