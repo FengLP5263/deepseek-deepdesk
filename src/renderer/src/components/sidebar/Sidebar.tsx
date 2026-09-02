@@ -3,6 +3,7 @@ import { Blocks, ChevronDown, Link2, MoreHorizontal, Search, Settings, SquarePen
 import DeepSeekLogo from '../DeepSeekLogo'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { formatTime } from '../../lib/format'
+import { orderSidebarSessions } from '../../lib/session-order'
 import { APP_VERSION } from '@shared/app-meta'
 import type { SettingsTab } from '../settings/SettingsView'
 import clsx from 'clsx'
@@ -52,6 +53,7 @@ export default function Sidebar({
   const loadSession = useAgentStore(s => s.loadSession)
   const deleteSession = useAgentStore(s => s.deleteSession)
   const renameSession = useAgentStore(s => s.renameSession)
+  const toggleSessionPinned = useAgentStore(s => s.toggleSessionPinned)
   const [menuId, setMenuId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -61,8 +63,9 @@ export default function Sidebar({
   const menuRef = useRef<HTMLDivElement>(null)
   const settingsShortcut = window.api.platform.id === 'macos' ? '⌘,' : 'Ctrl+,'
   const searchShortcut = window.api.platform.id === 'macos' ? '⌘ K' : 'Ctrl K'
-  const normalSessions = sessions.filter(session => session.source?.type !== 'connector')
-  const connectorSessions = sessions.filter(session => session.source?.type === 'connector')
+  const orderedSessions = orderSidebarSessions(sessions)
+  const normalSessions = orderedSessions.filter(session => session.source?.type !== 'connector')
+  const connectorSessions = orderedSessions.filter(session => session.source?.type === 'connector')
 
   useEffect(() => {
     const closeMenu = (event: PointerEvent): void => {
@@ -156,6 +159,7 @@ export default function Sidebar({
             </>
           ) : (
             <>
+              <button type='button' className='conv-menu-item' role='menuitem' onClick={() => { toggleSessionPinned(s.id); setMenuId(null) }}>{s.pinnedAt ? '取消置顶' : '置顶会话'}</button>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => beginRename(s.id, s.task)}>编辑标题</button>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'markdown')}>导出 Markdown</button>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'json')}>导出 JSON</button>

@@ -24,6 +24,7 @@ interface RunningAgentSession {
   modelId: string
   source?: AgentSessionSource
   createdAt: number
+  pinnedAt?: number
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
   queuedMessages: AgentQueuedMessage[]
@@ -64,6 +65,7 @@ interface AgentState {
   loadSession: (id: string) => void
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
+  toggleSessionPinned: (id: string) => void
   updateStep: (index: number, patch: Partial<AgentStep>) => void
   setStepFeedback: (index: number, feedback: 'positive' | 'negative') => void
   regenerateFrom: (index: number) => Promise<void>
@@ -180,6 +182,7 @@ function sessionFromContext(ctx: RunningAgentSession): AgentSession {
     modelId: ctx.modelId,
     createdAt: ctx.createdAt,
     updatedAt: Date.now(),
+    pinnedAt: ctx.pinnedAt,
     steps: ctx.steps,
     history: ctx.history,
     queuedMessages: ctx.queuedMessages,
@@ -338,6 +341,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       modelId: s.currentModelId || defaultModelId,
       createdAt: s.sessions.find(item => item.id === s.currentSessionId)?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
+      pinnedAt: s.sessions.find(item => item.id === s.currentSessionId)?.pinnedAt,
       steps: s.steps,
       history: s.history,
       queuedMessages: s.queuedMessages,
@@ -427,6 +431,7 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       modelId,
       source,
       createdAt,
+      pinnedAt: session?.pinnedAt,
       steps,
       history: previousHistory,
       queuedMessages
@@ -796,6 +801,17 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         sessions: s.sessions.map(item => (item.id === id ? { ...item, task: t } : item)),
         currentTask: s.currentSessionId === id ? t : s.currentTask
       }))
+    },
+    toggleSessionPinned: id => {
+      const session = get().sessions.find(item => item.id === id)
+      if (!session) return
+      const pinnedAt = session.pinnedAt ? undefined : Date.now()
+      const runId = runIdBySessionId.get(id)
+      const ctx = runId ? runContexts.get(runId) : undefined
+      if (ctx) ctx.pinnedAt = pinnedAt
+      const next = { ...session, pinnedAt }
+      set(s => ({ sessions: s.sessions.map(item => item.id === id ? next : item) }))
+      saveSession(next)
     },
     updateStep: (index, patch) => {
       set(s => {

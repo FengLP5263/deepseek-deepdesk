@@ -129,6 +129,7 @@ export interface AgentSession {
   modelId: string
   createdAt: number
   updatedAt: number
+  pinnedAt?: number
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
   queuedMessages?: AgentQueuedMessage[]

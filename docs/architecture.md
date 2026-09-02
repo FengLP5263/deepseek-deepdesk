@@ -57,7 +57,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - `stores/useSettingsStore.ts`：服务与设置，变更后回读保持一致
 - `stores/useMemoryStore.ts`：长期记忆的本地管理；聊天和 Agent 发送前先经 Main 捕获高置信记忆，再只注入命中的临时上下文，不写入原始会话消息
 - `stores/useMcpStore.ts`：MCP 服务器配置和运行状态；所有连接动作通过 preload IPC 交给主进程执行
-- `components/sidebar/Sidebar.tsx`：后台 Agent 会话运行时显示低速旋转状态，完成后显示持久化的绿色未读标记；进入会话后清除未读状态，当前可见会话不显示冗余状态
+- `components/sidebar/Sidebar.tsx`：后台 Agent 会话运行时显示低速旋转状态，完成后显示持久化的绿色未读标记；进入会话后清除未读状态，当前可见会话不显示冗余状态。会话先按持久化的置顶时间、再按最近更新时间确定性排序，排序纯函数位于 `lib/session-order.ts`
 - `components/sidebar/SessionSearch.tsx`：通过 `Ctrl/Cmd+K` 或侧边栏入口搜索任务标题与消息内容，支持最近任务、键盘选择和连接器会话跳转；匹配与排序逻辑位于纯函数 `lib/session-search.ts`
 - `components/agent/WindowedAgentSteps.tsx`：长会话默认只挂载最近 60 条步骤，更早内容按 60 条批量加载并保持当前阅读位置；该裁剪仅作用于 DOM 渲染，不修改 store、磁盘历史或模型上下文
 - `components/chat/ThinkingBlock.tsx`：普通聊天与 Agent 共用的推理过程组件；生成中使用文字扫光反馈，完成后默认收起并允许展开查看真实推理文本
