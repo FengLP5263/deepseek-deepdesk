@@ -1,8 +1,8 @@
 {
   "name": "deepseek-desktop",
   "productName": "DeepDesk",
-  "version": "0.37.0",
-  "description": "Open-source desktop AI client with native Anthropic and OpenAI-compatible model services, local conversations, coding agents, MCP tools, connectors, and browser debugging",
+  "version": "0.37.1",
+  "description": "Open-source desktop AI client with native OpenAI Responses, Anthropic, and OpenAI-compatible model services, local conversations, coding agents, MCP tools, connectors, and browser debugging",
   "main": "./out/main/index.js",
   "author": "DeepDesk Team",
   "license": "MIT",

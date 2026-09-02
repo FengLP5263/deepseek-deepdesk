@@ -61,7 +61,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - `components/sidebar/SessionSearch.tsx`：通过 `Ctrl/Cmd+K` 或侧边栏入口搜索任务标题与消息内容，支持最近任务、键盘选择和连接器会话跳转；匹配与排序逻辑位于纯函数 `lib/session-search.ts`
 - `components/agent/WindowedAgentSteps.tsx`：长会话默认只挂载最近 60 条步骤，更早内容按 60 条批量加载并保持当前阅读位置；该裁剪仅作用于 DOM 渲染，不修改 store、磁盘历史或模型上下文
 - `components/chat/ThinkingBlock.tsx`：普通聊天与 Agent 共用的推理过程组件；生成中使用文字扫光反馈，完成后默认收起并允许展开查看真实推理文本
-- `components/chat/Markdown.tsx`：覆盖 `pre` 渲染器实现代码块外壳 + 复制；链接经 `shell.openExternal` 打开
+- `components/chat/Markdown.tsx`：覆盖 `pre` 渲染器实现代码块外壳 + 复制；链接经 `shell.openExternal` 打开；Markdown、GFM 与代码高亮依赖由 Agent 正文通过动态 chunk 首次按需加载，空白首屏不解析这组模块
 
 ## 4. 存储
 

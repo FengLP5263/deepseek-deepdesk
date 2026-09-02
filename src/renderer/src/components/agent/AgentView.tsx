@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { ArrowDown, ArrowUp, Blocks, Check, ChevronDown, Copy, FolderOpen, ListChecks, Pencil, RefreshCw, Terminal, ThumbsDown, ThumbsUp, X, ShieldQuestion, ShieldCheck, Unlock } from 'lucide-react'
 import { useAgentStore } from '../../stores/useAgentStore'
@@ -7,7 +7,6 @@ import type { AgentStep } from '@shared/agent-types'
 import clsx from 'clsx'
 import { formatWorkdirName } from '../../lib/format'
 import { DEFAULT_CONTEXT_WINDOW } from '@shared/context-manager'
-import Markdown from '../chat/Markdown'
 import ThinkingBlock from '../chat/ThinkingBlock'
 import { copyText } from '../../lib/utils'
 import AgentModelPicker from './AgentModelPicker'
@@ -15,6 +14,8 @@ import AgentContextMeter from './AgentContextMeter'
 import WindowedAgentSteps from './WindowedAgentSteps'
 import ContextCompactionNotice from './ContextCompactionNotice'
 import '../../assets/agent.css'
+
+const Markdown = lazy(() => import('../chat/Markdown'))
 
 function parseArgs(args?: string): Record<string, unknown> {
   if (!args) return {}
@@ -152,7 +153,9 @@ function TextStep({ step, index, isLastMessage }: { step: AgentStep; index: numb
   const setStepFeedback = useAgentStore(s => s.setStepFeedback)
   return (
     <div className={clsx('agent-message', 'assistant', isLastMessage && 'is-last-message')}>
-      <Markdown text={step.text ?? ''} />
+      <Suspense fallback={<div className='agent-text'>{step.text ?? ''}</div>}>
+        <Markdown text={step.text ?? ''} />
+      </Suspense>
       <MessageActions
         text={step.text ?? ''}
         isUser={false}
