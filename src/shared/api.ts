@@ -70,5 +70,6 @@ export interface DeepDeskApi {
     onMaximizedChange: (cb: (maximized: boolean) => void) => () => void
   }
   openExternal: (url: string) => Promise<void>
+  onNewTaskRequested: (cb: () => void) => () => void
   appVersion: () => Promise<string>
 }

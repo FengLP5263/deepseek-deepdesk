@@ -31,6 +31,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 
 - `store.ts`：AppStore 持有 `{ settings, providers, mcpServers, connectors, conversations, agentSessions, memories }`，写盘走「tmp + rename」原子替换，写队列串行化避免并发覆盖
 - `llm.ts`：流式会话注册表 `Map<runId, AbortController>`，支持取消 / 全局清理；根据 `finish_reason` 区分正常结束、长度截断、网络异常和内容审核终止，并在缺少终止标记时识别异常断流
+- `desktop-presence.ts`：管理系统托盘、全局唤起快捷键和退出清理；托盘发出的新建任务事件通过受控 IPC 交给 Renderer
 - `shared/llm/stream.ts`：普通聊天与 Agent 共用的流恢复策略；兼容模型请求默认预留 8192 个输出 token，并对以枚举顿号、逗号、斜杠、破折号或未闭合代码块结束的明显残句做保守续写；保留已接收内容，最多自动续写 3 次，并合并多次请求的 token usage
 - `agent.ts`：Agent 工具循环；执行模式按权限策略运行完整工具集，规划模式只向模型暴露只读工具并在执行入口二次校验；同一轮全部为无需审批的只读工具时并行执行并按原始调用顺序回填结果，包含写入、交互或审批时保持串行；单个工具异常归一化为失败结果返回模型，取消和终态事件负责清理运行中工具状态
 - `mcp.ts`：MCP Host 运行时；管理 stdio 子进程和 Streamable HTTP 会话、工具发现、Agent 工具名映射、结果收敛与退出清理
@@ -120,4 +121,4 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 - [x] 对话导出（Markdown / JSON）
 - [x] 本地记忆近义合并与冲突更新标记
 - [ ] 多会话并行（分页 Tab）
-- [ ] 系统托盘与全局快捷键唤起
+- [x] 系统托盘与全局快捷键唤起

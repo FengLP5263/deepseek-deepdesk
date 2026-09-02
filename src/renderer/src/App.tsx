@@ -101,6 +101,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [searchOpen])
 
+  useEffect(() => window.api.onNewTaskRequested(() => {
+    useAgentStore.getState().clear()
+    setView('chat')
+    window.requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.composer-textarea')?.focus())
+  }), [])
+
   if (!ready) {
     return (
       <div className='splash'>

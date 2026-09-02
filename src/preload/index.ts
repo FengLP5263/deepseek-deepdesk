@@ -85,6 +85,11 @@ const api: DeepDeskApi = {
     }
   },
   openExternal: (url: string) => ipcRenderer.invoke(IPC.OpenExternal, url) as Promise<void>,
+  onNewTaskRequested: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC.AppNewTaskRequested, listener)
+    return () => { ipcRenderer.removeListener(IPC.AppNewTaskRequested, listener) }
+  },
   appVersion: () => ipcRenderer.invoke(IPC.AppVersion) as Promise<string>
 }
 

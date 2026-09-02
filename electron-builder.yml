@@ -9,6 +9,8 @@ files:
 extraResources:
   - from: browser-extension
     to: browser-extension
+  - from: build/icon.png
+    to: tray-icon.png
 asar: true
 npmRebuild: false
 electronLanguages:

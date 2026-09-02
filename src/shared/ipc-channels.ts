@@ -46,6 +46,7 @@ export const IPC = {
   WindowClose: 'window:close',
   WindowIsMaximized: 'window:is-maximized',
   WindowMaximizedChanged: 'window:maximized-changed',
+  AppNewTaskRequested: 'app:new-task-requested',
   OpenExternal: 'app:open-external',
   AppVersion: 'app:version'
 } as const
