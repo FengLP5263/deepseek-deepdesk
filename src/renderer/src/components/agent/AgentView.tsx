@@ -5,6 +5,7 @@ import { useAgentStore } from '../../stores/useAgentStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import clsx from 'clsx'
 import { formatWorkdirName } from '../../lib/format'
+import { shouldSubmitComposer } from '../../lib/composer-keyboard'
 import { DEFAULT_CONTEXT_WINDOW } from '@shared/context-manager'
 import AgentModelPicker from './AgentModelPicker'
 import AgentContextMeter from './AgentContextMeter'
@@ -111,6 +112,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   const contextWindow = provider?.models.find(m => m.id === effectiveModelId)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW
   const interactionMode = settings?.agentInteractionMode ?? 'execute'
   const mode = settings?.agentPermissionMode ?? 'ask'
+  const enterToSend = settings?.enterToSend ?? true
   const modeLabel = mode === 'full' ? '完全访问' : mode === 'auto' ? '替我审批' : '每次询问'
   const workdirLabel = formatWorkdirName(workdir)
   const workdirTitle = workdir ? `工作目录：${workdir}` : '未选择时使用系统用户主目录'
@@ -146,7 +148,7 @@ function AgentComposer({ onOpenSettings }: { onOpenSettings: () => void }) {
   }
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void submit() }
+    if (shouldSubmitComposer(e, enterToSend)) { e.preventDefault(); void submit() }
   }
 
   const closeFloatingOnComposerBackground = (event: React.PointerEvent<HTMLDivElement>): void => {
