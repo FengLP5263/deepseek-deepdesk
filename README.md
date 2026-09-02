@@ -147,7 +147,7 @@ docs/              架构、测试、CI、Git Flow 与发布文档
 - 模型、MCP 和连接器网络请求由主进程执行。
 - 文件工具默认受工作目录边界约束；越界访问和高风险操作受权限模式控制。
 - 本地数据存放于 Electron `userData/deepdesk.json`，测试使用独立临时目录。
-- API Key、MCP Token 和自定义请求头当前保存在本地 JSON 配置中，尚未接入系统 `safeStorage` 加密；请避免在共享系统账号中保存生产密钥。
+- API Key、MCP Token、环境变量、自定义请求头和连接器令牌只保存在本机；Windows 与 macOS 通过 Electron `safeStorage` 写为系统账户绑定的密文，运行时才在主进程内解密。系统安全存储不可用时会记录警告并保持原始格式，请避免在共享系统账号中保存生产密钥。
 - 禁止提交 API Key、Token、Cookie、二维码、用户会话、私有文档和构建产物。
 
 更完整的安全和持久化说明见 [docs/architecture.md](./docs/architecture.md)。

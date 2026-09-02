@@ -64,7 +64,7 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 
 ## 安全约束（改动前必读）
 
-- API Key 存本地 `userData/deepdesk.json`，绝不上传第三方。
+- API Key 存本地 `userData/deepdesk.json` 并通过 Electron `safeStorage` 加密，绝不上传第三方。
 - Agent 文件操作默认限定工作目录；越界、发飞书消息按权限模式审批。
 - 危险命令（rm -rf / format / shutdown 等）在「每次询问/替我审批」下强制询问。
 - 改动权限/安全/持久化逻辑，必须同步补测试。

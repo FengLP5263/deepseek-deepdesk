@@ -6,6 +6,7 @@ import type { AgentSession } from '../shared/agent-types'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
 import { extractMemoryCandidates, normalizeMemoryContent, searchMemories, type MemoryCandidate } from '../shared/memory'
 import { normalizeAppFontScale } from '../shared/font-scale'
+import { mapAppStateSecrets, plaintextSecretCodec, SecretStorageError, type SecretCodec } from './secret-storage'
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
@@ -110,10 +111,12 @@ export class AppStore {
   private file: string
   private data: AppState
   private writing: Promise<void> = Promise.resolve()
+  private secrets: SecretCodec
 
-  constructor(storageDir?: string) {
+  constructor(storageDir?: string, secrets: SecretCodec = plaintextSecretCodec) {
     const dir = storageDir ?? app.getPath('userData')
     this.file = path.join(dir, 'deepdesk.json')
+    this.secrets = secrets
     this.data = {
       settings: { ...DEFAULT_SETTINGS },
       providers: cloneProviders(),
@@ -130,9 +133,9 @@ export class AppStore {
     try {
       const raw = await fs.readFile(this.file, 'utf-8')
       const parsed = JSON.parse(raw) as Partial<AppState>
-      this.data = this.migrate(parsed)
-    } catch {
-      // 首次启动，使用默认数据
+      this.data = mapAppStateSecrets(this.migrate(parsed), this.secrets, 'reveal')
+    } catch (error) {
+      if (error instanceof SecretStorageError) throw error
     }
     if (!this.data.providers || this.data.providers.length === 0) {
       this.data.providers = cloneProviders()
@@ -476,7 +479,7 @@ export class AppStore {
   }
 
   private persist(): Promise<void> {
-    const snapshot = JSON.stringify(this.data, null, 2)
+    const snapshot = JSON.stringify(mapAppStateSecrets(this.data, this.secrets, 'protect'), null, 2)
     const write = this.writing
       .then(async () => {
         const tmp = this.file + '.tmp'

@@ -6,12 +6,13 @@ import { cancelAllChats } from './llm'
 import { getPlatformAdapter } from './platform'
 import { configureBrowserAutomation, shutdownBrowserAutomation } from './browser-runtime'
 import { configureMcp, shutdownMcp } from './mcp'
+import { createElectronSecretCodec } from './secret-storage'
 
 let mainWindow: BrowserWindow | null = null
 const platform = getPlatformAdapter()
 const userDataDir = process.env['DEEPDESK_USER_DATA_DIR']
 if (userDataDir) app.setPath('userData', userDataDir)
-const store = new AppStore()
+const store = new AppStore(undefined, createElectronSecretCodec())
 const gotLock = app.requestSingleInstanceLock()
 
 if (!gotLock) {
