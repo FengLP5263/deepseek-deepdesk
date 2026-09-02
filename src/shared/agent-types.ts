@@ -22,6 +22,7 @@ export type AgentToolName =
   | 'browser_evaluate'
   | 'inspect_mcp_server'
   | 'install_mcp_server'
+  | 'search_mcp_tools'
   | McpAgentToolName
 
 export interface McpInstallApproval {

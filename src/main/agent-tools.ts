@@ -235,6 +235,20 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
   {
     type: 'function',
     function: {
+      name: 'search_mcp_tools',
+      description: '搜索当前已连接 MCP 服务的工具目录。连接的工具很多时，先按服务名、能力或操作对象搜索；命中的真实工具会在下一轮可用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '要查找的能力，例如“搜索文档”“数据库查询”或服务名' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'inspect_mcp_server',
       description: '检查用户明确提供的 HTTP MCP 服务端点，读取服务身份和工具清单，并生成一个短时安装凭证。只支持可直接连接的 Streamable HTTP MCP 地址；不要把 GitHub、npm 或普通网页地址当作服务端点。',
       parameters: {

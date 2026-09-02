@@ -8,6 +8,7 @@ const PLAN_SAFE_TOOLS = new Set([
   'list_files',
   'search_content',
   'search_feishu_user',
+  'search_mcp_tools',
   'browser_pages',
   'browser_snapshot',
   'browser_debug'

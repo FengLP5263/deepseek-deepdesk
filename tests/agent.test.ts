@@ -438,6 +438,38 @@ describe('startAgent', () => {
     expect(events.some(event => event.type === 'approval_request')).toBe(false)
   })
 
+  it('大型 MCP 目录按需搜索并在下一轮注入命中的真实工具', async () => {
+    const names: string[] = []
+    for (let index = 0; index < 20; index += 1) {
+      const name = `mcp__server__tool_${index}__${String(index).padStart(8, '0')}`
+      names.push(name)
+      mocks.mcpTools.push({
+        name,
+        serverId: 'server',
+        serverName: '扩展服务',
+        toolName: index === 7 ? 'search_documents' : `tool_${index}`,
+        annotations: { readOnlyHint: true, destructiveHint: false },
+        definition: { type: 'function', function: { name, description: index === 7 ? '搜索企业文档' : `其他能力 ${index}`, parameters: { type: 'object' } } }
+      })
+    }
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'catalog-search', name: 'search_mcp_tools', args: { query: '企业文档' } }] })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'document-search', name: names[7], args: { query: 'DeepDesk' } }] })
+    mocks.responses.push({ content: '文档搜索完成', toolCalls: [] })
+    const { events, win } = makeWin()
+    const autoSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'auto' }
+
+    startAgent(win as never, { runId: 'r-mcp-catalog', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '查看可用扩展能力', temperature: 1 }, provider, autoSettings)
+    await runUntilDone(events)
+
+    const firstTools = mocks.requests[0].tools.map(item => (item.function as { name?: string }).name)
+    const secondTools = mocks.requests[1].tools.map(item => (item.function as { name?: string }).name)
+    expect(firstTools).toContain('search_mcp_tools')
+    expect(firstTools).not.toContain(names[7])
+    expect(secondTools).toContain(names[7])
+    expect(mocks.mcpExecutions).toContainEqual({ name: names[7], args: { query: 'DeepDesk' } })
+    expect(events.some(event => event.type === 'approval_request')).toBe(false)
+  })
+
   it('auto 模式：未声明只读的 MCP 工具仍需用户批准', async () => {
     const name = 'mcp__demo__write__87654321'
     mocks.mcpTools.push({
