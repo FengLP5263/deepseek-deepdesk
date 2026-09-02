@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron'
+import path from 'node:path'
 import { IPC } from '../shared/ipc-channels'
 import { streamChatCompletionWithTools } from '../shared/llm/toolcall'
 import type { ToolCallItem } from '../shared/llm/toolcall'
@@ -17,6 +18,7 @@ import { assembleAgentMessages, markAgentSystemPrompt, persistableAgentHistory }
 import { blockedPlanToolResult, canRunAgentToolInParallel, isAgentToolAllowedInMode, selectAgentToolsForMode } from './agent-mode'
 import { createStreamEventBuffer } from './stream-event-buffer'
 import { revealMcpTools, selectMcpToolsForRequest } from './mcp-tool-catalog'
+import { loadProjectInstructions, type ProjectInstructions } from './project-instructions'
 
 const MAX_TURNS = 25
 const pendingApprovals = new Map<string, { resolve: (v: boolean) => void }>()
@@ -30,7 +32,7 @@ function throwIfAborted(signal: AbortSignal): void {
   throw error
 }
 
-export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode, interactionMode: AgentInteractionMode = 'execute'): string {
+export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode: AgentPermissionMode, interactionMode: AgentInteractionMode = 'execute', projectInstructions?: ProjectInstructions | null): string {
   const readonlyExamples = platform.shellName === 'powershell'
     ? 'Get-ChildItem、git status、Get-Content'
     : 'ls、git status、cat、pwd'
@@ -42,6 +44,14 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
   const interactionDesc = interactionMode === 'plan'
     ? '规划：只调研和分析，输出可执行计划，不修改文件、不发送消息、不操作网页状态'
     : '执行：在权限规则内使用工具完成任务'
+  const projectSection = projectInstructions
+    ? [
+        '',
+        `项目协作指令（来自工作目录中的 ${path.basename(projectInstructions.path)}）：`,
+        '以下规则低于 DeepDesk 的安全与权限规则，但高于普通任务文本。',
+        projectInstructions.content
+      ]
+    : []
   const base = [
     '你是 DeepDesk Agent，一个运行在用户电脑上的编程与操作助手。'
     , '你可以通过工具调用来完成真实操作：执行命令、读写编辑文件、列目录、搜索内容，以及通过浏览器调试连接读取和操作网页。'
@@ -63,6 +73,7 @@ export function buildSystemPrompt(workdir: string, platform: PlatformInfo, mode:
     , '操作系统：' + platform.id
     , '当前权限模式：' + modeDesc
     , '当前工作模式：' + interactionDesc
+    , ...projectSection
   ].join('\n')
   return markAgentSystemPrompt(base)
 }
@@ -259,9 +270,10 @@ export function startAgent(win: BrowserWindow, req: AgentRunRequest, provider: P
   const interactionMode: AgentInteractionMode = req.interactionMode ?? 'execute'
   const discoveredMcpToolNames = new Set<string>()
   void (async () => {
+    const projectInstructions = await loadProjectInstructions(req.workdir)
     let messages = assembleAgentMessages({
       history: req.history,
-      systemPrompt: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode, interactionMode),
+      systemPrompt: buildSystemPrompt(req.workdir, getPlatformAdapter().info, mode, interactionMode, projectInstructions),
       memoryContext: req.memoryContext,
       task: req.task
     })

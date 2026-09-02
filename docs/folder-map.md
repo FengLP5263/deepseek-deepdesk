@@ -33,6 +33,7 @@
 | --- | --- | --- |
 | 新增 IPC | `src/shared`、`src/preload`、`src/main`、`src/renderer` | 对应 4 个局部 `AGENTS.md` |
 | 新增 Agent 工具 | `src/main`、`tests` | `src/main/AGENTS.md`、`tests/AGENTS.md` |
+| 修改项目指令装配 | `src/main/project-instructions.ts`、`src/main/agent.ts`、`tests` | Main、Tests 局部说明 |
 | 修改平台行为 | `src/main/platform`、`src/renderer`、`tests`、`e2e` | Main、Renderer、Tests、E2E 局部说明 |
 | 调整聊天 UI | `src/renderer`、`tests` | `src/renderer/AGENTS.md`、`tests/AGENTS.md` |
 | 改 LLM 协议 | `src/shared/llm`、`tests` | `src/shared/AGENTS.md`、`tests/AGENTS.md` |
