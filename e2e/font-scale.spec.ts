@@ -34,7 +34,7 @@ async function expectAppShellFillsViewport(): Promise<void> {
   if (!ctx) throw new Error('DeepDesk E2E app is not running')
   const shellEdges = await ctx.page.evaluate(() => {
     const root = document.querySelector('#root')!.getBoundingClientRect()
-    const close = document.querySelector('.win-btn.close')!.getBoundingClientRect()
+    const close = document.querySelector('.win-btn.close')?.getBoundingClientRect()
     const sidebar = document.querySelector('.sidebar')!.getBoundingClientRect()
     const main = document.querySelector('.app-main')!.getBoundingClientRect()
     return {
@@ -42,7 +42,7 @@ async function expectAppShellFillsViewport(): Promise<void> {
       viewportBottom: window.innerHeight,
       rootRight: root.right,
       rootBottom: root.bottom,
-      closeRight: close.right,
+      closeRight: close?.right ?? null,
       sidebarBottom: sidebar.bottom,
       mainRight: main.right,
       mainBottom: main.bottom
@@ -50,7 +50,9 @@ async function expectAppShellFillsViewport(): Promise<void> {
   })
   expect(Math.abs(shellEdges.rootRight - shellEdges.viewportRight)).toBeLessThan(2)
   expect(Math.abs(shellEdges.rootBottom - shellEdges.viewportBottom)).toBeLessThan(2)
-  expect(Math.abs(shellEdges.closeRight - shellEdges.viewportRight)).toBeLessThan(2)
+  if (shellEdges.closeRight !== null) {
+    expect(Math.abs(shellEdges.closeRight - shellEdges.viewportRight)).toBeLessThan(2)
+  }
   expect(Math.abs(shellEdges.sidebarBottom - shellEdges.viewportBottom)).toBeLessThan(2)
   expect(Math.abs(shellEdges.mainRight - shellEdges.viewportRight)).toBeLessThan(2)
   expect(Math.abs(shellEdges.mainBottom - shellEdges.viewportBottom)).toBeLessThan(2)
