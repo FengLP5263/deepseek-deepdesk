@@ -6,11 +6,11 @@ import type { AgentToolResult, McpAgentToolName, McpInstallApproval } from '../s
 import type { McpActionResult, McpServerConfig, McpServerStatus, McpToolAnnotations, McpToolInfo } from '../shared/types'
 import { APP_VERSION } from '../shared/app-meta'
 import type { AppStore } from './store'
+import { inspectStdioInstall, MCP_INSTALL_CANDIDATE_TTL_MS, type McpInstallCandidate } from './mcp-install'
 
 const CONNECT_TIMEOUT_MS = 15_000
 const TOOL_TIMEOUT_MS = 120_000
 const MAX_TOOL_RESULT_CHARS = 100_000
-const INSTALL_CANDIDATE_TTL_MS = 10 * 60 * 1000
 
 export interface McpConnection {
   listTools: (signal?: AbortSignal) => Promise<McpToolInfo[]>
@@ -38,12 +38,6 @@ interface RuntimeState {
   serverName?: string
   serverVersion?: string
   instructions?: string
-}
-
-interface McpInstallCandidate extends McpInstallApproval {
-  runId: string
-  config: McpServerConfig
-  expiresAt: number
 }
 
 function normalizeRemoteSource(source: string): string {
@@ -352,12 +346,13 @@ export class McpManager {
       const server = connection.serverInfo()
       const name = server.name?.trim() || baseConfig.name
       const candidateId = randomUUID()
-      const expiresAt = now + INSTALL_CANDIDATE_TTL_MS
+      const expiresAt = now + MCP_INSTALL_CANDIDATE_TTL_MS
       const candidate: McpInstallCandidate = {
         candidateId,
         runId,
         name,
         source: normalizedSource,
+        transport: 'http',
         serverVersion: server.version,
         toolNames: tools.map(tool => tool.name),
         config: { ...baseConfig, name, url: normalizedSource, enabled: true },
@@ -390,6 +385,13 @@ export class McpManager {
     }
   }
 
+  inspectStdioSource(input: Record<string, unknown>, runId: string): AgentToolResult {
+    this.pruneInstallCandidates()
+    const inspection = inspectStdioInstall(input, runId, this.listStatuses())
+    if (inspection.candidate) this.installCandidates.set(inspection.candidate.candidateId, inspection.candidate)
+    return inspection.result
+  }
+
   getInstallCandidate(candidateId: string, runId: string): McpInstallApproval | undefined {
     this.pruneInstallCandidates()
     const candidate = this.installCandidates.get(candidateId)
@@ -398,6 +400,10 @@ export class McpManager {
       candidateId: candidate.candidateId,
       name: candidate.name,
       source: candidate.source,
+      transport: candidate.transport,
+      command: candidate.command,
+      args: candidate.args ? [...candidate.args] : undefined,
+      cwd: candidate.cwd,
       serverVersion: candidate.serverVersion,
       toolNames: [...candidate.toolNames]
     }
@@ -419,7 +425,7 @@ export class McpManager {
       content: stringifyJson({
         status: 'installed',
         name: status.config.name,
-        source: status.config.url,
+        source: candidate.source,
         tools: status.tools.map(tool => tool.name),
         message: 'MCP 服务已保存并连接，后续启动时会自动恢复连接。'
       }),
@@ -528,9 +534,10 @@ export function executeMcpAgentTool(name: string, args: Record<string, unknown>,
   return manager.callTool(name, args, signal)
 }
 
-export function inspectMcpServer(source: string, runId: string, signal?: AbortSignal): Promise<AgentToolResult> {
+export function inspectMcpServer(input: Record<string, unknown>, runId: string, signal?: AbortSignal): Promise<AgentToolResult> {
   if (!manager) return Promise.resolve({ ok: false, content: 'MCP 尚未初始化', summary: 'MCP 不可用' })
-  return manager.inspectRemoteSource(source, runId, signal)
+  if (typeof input.command === 'string' && input.command.trim()) return Promise.resolve(manager.inspectStdioSource(input, runId))
+  return manager.inspectRemoteSource(String(input.source ?? ''), runId, signal)
 }
 
 export function getMcpInstallCandidate(candidateId: string, runId: string): McpInstallApproval | undefined {

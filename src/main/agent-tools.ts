@@ -250,13 +250,16 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
     type: 'function',
     function: {
       name: 'inspect_mcp_server',
-      description: '检查用户明确提供的 HTTP MCP 服务端点，读取服务身份和工具清单，并生成一个短时安装凭证。只支持可直接连接的 Streamable HTTP MCP 地址；不要把 GitHub、npm 或普通网页地址当作服务端点。',
+      description: '检查用户明确提供的 MCP 安装信息并生成短时安装凭证。远程服务传 source；本地 stdio 服务传精确的 name、command、args 和可选 cwd。stdio 检查阶段不会启动程序，用户确认安装后才会启动并发现工具。不要臆造命令，也不要通过 run_command 或修改配置文件绕过安装确认。',
       parameters: {
         type: 'object',
         properties: {
-          source: { type: 'string', description: '用户提供的完整 HTTP 或 HTTPS MCP 服务端点' }
-        },
-        required: ['source']
+          source: { type: 'string', description: '用户提供的完整 HTTP 或 HTTPS MCP 服务端点' },
+          name: { type: 'string', description: '本地 stdio MCP 的显示名称' },
+          command: { type: 'string', description: '本地 stdio MCP 的精确可执行命令，例如 npx' },
+          args: { type: 'array', items: { type: 'string' }, description: '传给本地 MCP 进程的参数数组，例如 ["-y", "@playwright/mcp@latest"]' },
+          cwd: { type: 'string', description: '可选的本地 MCP 工作目录；没有明确要求时留空' }
+        }
       }
     }
   },
@@ -264,7 +267,7 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
     type: 'function',
     function: {
       name: 'install_mcp_server',
-      description: '使用 inspect_mcp_server 返回的短时凭证安装并连接 MCP 服务。该操作始终要求用户确认，不能自行构造 candidate_id，也不要通过命令或改配置文件绕过确认。',
+      description: '使用 inspect_mcp_server 返回的短时凭证，由 DeepDesk 安装并连接 HTTP 或 stdio MCP 服务。该操作始终要求用户确认，不能自行构造 candidate_id，也不要通过命令或改配置文件绕过确认。',
       parameters: {
         type: 'object',
         properties: {

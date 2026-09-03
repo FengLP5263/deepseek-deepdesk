@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -165,7 +165,10 @@ function seedUiSessionSteps(flags) {
 }
 
 function e2eArgs(mode) {
-  if (mode === 'isolated') return ['exec', 'playwright', 'test', 'e2e/app.spec.ts', 'e2e/sidebar.spec.ts', 'e2e/model-picker.spec.ts', 'e2e/memory.spec.ts', 'e2e/font-scale.spec.ts', 'e2e/browser-cursor.spec.ts', 'e2e/session-running-indicator.spec.ts']
+  if (mode === 'isolated') {
+    const specs = readdirSync(join(root, 'e2e')).filter(name => name.endsWith('.spec.ts') && name !== 'session.spec.ts').sort().map(name => `e2e/${name}`)
+    return ['exec', 'playwright', 'test', ...specs]
+  }
   if (mode === 'session') return ['exec', 'playwright', 'test', 'e2e/session.spec.ts']
   if (mode === 'all') return ['exec', 'playwright', 'test']
   throw new Error(`Invalid --mode: ${mode}`)

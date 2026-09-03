@@ -2,6 +2,7 @@ import type { ProviderConfig } from './types'
 
 export const DEFAULT_CONTEXT_WINDOW = 256000
 export const CONTEXT_COMPRESSION_THRESHOLD = 0.86
+export const CONTEXT_COMPRESSION_TARGET = 0.62
 export const CONTEXT_OUTPUT_RESERVE_TOKENS = 8192
 export const MAX_TOOL_RESULT_CONTEXT_TOKENS = 8000
 
@@ -21,8 +22,10 @@ export interface ContextUsage {
 export interface ContextManagementOptions {
   contextWindow?: number
   threshold?: number
+  targetRatio?: number
   reserveTokens?: number
   tools?: Array<Record<string, unknown>>
+  onCompactionStart?: (usage: ContextUsage) => void
 }
 
 export interface ContextManagementResult {
@@ -328,25 +331,28 @@ function stripLeadingOrphanToolMessages(messages: Array<Record<string, unknown>>
 
 function targetBudget(contextWindow: number, threshold: number, reserveTokens: number): number {
   const safeWindow = Number.isFinite(contextWindow) && contextWindow > 0 ? contextWindow : DEFAULT_CONTEXT_WINDOW
-  return Math.max(1024, Math.floor(safeWindow * threshold) - reserveTokens)
+  return Math.max(128, Math.floor(safeWindow * threshold) - reserveTokens)
 }
 
 export function manageContextMessages(input: Array<Record<string, unknown>>, options: ContextManagementOptions = {}): ContextManagementResult {
   const repairedInput = repairToolCallHistory(input)
   const threshold = options.threshold ?? CONTEXT_COMPRESSION_THRESHOLD
+  const targetRatio = Math.min(threshold, options.targetRatio ?? CONTEXT_COMPRESSION_TARGET)
   const reserveTokens = options.reserveTokens ?? CONTEXT_OUTPUT_RESERVE_TOKENS
-  const budget = targetBudget(options.contextWindow ?? DEFAULT_CONTEXT_WINDOW, threshold, reserveTokens)
+  const triggerBudget = targetBudget(options.contextWindow ?? DEFAULT_CONTEXT_WINDOW, threshold, reserveTokens)
   const before = estimateContextUsage(repairedInput, '', options.tools)
-  if (before.used <= budget) {
+  if (before.used <= triggerBudget) {
     return { messages: repairedInput, before, after: before, compressed: false }
   }
+
+  const budget = targetBudget(options.contextWindow ?? DEFAULT_CONTEXT_WINDOW, targetRatio, reserveTokens)
 
   const systemMessages = repairedInput.filter(message => roleOf(message) === 'system' && !isCompressionSummary(message)).map(message => ({ ...message }))
   const conversationMessages = repairedInput.filter(message => roleOf(message) !== 'system' || isCompressionSummary(message))
   const systemTokens = systemMessages.reduce((sum, message) => sum + messageTokens(message), 0)
   const toolSchemaTokens = estimateToolDefinitionsTokens(options.tools)
-  const summaryAllowance = Math.min(4096, Math.max(512, Math.floor(budget * 0.12)))
-  const recentBudget = Math.max(256, budget - systemTokens - toolSchemaTokens - summaryAllowance)
+  const summaryAllowance = Math.min(4096, Math.max(256, Math.floor(budget * 0.12)), Math.max(64, Math.floor(budget * 0.55)))
+  const recentBudget = Math.max(128, budget - systemTokens - toolSchemaTokens - summaryAllowance)
   const recent: Array<Record<string, unknown>> = []
   let recentTokens = 0
 
@@ -365,6 +371,7 @@ export function manageContextMessages(input: Array<Record<string, unknown>>, opt
     return { messages, before, after: estimateContextUsage(messages, '', options.tools), compressed: false }
   }
 
+  options.onCompactionStart?.(before)
   const older = conversationMessages.slice(0, olderCount)
   const summary = buildCompressionSummary(older, older.reduce((sum, message) => sum + messageTokens(message), 0), summaryAllowance)
   let messages = [...systemMessages, summary, ...cleanedRecent]

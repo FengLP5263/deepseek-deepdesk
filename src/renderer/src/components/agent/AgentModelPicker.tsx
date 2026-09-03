@@ -26,7 +26,7 @@ function matchesModel(provider: ProviderConfig, model: ModelConfig, terms: strin
 
 function ModelIcon({ provider, model, compact = false }: { provider: ProviderConfig; model: ModelConfig; compact?: boolean }) {
   if (matchesModel(provider, model, ['deepseek'])) {
-    const size = compact ? 15 : 18
+    const size = compact ? 18 : 20
     return <DeepSeekLogo className='model-logo' width={size} height={size} aria-hidden />
   }
   if (matchesModel(provider, model, ['智谱', 'zhipu', 'bigmodel', 'glm'])) {

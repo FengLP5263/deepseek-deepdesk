@@ -33,3 +33,15 @@ test('shows context compaction as a compact non-message notice', async ({ browse
   await expect(panel.locator('.ctx-bar-segment[data-tone="output-reserve"]')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('context-compaction.png') })
 })
+
+test('uses the thinking shimmer while context compaction is in progress', async ({ browserName: _browserName }, testInfo) => {
+  ctx = await launchDeepDesk(createContextBreakdownUserData(true))
+  const page = ctx.page
+  await page.locator('.conv-item', { hasText: '上下文组成视觉回归' }).click()
+
+  const notice = page.locator('.agent-context-compaction')
+  await expect(notice).toContainText('正在整理上下文')
+  await expect(notice).toHaveClass(/is-streaming/)
+  expect(await notice.locator('.thinking-status').evaluate(element => getComputedStyle(element).animationName)).toBe('thinkingShimmer')
+  await page.screenshot({ path: testInfo.outputPath('context-compacting.png') })
+})

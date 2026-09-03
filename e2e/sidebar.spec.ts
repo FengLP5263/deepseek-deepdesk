@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { DeepDeskE2EApp } from './helpers'
-import { closeDeepDesk, launchDeepDesk } from './helpers'
+import { closeDeepDesk, createContextBreakdownUserData, launchDeepDesk } from './helpers'
 
 let ctx: DeepDeskE2EApp | null = null
 
@@ -37,4 +37,28 @@ test('supports sidebar collapse, expand, and new task action', async () => {
   await expect(page.locator('.sidebar:not(.collapsed)')).toBeVisible()
   await expect(page.locator('.brand', { hasText: 'DeepDesk' })).toBeVisible()
   await expect(page.locator('.brand-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
+})
+
+test('keeps the delete confirmation aligned at maximum interface scale', async ({ browserName: _browserName }, testInfo) => {
+  ctx = await launchDeepDesk(createContextBreakdownUserData())
+  const page = ctx.page
+  await expect(page.locator('html')).toHaveAttribute('data-font-scale', '100')
+  await page.mouse.move(500, 300)
+  await page.keyboard.down('Control')
+  for (let step = 0; step < 5; step += 1) await page.mouse.wheel(0, -100)
+  await page.keyboard.up('Control')
+  await expect(page.locator('html')).toHaveAttribute('data-font-scale', '150')
+
+  await page.getByRole('button', { name: '会话操作：上下文组成视觉回归' }).click()
+  await page.getByRole('menuitem', { name: '删除会话' }).click()
+  const menu = page.getByRole('menu', { name: '会话操作' })
+  await expect(menu.getByText('删除这个会话？')).toBeVisible()
+  await expect(menu.getByRole('button', { name: '确认删除' })).toHaveCSS('white-space', 'nowrap')
+  const geometry = await menu.evaluate(element => {
+    const sidebar = document.querySelector('.sidebar')!.getBoundingClientRect()
+    const rect = element.getBoundingClientRect()
+    return { insideSidebar: rect.left >= sidebar.left && rect.right <= sidebar.right, overflowFree: element.scrollWidth <= element.clientWidth + 1 }
+  })
+  expect(geometry).toEqual({ insideSidebar: true, overflowFree: true })
+  await page.screenshot({ path: testInfo.outputPath('delete-confirmation-150.png') })
 })

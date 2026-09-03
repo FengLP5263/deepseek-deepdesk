@@ -81,6 +81,39 @@ test('shows configured models from every provider and switches the active provid
   await expect(ctx.page.getByRole('switch', { name: 'Max 模式' })).toHaveAttribute('aria-checked', 'true')
 })
 
+test('keeps model brand icons legible and balanced in dark mode', async ({ browserName: _browserName }, testInfo) => {
+  await closeDeepDesk(ctx)
+  ctx = await launchDeepDesk(createMultiProviderUserData(server!.baseUrl, 'dark'))
+  const page = ctx.page
+  const modelButton = page.getByTitle('选择模型')
+  await modelButton.click()
+  const deepSeekMenuIcon = page.getByRole('menuitemradio', { name: 'DeepSeek V4 Flash' }).locator('.model-logo')
+  await expect(deepSeekMenuIcon).toBeVisible()
+  await expect(deepSeekMenuIcon).toHaveAttribute('width', '20')
+  await expect(deepSeekMenuIcon).toHaveAttribute('height', '20')
+  const glmOption = page.getByRole('menuitemradio', { name: 'GLM 5.3 Flash' })
+  const menuIcon = glmOption.locator('.model-logo-img')
+  const menuIconStyle = await menuIcon.evaluate(element => ({
+    width: getComputedStyle(element).width,
+    height: getComputedStyle(element).height,
+    filter: getComputedStyle(element).filter
+  }))
+  expect(menuIconStyle).toMatchObject({ width: '20px', height: '20px' })
+  expect(menuIconStyle.filter).toContain('invert(1)')
+
+  await glmOption.click()
+  const triggerIcon = modelButton.locator('.model-logo-img')
+  await expect(triggerIcon).toBeVisible()
+  const triggerIconStyle = await triggerIcon.evaluate(element => ({
+    width: getComputedStyle(element).width,
+    height: getComputedStyle(element).height,
+    filter: getComputedStyle(element).filter
+  }))
+  expect(triggerIconStyle).toMatchObject({ width: '18px', height: '18px' })
+  expect(triggerIconStyle.filter).toContain('invert(1)')
+  await page.screenshot({ path: testInfo.outputPath('zhipu-dark-model-icon.png') })
+})
+
 test('switches to persistent read-only plan mode and only exposes safe tools', async () => {
   const page = ctx!.page
   const modeButton = page.getByTitle('选择工作模式')

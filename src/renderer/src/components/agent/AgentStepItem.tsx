@@ -153,7 +153,7 @@ export default function AgentStepItem({ step, index, isLastMessage }: { step: Ag
   switch (step.kind) {
     case 'task': return <TaskStep step={step} index={index} isLastMessage={isLastMessage} />
     case 'thinking': return <ThinkingBlock text={step.text ?? ''} streaming={step.status === 'running'} />
-    case 'context': return <ContextCompactionNotice beforeTokens={step.beforeTokens} afterTokens={step.afterTokens} />
+    case 'context': return <ContextCompactionNotice beforeTokens={step.beforeTokens} afterTokens={step.afterTokens} status={step.status} startedAt={step.startedAt} />
     case 'text': return <TextStep step={step} index={index} isLastMessage={isLastMessage} />
     case 'tool': return <ToolCard step={step} />
     case 'error': return <ErrorStep step={step} index={index} />

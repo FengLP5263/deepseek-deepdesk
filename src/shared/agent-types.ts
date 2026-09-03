@@ -31,6 +31,10 @@ export interface McpInstallApproval {
   candidateId: string
   name: string
   source: string
+  transport?: 'http' | 'stdio'
+  command?: string
+  args?: string[]
+  cwd?: string
   serverVersion?: string
   toolNames: string[]
 }
@@ -78,7 +82,7 @@ export interface AgentToolResult {
   summary: string
 }
 
-export type AgentEventType = 'thinking' | 'text' | 'context_usage' | 'context_compacted' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
+export type AgentEventType = 'thinking' | 'text' | 'context_usage' | 'context_compacting' | 'context_compacted' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
 
 export interface AgentEvent {
   runId: string
@@ -119,6 +123,7 @@ export interface AgentStep {
   sourceConnectorId?: 'lark' | 'wechat'
   beforeTokens?: number
   afterTokens?: number
+  startedAt?: number
 }
 
 export interface AgentSession {

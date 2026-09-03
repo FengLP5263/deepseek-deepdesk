@@ -2,9 +2,8 @@ import { create } from 'zustand'
 import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, AgentStep, McpInstallApproval } from '@shared/agent-types'
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
-import { appendAgentStep, finishAgentThinking } from '../lib/agent-steps'
+import { appendAgentStep, completeContextCompaction, finishAgentThinking } from '../lib/agent-steps'
 import { applyAgentStreamChunks, bufferAgentStreamChunk, createAgentStreamBuffer, drainAgentStreamBuffer, type AgentStreamBufferState } from '../lib/agent-stream-buffer'
-
 interface PendingApprovalState {
   callId: string
   command: string
@@ -528,9 +527,10 @@ export const useAgentStore = create<AgentState>()((set, get) => {
         scheduleStreamFlush(ev.runId)
         break
       }
+      case 'context_compacting':
+        append(ctx, { kind: 'context', status: 'running', startedAt: Date.now() }); break
       case 'context_compacted':
-        append(ctx, { kind: 'context', beforeTokens: ev.beforeTokens, afterTokens: ev.afterTokens })
-        break
+        ctx.steps = completeContextCompaction(ctx.steps, ev.beforeTokens, ev.afterTokens); commitContext(ctx); break
       case 'context_usage':
         ctx.contextUsage = ev.contextUsage
         commitContext(ctx)

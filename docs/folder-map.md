@@ -37,7 +37,7 @@
 | 修改平台行为 | `src/main/platform`、`src/renderer`、`tests`、`e2e` | Main、Renderer、Tests、E2E 局部说明 |
 | 调整聊天 UI | `src/renderer`、`tests` | `src/renderer/AGENTS.md`、`tests/AGENTS.md` |
 | 改 LLM 协议 | `src/shared/llm`、`tests` | `src/shared/AGENTS.md`、`tests/AGENTS.md` |
-| 改 MCP Host 或外部工具 | `src/shared`、`src/main/mcp.ts`、`src/renderer`、`tests` | Shared、Main、Renderer、Tests 局部说明 |
+| 改 MCP Host 或外部工具 | `src/shared`、`src/main/mcp.ts`、`src/main/mcp-install.ts`、`src/renderer`、`tests` | Shared、Main、Renderer、Tests 局部说明 |
 | 改构建/发布流程 | `scripts`、`docs`、`.agents` | 三个局部 `AGENTS.md` |
 | 改 CI/Release | `.github`、`scripts`、`docs` | 对应局部 `AGENTS.md` |
 | 改分支与发布协作流程 | `AGENTS.md`、`CONTRIBUTING.md`、`docs/git-flow.md`、`.github` | 根规则、Docs 与 GitHub 局部说明 |

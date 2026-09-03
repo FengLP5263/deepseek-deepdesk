@@ -95,4 +95,4 @@ DeepDesk 还没有发布第一个稳定对外版本，因此当前使用 `0.x.y`
 ## 当前缺口
 
 - Electron smoke 只验证应用能够启动和加载 renderer，不能替代 E2E。
-- 已接入 Playwright Electron isolated/session 两种 E2E；isolated 清单按主应用、侧边栏、模型选择、记忆、字体缩放、浏览器指针与后台会话状态拆分，新增领域用例需同步加入统一入口。
+- 已接入 Playwright Electron isolated/session 两种 E2E；isolated 入口会自动发现除单窗口 `session.spec.ts` 外的全部领域 spec，避免新增回归测试遗漏出统一门禁。

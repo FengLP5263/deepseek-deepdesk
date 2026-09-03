@@ -267,7 +267,7 @@ export function createMemoryUserData(baseUrl: string): string {
   return userDataDir
 }
 
-export function createMultiProviderUserData(baseUrl: string): string {
+export function createMultiProviderUserData(baseUrl: string, theme: 'light' | 'dark' = 'light'): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
     settings: {
@@ -275,7 +275,7 @@ export function createMultiProviderUserData(baseUrl: string): string {
       defaultProviderId: 'mock-local',
       defaultModelId: 'mock-chat',
       temperature: 1,
-      theme: 'light',
+      theme,
       appFont: 'default',
       enterToSend: true,
       agentWorkdir: '',
@@ -299,6 +299,15 @@ export function createMultiProviderUserData(baseUrl: string): string {
         apiKey: 'sk-zhipu',
         models: [{ id: 'glm-5.3-flash', name: 'GLM 5.3 Flash' }],
         createdAt: 2
+      },
+      {
+        id: 'deepseek-local',
+        name: 'DeepSeek',
+        type: 'openai',
+        baseUrl,
+        apiKey: 'sk-deepseek',
+        models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }],
+        createdAt: 3
       }
     ],
     conversations: [],
@@ -344,7 +353,7 @@ export function createLongAgentSessionUserData(): string {
   return userDataDir
 }
 
-export function createMessageActionsUserData(): string {
+export function createMessageActionsUserData(theme: 'light' | 'dark' = 'light'): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
     settings: {
@@ -352,7 +361,7 @@ export function createMessageActionsUserData(): string {
       defaultProviderId: 'deepseek',
       defaultModelId: 'deepseek-v4-flash',
       temperature: 1,
-      theme: 'light',
+      theme,
       appFont: 'default',
       enterToSend: true,
       agentWorkdir: '',
@@ -379,7 +388,7 @@ export function createMessageActionsUserData(): string {
   return userDataDir
 }
 
-export function createContextBreakdownUserData(): string {
+export function createContextBreakdownUserData(compacting = false): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
     settings: {
@@ -405,7 +414,7 @@ export function createContextBreakdownUserData(): string {
       contextUsage: { used: 6500, parts: [{ label: '系统指令 / 记忆', tokens: 1200, tone: 'system' }, { label: '用户消息', tokens: 800, tone: 'user' }, { label: 'AI 回复', tokens: 1800, tone: 'assistant' }, { label: '工具调用参数', tokens: 300, tone: 'tool-call' }, { label: '工具返回结果', tokens: 900, tone: 'tool-result' }, { label: '工具定义', tokens: 1500, tone: 'tool-schema' }] },
       steps: [
         { kind: 'task', text: '解释上下文组成' },
-        { kind: 'context', beforeTokens: 146000, afterTokens: 82000 },
+        { kind: 'context', beforeTokens: 146000, afterTokens: 82000, ...(compacting ? { status: 'running', startedAt: Date.now() } : {}) },
         { kind: 'tool', callId: 'call-1', name: 'read_file', args: JSON.stringify({ path: 'src/main/store.ts' }), status: 'ok', result: 'store.ts 中包含持久化逻辑。' },
         { kind: 'text', text: '上下文由系统指令、用户消息、AI 回复和工具信息共同组成。' }
       ],

@@ -75,6 +75,35 @@ describe('McpManager', () => {
     expect(factory).not.toHaveBeenCalled()
   })
 
+  it('会话可准备 stdio MCP，确认安装前不启动进程，确认后由客户端保存并连接', async () => {
+    const close = vi.fn(async () => undefined)
+    const factory: McpConnectionFactory = vi.fn(async () => ({
+      listTools: async () => [{ name: 'browser_open', inputSchema: { type: 'object' } }],
+      callTool: async () => ({}),
+      serverInfo: () => ({ name: 'Playwright MCP', version: '0.1.0' }),
+      close
+    }))
+    const manager = new McpManager(store, factory)
+
+    const command = 'C:\\Program Files\\nodejs\\node.exe'
+    const inspected = manager.inspectStdioSource({ name: 'Playwright MCP', command, args: ['-y', '@playwright/mcp@latest'] }, 'run-stdio')
+
+    expect(inspected.ok).toBe(true)
+    expect(factory).not.toHaveBeenCalled()
+    expect(store.getSnapshot().mcpServers).toEqual([])
+    const payload = JSON.parse(inspected.content) as { candidate_id: string; command: string; args: string[] }
+    expect(payload).toEqual(expect.objectContaining({ command, args: ['-y', '@playwright/mcp@latest'] }))
+    expect(manager.getInstallCandidate(payload.candidate_id, 'run-stdio')).toEqual(expect.objectContaining({
+      name: 'Playwright MCP', transport: 'stdio', source: '"C:\\Program Files\\nodejs\\node.exe" -y @playwright/mcp@latest', command, args: ['-y', '@playwright/mcp@latest']
+    }))
+
+    const installed = await manager.installCandidate(payload.candidate_id, 'run-stdio')
+
+    expect(installed).toEqual(expect.objectContaining({ ok: true, summary: '已安装并连接 Playwright MCP' }))
+    expect(factory).toHaveBeenCalledWith(expect.objectContaining({ transport: 'stdio', command, args: ['-y', '@playwright/mcp@latest'], enabled: true }))
+    expect(store.getSnapshot().mcpServers).toEqual([expect.objectContaining({ name: 'Playwright MCP', transport: 'stdio', enabled: true })])
+  })
+
   it('连接后发现工具、生成稳定工具名并把调用路由回原始 MCP 工具', async () => {
     const callTool = vi.fn(async () => ({ content: [{ type: 'text', text: '读取成功' }] }))
     const close = vi.fn(async () => undefined)

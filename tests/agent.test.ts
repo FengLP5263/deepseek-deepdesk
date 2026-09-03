@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   requests: [] as Array<{ messages: Array<Record<string, unknown>>; tools: Array<Record<string, unknown>> }>,
   mcpTools: [] as Array<{ name: string; definition: Record<string, unknown>; serverId: string; serverName: string; toolName: string; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } }>,
   mcpExecutions: [] as Array<{ name: string; args: Record<string, unknown> }>,
-  mcpInspections: [] as Array<{ source: string; runId: string }>,
+  mcpInspections: [] as Array<{ input: Record<string, unknown>; runId: string }>,
   mcpInstalls: [] as Array<{ candidateId: string; runId: string }>,
   mcpResult: 'MCP 执行结果',
   mcpDelayMs: 0,
@@ -54,8 +54,8 @@ vi.mock('../src/main/mcp', () => ({
     mocks.mcpActive -= 1
     return { ok: true, content: mocks.mcpResult, summary: 'MCP 执行完成' }
   },
-  inspectMcpServer: async (source: string, runId: string) => {
-    mocks.mcpInspections.push({ source, runId })
+  inspectMcpServer: async (input: Record<string, unknown>, runId: string) => {
+    mocks.mcpInspections.push({ input, runId })
     return { ok: true, content: JSON.stringify({ candidate_id: 'candidate-1' }), summary: 'MCP 检查完成' }
   },
   getMcpInstallCandidate: (candidateId: string, runId: string) => candidateId === mocks.mcpCandidate?.candidateId && runId.startsWith('r-') ? mocks.mcpCandidate : undefined,
@@ -240,8 +240,8 @@ describe('startAgent', () => {
       ]
     }, smallProvider, baseSettings)
     await runUntilDone(events)
-
     const sent = mocks.requests[0].messages
+    expect(events.findIndex(event => event.type === 'context_compacting')).toBeLessThan(events.findIndex(event => event.type === 'context_compacted'))
     expect(events.find(event => event.type === 'context_compacted')).toEqual(expect.objectContaining({ beforeTokens: expect.any(Number), afterTokens: expect.any(Number) }))
     expect(events.find(event => event.type === 'context_usage')?.contextUsage?.parts).toContainEqual(expect.objectContaining({ tone: 'tool-schema', tokens: expect.any(Number) }))
     expect(sent.some(message => String(message.content).includes('[上下文压缩摘要]'))).toBe(true)
@@ -513,7 +513,7 @@ describe('startAgent', () => {
     startAgent(win as never, { runId: 'r-mcp-install', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '安装这个 MCP', temperature: 1 }, provider, fullSettings)
     const approval = await waitForApproval(events)
 
-    expect(mocks.mcpInspections).toEqual([{ source: 'https://mcp.example.com/mcp', runId: 'r-mcp-install' }])
+    expect(mocks.mcpInspections).toEqual([{ input: { source: 'https://mcp.example.com/mcp' }, runId: 'r-mcp-install' }])
     expect(approval).toEqual(expect.objectContaining({
       callId: 'install-1',
       reason: '安装 MCP 服务',

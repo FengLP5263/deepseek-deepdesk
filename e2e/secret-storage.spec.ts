@@ -25,4 +25,5 @@ test('protects persisted provider keys with Windows safeStorage', async () => {
   expect(persisted).toContain('deepdesk:encrypted:v1:')
   expect(persisted).not.toContain('sk-mock')
   expect(persisted).not.toContain('sk-zhipu')
+  expect(persisted).not.toContain('sk-deepseek')
 })

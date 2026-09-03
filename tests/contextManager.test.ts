@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compactToolResultForContext, estimateContextUsage, estimateTextTokens, estimateToolDefinitionsTokens, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../src/shared/context-manager'
+import { compactToolResultForContext, CONTEXT_COMPRESSION_TARGET, estimateContextUsage, estimateTextTokens, estimateToolDefinitionsTokens, getModelContextWindow, manageContextMessages, repairToolCallHistory, toolResultContextTokenBudget } from '../src/shared/context-manager'
 import type { ProviderConfig } from '../src/shared/types'
 
 describe('context-manager', () => {
@@ -88,6 +88,17 @@ describe('context-manager', () => {
     expect(result.messages.some(message => String(message.content).includes('[上下文压缩摘要]'))).toBe(true)
     expect(result.messages.at(-1)).toEqual({ role: 'user', content: '最新问题必须保留' })
     expect(result.after.used).toBeLessThan(result.before.used)
+    expect(result.after.used).toBeLessThanOrEqual(Math.floor(900 * CONTEXT_COMPRESSION_TARGET))
+  })
+
+  it('触发整理时通知调用方并为后续对话留出明显余量', () => {
+    let notifications = 0
+    const messages = Array.from({ length: 20 }, (_, index) => ({ role: index % 2 === 0 ? 'user' : 'assistant', content: `历史消息 ${index} ${'上下文'.repeat(120)}` }))
+    const result = manageContextMessages(messages, { contextWindow: 4000, reserveTokens: 200, onCompactionStart: () => { notifications += 1 } })
+
+    expect(notifications).toBe(1)
+    expect(result.compressed).toBe(true)
+    expect(result.after.used).toBeLessThanOrEqual(Math.floor(4000 * CONTEXT_COMPRESSION_TARGET) - 200)
   })
 
   it('压缩预算会扣除工具定义而不是只计算消息正文', () => {

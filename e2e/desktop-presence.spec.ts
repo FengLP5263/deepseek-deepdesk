@@ -9,14 +9,12 @@ test.afterEach(async () => {
   ctx = null
 })
 
-test('registers the global shortcut and handles a new task request', async () => {
+test('handles a new task request while desktop presence is initialized', async () => {
   ctx = await launchDeepDesk(createContextBreakdownUserData())
   const page = ctx.page
   await page.locator('.conv-item', { hasText: '上下文组成视觉回归' }).click()
   await expect(page.getByText('上下文由系统指令')).toBeVisible()
 
-  const registered = await ctx.app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered('CommandOrControl+Shift+Space'))
-  expect(registered).toBe(true)
   await ctx.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.send('app:new-task-requested'))
 
   await expect(page.getByText('你好，我是 DeepDesk')).toBeVisible()

@@ -30,3 +30,11 @@ export function finishAgentThinking(steps: AgentStep[]): AgentStep[] {
   else next[next.length - 1] = { ...last, status: 'ok' }
   return next
 }
+
+export function completeContextCompaction(steps: AgentStep[], beforeTokens?: number, afterTokens?: number): AgentStep[] {
+  const index = steps.findLastIndex(step => step.kind === 'context' && step.status === 'running')
+  if (index < 0) return appendAgentStep(steps, { kind: 'context', beforeTokens, afterTokens, status: 'ok', startedAt: Date.now() })
+  const next = [...steps]
+  next[index] = { ...next[index], beforeTokens, afterTokens, status: 'ok' }
+  return next
+}

@@ -47,11 +47,13 @@
 .model-menu-option.auto { margin-top: 6px; color: var(--text); }
 .model-option-main { display: inline-flex; align-items: center; min-width: 0; gap: 10px; }
 .model-logo { flex: none; color: currentColor; }
-.model-logo-img { width: 18px; height: 18px; object-fit: contain; }
-.model-logo-img.compact { width: 15px; height: 15px; }
+.model-logo-img { width: 20px; height: 20px; object-fit: contain; filter: brightness(0) invert(1); }
+.model-logo-img.compact { width: 18px; height: 18px; }
+.model-logo-img { transition: filter 120ms ease; }
+[data-theme='light'] .model-logo-img { filter: none; }
 .model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: var(--text); color: var(--bg-elevated); font-size: 11px; font-weight: 750; line-height: 1; flex: none; }
-.model-mark.compact { width: 15px; height: 15px; border-radius: 5px; font-size: 9px; }
+.model-mark { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--text); color: var(--bg-elevated); font-size: 11px; font-weight: 750; line-height: 1; flex: none; }
+.model-mark.compact { width: 18px; height: 18px; border-radius: 5px; font-size: 10px; }
 .model-check { margin-left: auto; color: var(--text); flex: none; display: inline-flex; align-items: center; }
 .model-menu-config { display: inline-flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; margin-top: 6px; padding: 6px 7px; border: none; border-radius: 7px; background: transparent; color: var(--text); font-size: var(--fs-sm); font-weight: 550; cursor: pointer; text-align: left; }
 .model-menu-config:hover { background: var(--bg-hover); }
@@ -118,7 +120,7 @@
 .agent-tool-chev { color: var(--text-muted); }
 .agent-tool-result { margin: 0; padding: 10px 12px; background: var(--code-bg); border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.55; white-space: pre-wrap; word-break: break-all; max-height: 360px; overflow-y: auto; color: var(--text-secondary); user-select: text; }
 
-.agent-approval { box-sizing: border-box; width: min(820px, calc(100% - 48px)); margin: 0 auto 10px; padding: 12px 14px; border-radius: 14px; background: var(--bg-elevated); border: 1px solid rgba(212, 175, 106, 0.42); box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08); }
+.agent-approval { box-sizing: border-box; width: min(820px, calc(100% - 48px)); margin: 0 auto 10px; padding: 12px 14px; border-radius: 14px; background: var(--bg-elevated); border: 1px solid rgba(212, 175, 106, 0.42); box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08); }
 .agent-approval-title { font-size: var(--fs-sm); font-weight: 650; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
 .agent-approval-cmd { margin: 0 0 6px; padding: 8px 10px; background: var(--code-bg); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); white-space: pre-wrap; word-break: break-all; user-select: text; }
 .agent-approval-cwd { font-size: var(--fs-2xs); color: var(--text-muted); margin-bottom: 10px; }
@@ -135,7 +137,7 @@
 
 .agent-queue { box-sizing: border-box; width: min(820px, calc(100% - 48px)); margin: 0 auto 6px; }
 .agent-queue-list { display: flex; flex-direction: column; gap: 6px; }
-.agent-queue-item { display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 8px 9px 8px 13px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-hover)); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); }
+.agent-queue-item { display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 8px 9px 8px 13px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-hover)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
 .agent-queue-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
 .agent-queue-label { color: var(--text-muted); font-size: var(--fs-2xs); line-height: 16px; }
 .agent-queue-text { min-width: 0; overflow: hidden; color: var(--text); font-size: var(--fs-sm); line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }

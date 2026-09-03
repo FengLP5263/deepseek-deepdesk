@@ -58,7 +58,7 @@ pnpm flow -- e2e --mode all      # 全量模式
 - 使用持久化的本地长会话夹具，验证“回到底部”按钮出现时位于输入区上方，且点击后能回到最新消息。
 - 使用 180 条步骤的长会话夹具，验证首屏仅挂载最近 60 条、更早内容按批加载并保持阅读位置。
 
-`e2e/app.spec.ts` 与 `e2e/sidebar.spec.ts` 等领域 spec 是隔离模式用例；`e2e/session.spec.ts` 是单窗口会话验收用例。新增领域交互应使用独立 spec，并加入 `scripts/flow.mjs` 的 isolated 清单，避免继续扩张综合用例文件。
+`e2e/app.spec.ts` 与 `e2e/sidebar.spec.ts` 等领域 spec 是隔离模式用例；`e2e/session.spec.ts` 是单窗口会话验收用例。isolated 入口会自动发现除 `session.spec.ts` 外的全部领域 spec；新增领域交互应使用独立 spec，避免继续扩张综合用例文件。
 
 ## 拖拽测试边界
 

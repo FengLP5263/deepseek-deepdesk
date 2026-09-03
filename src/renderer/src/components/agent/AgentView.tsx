@@ -321,7 +321,10 @@ export default function AgentView({ onOpenSettings }: { onOpenSettings: () => vo
                     {pendingApproval.mcpInstall.serverVersion && <span className='mcp-install-version'>v{pendingApproval.mcpInstall.serverVersion}</span>}
                   </div>
                   <div className='mcp-install-source' title={pendingApproval.mcpInstall.source}>{pendingApproval.mcpInstall.source}</div>
-                  <div className='mcp-install-copy'>安装后，DeepDesk 将连接该服务，并向 Agent 提供 {pendingApproval.mcpInstall.toolNames.length} 个工具。</div>
+                  <div className='mcp-install-copy'>{pendingApproval.mcpInstall.transport === 'stdio'
+                    ? '批准后，DeepDesk 将启动并验证这个本地 MCP 进程，连接成功后自动读取可用工具。'
+                    : `安装后，DeepDesk 将连接该服务，并向 Agent 提供 ${pendingApproval.mcpInstall.toolNames.length} 个工具。`}</div>
+                  {pendingApproval.mcpInstall.cwd && <div className='agent-approval-cwd'>工作目录：{pendingApproval.mcpInstall.cwd}</div>}
                   {pendingApproval.mcpInstall.toolNames.length > 0 && (
                     <div className='mcp-install-tools' aria-label='MCP 工具清单'>
                       {pendingApproval.mcpInstall.toolNames.slice(0, 6).map(name => <span className='mcp-install-tool' key={name}>{name}</span>)}
