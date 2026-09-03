@@ -82,7 +82,8 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 - `main` 与 `develop` 是两个常驻分支。`main` 只保存已发布或可立即发布的稳定版本，`develop` 用于日常开发集成。
 - 开始普通开发前必须确认当前位于 `develop`，或从 `develop` 创建的短期分支；除明确执行发布流程外，禁止在 `main` 上修改或提交代码。
 - 功能、修复和普通工程改动以 `develop` 为 PR 目标；只有发布 PR 才允许从 `develop` 合入 `main`。
-- 发布前在 `develop` 完成版本更新和完整门禁；合入 `main` 后创建与 `package.json` 一致的 `vX.Y.Z` 注解标签，并将 `main` 与标签同步到 Gitee、GitHub。
+- 发布前在 `develop` 完成版本更新和完整门禁；发布 PR 使用 Squash Merge 合入 `main`，随后立即将新的 `main` 普通合并回 `develop`，并将两个常驻分支同步到 Gitee、GitHub。
+- 只有正式发布时才在 `main` 的发布提交上创建与 `package.json` 一致的 `vX.Y.Z` 注解标签并同步到两个远端；仅同步发布候选分支时不提前打标签。
 - 详细流程见 `docs/git-flow.md`。分支、合并或发布规则变化时，同步更新 `CONTRIBUTING.md`、`docs/ci.md`、`docs/release.md` 和项目工程化 Skill。
 
 ## 文档同步

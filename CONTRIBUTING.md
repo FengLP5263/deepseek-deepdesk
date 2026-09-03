@@ -117,7 +117,7 @@ PR 描述需要包含：
 - 安全、权限、持久化、Agent 工具、发版流程改动需要更严格审查。
 - README、架构说明和专项文档与实际实现保持一致。
 
-普通功能 PR 合入 `develop` 时建议使用 Squash Merge，保持开发历史清晰。`develop` → `main` 的发布 PR 不能 Squash，应使用 Merge Commit 或 Fast-forward，避免两个常驻分支失去共同祖先关系。
+普通功能 PR 合入 `develop` 时建议使用 Squash Merge。`develop` → `main` 的发布 PR 同样使用 Squash Merge，使 `main` 每个版本只保留一个清晰的发布提交；合并后维护者必须立即将新的 `main` 通过普通 Merge Commit 合并回 `develop`，恢复两个常驻分支的共同祖先关系。禁止用 rebase、reset 或 force push 代替回合。
 
 ## 保护分支建议
 

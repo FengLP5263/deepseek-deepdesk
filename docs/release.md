@@ -6,9 +6,9 @@
 
 1. 日常改动先合入 `develop`，并在 `develop` 完成版本号与发布说明更新。
 2. 完整发布门禁通过后，创建 `develop` → `main` 的发布 PR。
-3. 发布 PR 使用 Merge Commit 或 Fast-forward，不使用 Squash Merge。
-4. 在合并后的 `main` 提交上创建与 `package.json` 一致的 `vX.Y.Z` 注解标签。
-5. 将 `main` 与标签同步到 Gitee、GitHub。详细命令见 `docs/git-flow.md`。
+3. 发布 PR 使用 Squash Merge，使 `main` 为本次版本保留一个发布提交。
+4. 合并后立即将新的 `main` 通过普通 Merge Commit 回合到 `develop`，并将两个常驻分支同步到 Gitee、GitHub。
+5. 正式发布时，在 `main` 的发布提交上创建与 `package.json` 一致的 `vX.Y.Z` 注解标签，并将标签同步到两个远端；仅同步发布候选分支时不打标签。详细命令见 `docs/git-flow.md`。
 
 ## 本地发布候选
 
@@ -47,6 +47,7 @@ macOS 包必须在 macOS runner 上打，不能在 Windows 本机生成。
 
 - [ ] `package.json` 版本正确。
 - [ ] 当前发布内容已经从 `develop` 通过发布 PR 合入 `main`。
+- [ ] 发布 PR 已使用 Squash Merge，且新的 `main` 已通过普通 Merge Commit 回合到 `develop`。
 - [ ] `main` 的发布提交已创建与版本号一致的 `vX.Y.Z` 注解标签。
 - [ ] `pnpm flow -- check --include-build --include-smoke --include-e2e` 通过。
 - [ ] Windows：`pnpm flow -- package --target win` 通过。

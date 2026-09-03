@@ -6,8 +6,10 @@
 2. Start ordinary work on `develop` or a short-lived branch created from `develop`; ordinary PRs target `develop`.
 3. Use Squash Merge for ordinary PRs when practical.
 4. Release only through a reviewed `develop` → `main` PR after the complete release gate.
-5. Do not squash a release PR. Tag the resulting `main` commit with the annotated tag `vX.Y.Z`, matching `package.json`, and push `main` plus the tag to both remotes.
-6. See `docs/git-flow.md` for branch protection and exact commands.
+5. Squash Merge the release PR so `main` receives one release commit while `develop` retains its detailed history.
+6. Immediately merge the new `main` commit back into `develop` with a normal merge commit, then push both permanent branches to both remotes. Do not substitute rebase, reset, or force push.
+7. Create and push the annotated `vX.Y.Z` tag from the `main` release commit only when formally publishing that version.
+8. See `docs/git-flow.md` for branch protection and exact commands.
 
 ## Development
 
@@ -45,8 +47,9 @@ Update files in this order:
 2. `pnpm flow -- check --include-build --include-smoke --include-e2e`
 3. Run `pnpm flow -- package --target win` on Windows or `pnpm flow -- package --target mac` on Apple Silicon macOS.
 4. Verify the Windows `.exe` or macOS `.dmg` under `release/`.
-5. Merge a reviewed `develop` → `main` release PR without squashing.
-6. Create and push the annotated `vX.Y.Z` tag from the resulting `main` commit.
+5. Squash Merge a reviewed `develop` → `main` release PR.
+6. Merge the resulting `main` release commit back into `develop` with a normal merge commit and synchronize both branches to both remotes.
+7. For a formal release, create and push the annotated `vX.Y.Z` tag from the `main` release commit.
 
 ## CI and E2E
 

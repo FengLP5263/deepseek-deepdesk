@@ -48,7 +48,7 @@ Common commands:
 - IPC, permission, persistence, or Agent tool change: run `pnpm flow -- check --include-build`.
 - Feature or bugfix change: update SemVer in both `package.json` and `src/shared/app-meta.ts`. Before the first stable public release, keep the major version at `0` (`feat` -> minor, `fix` -> patch, breaking -> minor with explicit release notes). Only the first stable public release may become `1.0.0`.
 - Release candidate: run `pnpm flow -- release --target <platform>`.
-- Git Flow: ordinary changes target `develop`; only a reviewed release PR may merge `develop` into `main`, followed by an annotated `vX.Y.Z` tag matching `package.json`.
+- Git Flow: ordinary changes target `develop`; a reviewed release PR uses Squash Merge from `develop` into `main`, then the new `main` commit must be merged back into `develop` with a normal merge commit and both branches synchronized to both remotes. Create the annotated `vX.Y.Z` tag matching `package.json` only for a formal release.
 - macOS packages must be built on macOS.
 - DeepDesk currently supports Windows x64 and macOS arm64; Linux is out of scope.
 - Playwright Electron E2E is installed; isolated mode automatically discovers every domain spec except `session.spec.ts`, while session mode is reserved for local single-window acceptance.

@@ -53,3 +53,5 @@ pnpm flow -- release --target mac
 - Restrict force pushes；只有维护者在历史清理等明确场景下临时执行。
 
 `main` 还应限制为仅接受来自 `develop` 的发布 PR。详细分支策略见 `docs/git-flow.md`。
+
+发布 PR 在 CI 全绿并通过审核后使用 Squash Merge。GitHub 生成新的 `main` 发布提交后，维护者必须立即将该提交通过普通 Merge Commit 回合到 `develop`，并同步两个远端；不能使用 force push、reset 或 rebase 改写常驻分支来替代回合。

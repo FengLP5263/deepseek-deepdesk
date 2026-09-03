@@ -47,7 +47,8 @@ pnpm flow -- <command> [options]
 - 日常开发、功能集成和修复都进入 `develop`，不在 `main` 上直接开发。
 - 外部贡献与多人协作使用从 `develop` 创建的短期分支，PR 目标为 `develop`。
 - 只有达到发布标准时才创建 `develop` → `main` 的发布 PR。
-- 发布合并后在 `main` 创建 `vX.Y.Z` 注解标签，并同步到 Gitee、GitHub。
+- 发布 PR 使用 Squash Merge；合并后立即将新的 `main` 通过普通 Merge Commit 回合到 `develop`，再将两个常驻分支同步到 Gitee、GitHub。
+- 只有正式发布时才在 `main` 的发布提交上创建 `vX.Y.Z` 注解标签并同步到两个远端。
 - 详细步骤和合并策略见 `docs/git-flow.md`。
 
 ## 版本规则
