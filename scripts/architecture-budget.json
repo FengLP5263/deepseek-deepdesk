@@ -31,7 +31,7 @@
       "reason": "历史功能广场页面集中，后续按连接器、技能和设置卡片拆分"
     },
     "e2e/app.spec.ts": {
-      "maxLines": 963,
+      "maxLines": 932,
       "targetLines": 600,
       "reason": "历史综合验收集，新增领域测试必须使用独立 spec 文件"
     }

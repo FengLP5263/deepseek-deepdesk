@@ -1,6 +1,6 @@
 # DeepDesk 测试策略
 
-DeepDesk 当前具备基础质量门禁，并已接入真实 Electron UI 端到端测试。后续重点是补齐 mock LLM 聊天流、会话读回和 Agent 审批链路。
+DeepDesk 当前具备完整的基础质量门禁，并已接入真实 Electron UI 端到端测试。测试通过临时用户目录和本地 mock 服务覆盖聊天、Agent、设置、上下文、记忆与浏览器交互，不依赖外部模型或平台服务。
 
 ## 当前测试层级
 

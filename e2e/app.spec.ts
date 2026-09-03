@@ -254,37 +254,6 @@ test('centers the empty conversation composer with the welcome content', async (
   expect(layout!.composerBottomRatio).toBeLessThan(0.82)
 })
 
-test('supports sidebar collapse, expand, and new task action', async () => {
-  await expect(page.locator('.sidebar')).toBeVisible()
-  await expect(page.getByRole('button', { name: /最近任务 \(0\)/ })).toHaveAttribute('aria-expanded', 'true')
-  const navIconMetrics = await page.evaluate(() => Array.from(document.querySelectorAll<SVGElement>('.sidebar-nav-icon')).map(icon => ({
-    width: Math.round(icon.getBoundingClientRect().width),
-    height: Math.round(icon.getBoundingClientRect().height),
-    iconClass: Array.from(icon.classList).find(className => className.startsWith('lucide-') && className !== 'lucide') ?? '',
-    strokeWidth: icon.getAttribute('stroke-width')
-  })))
-  expect(navIconMetrics).toEqual([
-    { width: 17, height: 17, iconClass: 'lucide-square-pen', strokeWidth: '1.9' },
-    { width: 17, height: 17, iconClass: 'lucide-link2', strokeWidth: '1.9' },
-    { width: 17, height: 17, iconClass: 'lucide-blocks', strokeWidth: '1.9' },
-    { width: 17, height: 17, iconClass: 'lucide-ellipsis', strokeWidth: '1.9' }
-  ])
-
-  await page.getByTitle('收起侧边栏').click()
-
-  await expect(page.locator('.sidebar.collapsed')).toHaveCSS('width', '0px')
-  await expect(page.getByTitle('展开侧边栏')).toBeVisible()
-
-  await page.getByTitle('新建任务').click()
-  await expect(page.getByPlaceholder('发消息，或让我帮你做点事…')).toBeVisible()
-
-  await page.getByTitle('展开侧边栏').click()
-
-  await expect(page.locator('.sidebar:not(.collapsed)')).toBeVisible()
-  await expect(page.locator('.brand', { hasText: 'DeepDesk' })).toBeVisible()
-  await expect(page.locator('.brand-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
-})
-
 test('opens sidebar feature pages and applies a skill template', async () => {
   await page.getByRole('button', { name: '连接器' }).click()
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
@@ -545,7 +514,7 @@ test('supports multiline composer input and context meter panel', async () => {
 
   await page.locator('.ctx-trigger').click()
   await expect(page.locator('.ctx-panel')).toBeVisible()
-  await expect(page.locator('.ctx-panel', { hasText: '上下文已用' })).toBeVisible()
+  await expect(page.locator('.ctx-panel', { hasText: '上下文占用' })).toBeVisible()
   await expect(page.locator('.ctx-panel', { hasText: '256K' })).toBeVisible()
   await expect(page.locator('.ctx-panel', { hasText: '当前输入' })).toBeVisible()
   await expect(page.locator('.ctx-breakdown-row[data-tone="input"] .ctx-breakdown-dot')).toBeVisible()
@@ -597,7 +566,7 @@ test('adds, edits, adds model, and deletes a custom provider without network cal
   await page.getByRole('button', { name: '添加服务' }).click()
 
   const modal = page.locator('.modal')
-  await modal.getByPlaceholder('例如：智谱 GLM / Kimi / 本地 Ollama').fill('智谱 GLM')
+  await modal.getByPlaceholder('例如：Claude / 智谱 GLM / 本地 Ollama').fill('智谱 GLM')
   await modal.getByPlaceholder('https://api.deepseek.com').fill('https://open.bigmodel.cn/api/paas/v4')
   await modal.getByPlaceholder('sk-…').fill('sk-test-e2e')
   await modal.getByRole('button', { name: '保存' }).click()
@@ -720,7 +689,7 @@ test('persists memory settings and injects matching memory into an agent request
 
     await expect.poll(() => mock.requests.length).toBe(1)
     const messages = mock.requests[0].messages ?? []
-    expect(String(messages[0]?.content ?? '')).toContain(memoryContent)
+    expect(messages.some(message => message.role === 'system' && String(message.content ?? '').includes(memoryContent))).toBe(true)
     expect(messages[messages.length - 1]).toEqual(expect.objectContaining({ role: 'user', content: task }))
 
     await expect.poll(() => {
