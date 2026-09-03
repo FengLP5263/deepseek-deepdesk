@@ -125,7 +125,7 @@ test('runs local acceptance flow in one Electron window', async () => {
       await modal.getByRole('button', { name: '保存' }).click()
       await expect(page.getByText('请填写服务名称')).toBeVisible()
 
-      await modal.getByPlaceholder('例如：智谱 GLM / Kimi / 本地 Ollama').fill('Session Mock')
+      await modal.getByPlaceholder('例如：Claude / 智谱 GLM / 本地 Ollama').fill('Session Mock')
       await modal.getByPlaceholder('https://api.deepseek.com').fill('http://127.0.0.1:11434/v1')
       await modal.getByPlaceholder('sk-…').fill('sk-session')
       await modal.getByRole('button', { name: '保存' }).click()
