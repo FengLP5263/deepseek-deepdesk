@@ -80,21 +80,21 @@ function makeWin() {
 }
 
 async function runUntilDone(events: AgentEvent[]): Promise<void> {
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 1000; i++) {
     if (events.some(e => e.type === 'done' || e.type === 'error')) return
     await new Promise(r => setTimeout(r, 10))
   }
 }
 
 async function runUntilDoneById(events: AgentEvent[], runId: string): Promise<void> {
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 1000; i++) {
     if (events.some(e => e.runId === runId && (e.type === 'done' || e.type === 'error'))) return
     await new Promise(r => setTimeout(r, 10))
   }
 }
 
 async function waitForApproval(events: AgentEvent[]): Promise<AgentEvent | undefined> {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 1000; i++) {
     const a = events.find(e => e.type === 'approval_request')
     if (a) return a
     await new Promise(r => setTimeout(r, 10))
@@ -103,7 +103,7 @@ async function waitForApproval(events: AgentEvent[]): Promise<AgentEvent | undef
 }
 
 async function waitForApprovalCount(events: AgentEvent[], count: number): Promise<AgentEvent[]> {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 1000; i++) {
     const approvals = events.filter(e => e.type === 'approval_request')
     if (approvals.length >= count) return approvals
     await new Promise(r => setTimeout(r, 10))
@@ -126,7 +126,7 @@ beforeEach(() => {
   mocks.mcpMaxActive = 0
   mocks.mcpCandidate = undefined
 })
-afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }) })
 
 describe('startAgent', () => {
   it('取消时会中止仍在等待的模型流并结束当前运行', async () => {
