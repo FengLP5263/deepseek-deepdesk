@@ -1,3 +1,6 @@
+import { DEFAULT_MAX_OUTPUT_TOKENS, IncompleteStreamError } from './stream'
+import { fetchLlmResponse } from './request'
+
 export interface StreamContentChunk {
   type: 'content'
   text: string
@@ -27,6 +30,7 @@ export interface StreamRequest {
   model: string
   messages: Array<{ role: string; content: string }>
   temperature?: number
+  maxTokens?: number
   signal?: AbortSignal
 }
 
@@ -42,7 +46,7 @@ export async function* streamOpenAICompatible(req: StreamRequest): AsyncGenerato
   let base = req.baseUrl.trim()
   while (base.endsWith('/')) base = base.slice(0, -1)
   const url = base + '/chat/completions'
-  const res = await fetch(url, {
+  const res = await fetchLlmResponse(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -52,21 +56,12 @@ export async function* streamOpenAICompatible(req: StreamRequest): AsyncGenerato
       model: req.model,
       messages: req.messages,
       temperature: req.temperature ?? 1,
+      max_tokens: req.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
       stream: true,
       stream_options: { include_usage: true }
     }),
     signal: req.signal
-  })
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.text()).slice(0, 600)
-    } catch {
-      detail = ''
-    }
-    throwIfAborted(req.signal)
-    throw new Error('HTTP ' + res.status + ': ' + (detail || res.statusText))
-  }
+  }, req.signal)
   if (!res.body) throw new Error('响应为空')
   const reader = res.body.getReader()
   const decoder = new TextDecoder('utf-8')
@@ -74,6 +69,7 @@ export async function* streamOpenAICompatible(req: StreamRequest): AsyncGenerato
   let usage: StreamFinalChunk['usage']
   let modelName: string | undefined
   let finishReason: string | undefined
+  let receivedDoneMarker = false
   const abortReader = (): void => { void reader.cancel().catch(() => undefined) }
   req.signal?.addEventListener('abort', abortReader, { once: true })
   try {
@@ -83,14 +79,18 @@ export async function* streamOpenAICompatible(req: StreamRequest): AsyncGenerato
       throwIfAborted(req.signal)
       if (r.done) break
       buffer += decoder.decode(r.value, { stream: true })
-      const parts = buffer.split('\n\n')
+      const parts = buffer.split(/\r?\n\r?\n/)
       buffer = parts.pop() ?? ''
       for (const part of parts) {
-        const lines = part.split('\n')
+        const lines = part.split(/\r?\n/)
         for (const line of lines) {
           if (!line.startsWith('data:')) continue
           const data = line.slice(5).trim()
-          if (data === '' || data === '[DONE]') continue
+          if (data === '') continue
+          if (data === '[DONE]') {
+            receivedDoneMarker = true
+            continue
+          }
           try {
             const json = JSON.parse(data)
             if (json.model && !modelName) modelName = json.model
@@ -118,10 +118,16 @@ export async function* streamOpenAICompatible(req: StreamRequest): AsyncGenerato
         }
       }
     }
+  } catch (error) {
+    throwIfAborted(req.signal)
+    throw new IncompleteStreamError(error instanceof Error && error.message
+      ? '模型流式响应提前中断：' + error.message
+      : undefined)
   } finally {
     req.signal?.removeEventListener('abort', abortReader)
     reader.releaseLock()
   }
   throwIfAborted(req.signal)
+  if (!receivedDoneMarker && !finishReason) throw new IncompleteStreamError()
   yield { type: 'final', usage, model: modelName, finishReason }
 }

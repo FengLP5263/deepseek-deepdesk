@@ -160,7 +160,7 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
     type: 'function',
     function: {
       name: 'browser_click',
-      description: '点击页面中的元素。点击可能提交表单或触发外部操作，需遵守权限审批。',
+      description: '点击页面中的元素。操作前会在用户浏览器中显示 DeepDesk 可视指针；点击可能提交表单或触发外部操作，需遵守权限审批。',
       parameters: {
         type: 'object',
         properties: {
@@ -175,16 +175,46 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
     type: 'function',
     function: {
       name: 'browser_type',
-      description: '在输入框或可编辑元素中输入文本，可选提交表单。',
+      description: '在输入框或可编辑元素中输入文本，但不提交。聚焦输入位置时会显示 DeepDesk 可视指针；如需搜索、发送或提交，输入完成后必须再调用 browser_click 点击 browser_snapshot 返回的可见按钮。',
       parameters: {
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'browser_snapshot 返回的 CSS selector' },
           text: { type: 'string', description: '要输入的文本' },
-          submit: { type: 'boolean', description: '输入后是否提交表单' },
           target_id: { type: 'string', description: '可选，页面 ID' }
         },
         required: ['selector', 'text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_hover',
+      description: '把 DeepDesk 可视指针移动到页面元素并悬停，用于展开菜单、显示提示或检查悬停状态。',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'browser_snapshot 返回的 CSS selector' },
+          target_id: { type: 'string', description: '可选，页面 ID' }
+        },
+        required: ['selector']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_scroll',
+      description: '在当前页面中执行可见滚动。DeepDesk 指针会先移动到页面滚动区域，再通过浏览器原生滚轮事件平滑滚动。',
+      parameters: {
+        type: 'object',
+        properties: {
+          direction: { type: 'string', enum: ['up', 'down'], description: '滚动方向' },
+          amount: { type: 'number', description: '滚动距离，单位像素，默认 640' },
+          target_id: { type: 'string', description: '可选，页面 ID' }
+        },
+        required: ['direction']
       }
     }
   },
@@ -205,8 +235,53 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
   {
     type: 'function',
     function: {
+      name: 'search_mcp_tools',
+      description: '搜索当前已连接 MCP 服务的工具目录。连接的工具很多时，先按服务名、能力或操作对象搜索；命中的真实工具会在下一轮可用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '要查找的能力，例如“搜索文档”“数据库查询”或服务名' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_mcp_server',
+      description: '检查用户明确提供的 MCP 安装信息并生成短时安装凭证。远程服务传 source；本地 stdio 服务传精确的 name、command、args 和可选 cwd。stdio 检查阶段不会启动程序，用户确认安装后才会启动并发现工具。不要臆造命令，也不要通过 run_command 或修改配置文件绕过安装确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: '用户提供的完整 HTTP 或 HTTPS MCP 服务端点' },
+          name: { type: 'string', description: '本地 stdio MCP 的显示名称' },
+          command: { type: 'string', description: '本地 stdio MCP 的精确可执行命令，例如 npx' },
+          args: { type: 'array', items: { type: 'string' }, description: '传给本地 MCP 进程的参数数组，例如 ["-y", "@playwright/mcp@latest"]' },
+          cwd: { type: 'string', description: '可选的本地 MCP 工作目录；没有明确要求时留空' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'install_mcp_server',
+      description: '使用 inspect_mcp_server 返回的短时凭证，由 DeepDesk 安装并连接 HTTP 或 stdio MCP 服务。该操作始终要求用户确认，不能自行构造 candidate_id，也不要通过命令或改配置文件绕过确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          candidate_id: { type: 'string', description: 'inspect_mcp_server 返回的 candidate_id' }
+        },
+        required: ['candidate_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'browser_evaluate',
-      description: '在页面上下文执行 JavaScript 调试表达式并返回可序列化结果。该能力权限较高，通常需要用户批准。',
+      description: '在页面上下文执行只读 JavaScript 调试表达式并返回可序列化结果。禁止用脚本点击、输入、滚动或导航，交互必须改用 browser_click、browser_type、browser_hover、browser_scroll 或 browser_navigate，以确保用户能看见 DeepDesk 指针的操作过程。该能力权限较高，通常需要用户批准。',
       parameters: {
         type: 'object',
         properties: {

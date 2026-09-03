@@ -10,6 +10,12 @@ interface MockRegisterAppOptions {
 }
 
 const registerAppMock = vi.hoisted(() => vi.fn())
+const browserPlatformMocks = vi.hoisted(() => ({
+  detectPreferredBrowser: vi.fn(),
+  isBrowserRunning: vi.fn(),
+  openBrowser: vi.fn(),
+  openBrowserExtensionManager: vi.fn()
+}))
 
 vi.mock('electron', () => ({
   app: { getPath: () => join(tmpdir(), 'deepdesk-app') }
@@ -19,8 +25,10 @@ vi.mock('@larksuiteoapi/node-sdk', () => ({
   registerApp: registerAppMock
 }))
 
+vi.mock('../src/main/platform/browser', () => browserPlatformMocks)
+
 import { AppStore } from '../src/main/store'
-import { closeConnectorAuthSessionsForTest, getConnectorActivityFeed, getConnectorAuthStatus, sendConnectorMessage, startConnectorAuth } from '../src/main/connectors'
+import { closeConnectorAuthSessionsForTest, connectConnector, disconnectConnector, getConnectorActivityFeed, getConnectorAuthStatus, listConnectors, sendConnectorMessage, startConnectorAuth } from '../src/main/connectors'
 
 let dir: string
 let stores: AppStore[]
@@ -29,7 +37,21 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'deepdesk-connectors-'))
   stores = []
   registerAppMock.mockReset()
+  browserPlatformMocks.detectPreferredBrowser.mockReset()
+  browserPlatformMocks.detectPreferredBrowser.mockResolvedValue({
+    id: 'edge',
+    name: 'Microsoft Edge',
+    executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    processName: 'msedge.exe'
+  })
+  browserPlatformMocks.isBrowserRunning.mockReset()
+  browserPlatformMocks.isBrowserRunning.mockResolvedValue(true)
+  browserPlatformMocks.openBrowser.mockReset()
+  browserPlatformMocks.openBrowser.mockResolvedValue(undefined)
+  browserPlatformMocks.openBrowserExtensionManager.mockReset()
+  browserPlatformMocks.openBrowserExtensionManager.mockResolvedValue(undefined)
   vi.stubEnv('DEEPDESK_DISABLE_DIRECT_CONNECTORS', '1')
+  vi.stubEnv('DEEPDESK_BROWSER_CONNECT_TIMEOUT_MS', '0')
 })
 
 afterEach(async () => {
@@ -64,6 +86,39 @@ function listen(handler: (req: IncomingMessage, res: ServerResponse) => void): P
     })
   })
 }
+
+describe('browser connector activation', () => {
+  it('扩展未连接时保留启用意图，但不会把浏览器误报为已连接', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('debug endpoint offline') }))
+    const store = createStore()
+    await store.init()
+
+    const before = await listConnectors(store.getSnapshot().connectors)
+    expect(before.find(connector => connector.id === 'browser')).toMatchObject({
+      state: 'needs_setup',
+      summary: 'Microsoft Edge · 未连接',
+      primaryAction: '连接',
+      browserMode: 'idle'
+    })
+
+    const connected = await connectConnector(store, 'browser')
+    expect(connected).toMatchObject({ ok: false, message: '需要安装浏览器扩展' })
+    expect(browserPlatformMocks.openBrowser).not.toHaveBeenCalled()
+    expect(browserPlatformMocks.openBrowserExtensionManager).not.toHaveBeenCalled()
+    expect(store.getSnapshot().connectors.find(connector => connector.id === 'browser')?.enabled).toBe(true)
+
+    const after = await listConnectors(store.getSnapshot().connectors)
+    expect(after.find(connector => connector.id === 'browser')).toMatchObject({
+      state: 'needs_setup',
+      summary: 'Microsoft Edge · 等待扩展',
+      browserMode: 'idle'
+    })
+
+    const disconnected = await disconnectConnector(store, 'browser')
+    expect(disconnected).toMatchObject({ ok: true, message: '浏览器连接器已停用' })
+    expect(store.getSnapshot().connectors.find(connector => connector.id === 'browser')?.enabled).toBe(false)
+  })
+})
 
 describe('connectors auth gateway', () => {
   it('缺少接入服务时不会生成二维码', async () => {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -120,7 +120,9 @@ async function doctor() {
     ['vitest.config.ts', existsSync(join(root, 'vitest.config.ts'))],
     ['playwright.config.ts', existsSync(join(root, 'playwright.config.ts'))],
     ['e2e tests', existsSync(join(root, 'e2e'))],
-    ['project skill', existsSync(join(root, '.agents', 'skills', 'deepdesk-engineering', 'SKILL.md'))]
+    ['project skill', existsSync(join(root, '.agents', 'skills', 'deepdesk-engineering', 'SKILL.md'))],
+    ['architecture budget', existsSync(join(root, 'scripts', 'architecture-budget.json'))],
+    ['architecture guard', existsSync(join(root, 'scripts', 'check-architecture.mjs'))]
   ]
   console.log('DeepDesk engineering doctor')
   console.log(`root: ${root}`)
@@ -133,6 +135,7 @@ async function doctor() {
 
 function checkSteps(flags) {
   const steps = [
+    { name: 'architecture', command: pnpm, args: ['architecture'] },
     { name: 'typecheck', command: pnpm, args: ['typecheck'] },
     { name: 'typecheck:e2e', command: pnpm, args: ['typecheck:e2e'] },
     { name: 'lint', command: pnpm, args: ['lint'] },
@@ -162,7 +165,10 @@ function seedUiSessionSteps(flags) {
 }
 
 function e2eArgs(mode) {
-  if (mode === 'isolated') return ['exec', 'playwright', 'test', 'e2e/app.spec.ts']
+  if (mode === 'isolated') {
+    const specs = readdirSync(join(root, 'e2e')).filter(name => name.endsWith('.spec.ts') && name !== 'session.spec.ts').sort().map(name => `e2e/${name}`)
+    return ['exec', 'playwright', 'test', ...specs]
+  }
   if (mode === 'session') return ['exec', 'playwright', 'test', 'e2e/session.spec.ts']
   if (mode === 'all') return ['exec', 'playwright', 'test']
   throw new Error(`Invalid --mode: ${mode}`)

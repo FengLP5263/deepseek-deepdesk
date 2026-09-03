@@ -1,3 +1,6 @@
+import { DEFAULT_MAX_OUTPUT_TOKENS, IncompleteStreamError } from './stream'
+import { fetchLlmResponse } from './request'
+
 export interface ToolCallItem {
   id: string
   name: string
@@ -17,13 +20,14 @@ export interface ToolCallRequest {
   messages: Array<Record<string, unknown>>
   tools: Array<Record<string, unknown>>
   temperature?: number
+  maxTokens?: number
   signal?: AbortSignal
 }
 
 export async function chatCompletionWithTools(req: ToolCallRequest): Promise<ToolCallResult> {
   let base = req.baseUrl.trim()
   while (base.endsWith('/')) base = base.slice(0, -1)
-  const res = await fetch(base + '/chat/completions', {
+  const res = await fetchLlmResponse(base + '/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -31,22 +35,14 @@ export async function chatCompletionWithTools(req: ToolCallRequest): Promise<Too
     },
     body: JSON.stringify({
       model: req.model,
-      messages: req.messages,
+      messages: req.messages.filter(message => typeof message.role === 'string'),
       tools: req.tools,
       temperature: req.temperature ?? 1,
+      max_tokens: req.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
       stream: false
     }),
     signal: req.signal
-  })
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.text()).slice(0, 600)
-    } catch {
-      detail = ''
-    }
-    throw new Error('HTTP ' + res.status + ': ' + (detail || res.statusText))
-  }
+  }, req.signal)
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: unknown; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
@@ -76,13 +72,20 @@ export interface StreamContentChunk {
   text: string
 }
 
+export interface StreamReasoningChunk {
+  type: 'reasoning'
+  text: string
+}
+
 export interface StreamFinalChunk {
   type: 'final'
   toolCalls: ToolCallItem[]
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+  finishReason?: string
+  providerHistory?: Array<Record<string, unknown>>
 }
 
-export type StreamChunk = StreamContentChunk | StreamFinalChunk
+export type StreamChunk = StreamContentChunk | StreamReasoningChunk | StreamFinalChunk
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return
@@ -95,7 +98,7 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
   throwIfAborted(req.signal)
   let base = req.baseUrl.trim()
   while (base.endsWith('/')) base = base.slice(0, -1)
-  const res = await fetch(base + '/chat/completions', {
+  const res = await fetchLlmResponse(base + '/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -103,30 +106,23 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
     },
     body: JSON.stringify({
       model: req.model,
-      messages: req.messages,
+      messages: req.messages.filter(message => typeof message.role === 'string'),
       tools: req.tools,
       temperature: req.temperature ?? 1,
+      max_tokens: req.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
       stream: true,
       stream_options: { include_usage: true }
     }),
     signal: req.signal
-  })
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.text()).slice(0, 600)
-    } catch {
-      detail = ''
-    }
-    throwIfAborted(req.signal)
-    throw new Error('HTTP ' + res.status + ': ' + (detail || res.statusText))
-  }
+  }, req.signal)
   if (!res.body) throw new Error('响应为空')
   const reader = res.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
   const tcMap = new Map<number, { id: string; name: string; args: string }>()
   let usage: StreamFinalChunk['usage']
+  let finishReason: string | undefined
+  let receivedDoneMarker = false
   const abortReader = (): void => { void reader.cancel().catch(() => undefined) }
   req.signal?.addEventListener('abort', abortReader, { once: true })
   try {
@@ -136,22 +132,30 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
       throwIfAborted(req.signal)
       if (r.done) break
       buffer += decoder.decode(r.value, { stream: true })
-      const parts = buffer.split('\n\n')
+      const parts = buffer.split(/\r?\n\r?\n/)
       buffer = parts.pop() ?? ''
       for (const part of parts) {
-        for (const line of part.split('\n')) {
+        for (const line of part.split(/\r?\n/)) {
           if (!line.startsWith('data:')) continue
           const data = line.slice(5).trim()
-          if (data === '' || data === '[DONE]') continue
+          if (data === '') continue
+          if (data === '[DONE]') {
+            receivedDoneMarker = true
+            continue
+          }
           try {
             const json = JSON.parse(data) as {
-              choices?: Array<{ delta?: { content?: string; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> } }>
+              choices?: Array<{ delta?: { content?: string; reasoning_content?: string; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }>
               usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
             }
             const delta = json.choices && json.choices[0] && json.choices[0].delta
+            const choice = json.choices && json.choices[0]
             if (delta) {
               if (typeof delta.content === 'string' && delta.content !== '') {
                 yield { type: 'content', text: delta.content }
+              }
+              if (typeof delta.reasoning_content === 'string' && delta.reasoning_content !== '') {
+                yield { type: 'reasoning', text: delta.reasoning_content }
               }
               if (Array.isArray(delta.tool_calls)) {
                 for (const tc of delta.tool_calls) {
@@ -164,6 +168,7 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
                 }
               }
             }
+            if (choice && typeof choice.finish_reason === 'string') finishReason = choice.finish_reason
             if (json.usage) {
               usage = { promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, totalTokens: json.usage.total_tokens }
             }
@@ -173,11 +178,17 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
         }
       }
     }
+  } catch (error) {
+    throwIfAborted(req.signal)
+    throw new IncompleteStreamError(error instanceof Error && error.message
+      ? '模型流式响应提前中断：' + error.message
+      : undefined)
   } finally {
     req.signal?.removeEventListener('abort', abortReader)
     reader.releaseLock()
   }
   throwIfAborted(req.signal)
+  if (!receivedDoneMarker && !finishReason) throw new IncompleteStreamError()
   const toolCalls: ToolCallItem[] = [...tcMap.values()].map(e => {
     let args: Record<string, unknown> = {}
     try {
@@ -187,5 +198,5 @@ export async function* streamChatCompletionWithTools(req: ToolCallRequest): Asyn
     }
     return { id: e.id || ('call-' + Math.random().toString(36).slice(2)), name: e.name, args }
   })
-  yield { type: 'final', toolCalls, usage }
+  yield { type: 'final', toolCalls, usage, finishReason }
 }

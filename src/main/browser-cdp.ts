@@ -1,8 +1,11 @@
 import WebSocket from 'ws'
 import type { RawData } from 'ws'
 import type { AgentToolCall, AgentToolResult, AgentToolName } from '../shared/agent-types'
+import { browserDebugBaseUrl, ensureBrowserAutomation } from './browser-runtime'
+import { showBrowserClickCue, showBrowserCursorPresence } from './browser-cursor'
+import { dispatchBrowserHover, dispatchBrowserScroll, showBrowserNavigationCue, showBrowserReadActivity } from './browser-visible-actions'
+import { locateBrowserElement, type BrowserElementPoint } from './browser-element-locator'
 
-const DEFAULT_CDP_URL = 'http://127.0.0.1:9222'
 const REQUEST_TIMEOUT_MS = 8_000
 const MAX_RESULT_LENGTH = 20_000
 
@@ -37,10 +40,6 @@ function throwIfAborted(signal?: AbortSignal): void {
   throw error
 }
 
-function cdpBaseUrl(): string {
-  return (process.env.DEEPDESK_BROWSER_DEBUG_URL ?? DEFAULT_CDP_URL).replace(/\/+$/, '')
-}
-
 function clippedJson(value: unknown): string {
   const text = JSON.stringify(value, null, 2)
   return text.length <= MAX_RESULT_LENGTH ? text : text.slice(0, MAX_RESULT_LENGTH) + '\n…（浏览器结果过长，已截断）'
@@ -53,7 +52,7 @@ async function fetchCdp(path: string, init: RequestInit = {}, signal?: AbortSign
   const onAbort = (): void => controller.abort()
   signal?.addEventListener('abort', onAbort, { once: true })
   try {
-    return await fetch(cdpBaseUrl() + path, { ...init, signal: controller.signal })
+    return await fetch(browserDebugBaseUrl() + path, { ...init, signal: controller.signal })
   } catch (error) {
     if (signal?.aborted) throwIfAborted(signal)
     throw error
@@ -85,7 +84,7 @@ export async function listBrowserPages(signal?: AbortSignal): Promise<BrowserTar
     response = await fetchCdp('/json/list', {}, signal)
   } catch (error) {
     if (signal?.aborted) throw error
-    throw new Error('未连接浏览器调试会话，请先在“连接器”中启动浏览器')
+    throw new Error('浏览器调试会话不可用，请确认浏览器连接器已启用')
   }
   if (!response.ok) throw new Error('浏览器调试服务不可用（HTTP ' + response.status + '）')
   const json = await response.json() as unknown
@@ -258,6 +257,33 @@ async function waitForReady(client: CdpClient, signal?: AbortSignal): Promise<vo
   }
 }
 
+async function dispatchBrowserClick(client: CdpClient, point: BrowserElementPoint, signal?: AbortSignal): Promise<void> {
+  await showBrowserClickCue(client, point, signal)
+  await client.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y }, signal)
+  await client.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 }, signal)
+  await client.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 }, signal)
+}
+
+async function selectBrowserInputContent(client: CdpClient, signal?: AbortSignal): Promise<void> {
+  const modifiers = process.platform === 'darwin' ? 4 : 2
+  await client.call('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown',
+    key: 'a',
+    code: 'KeyA',
+    modifiers,
+    windowsVirtualKeyCode: 65,
+    nativeVirtualKeyCode: 65
+  }, signal)
+  await client.call('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'a',
+    code: 'KeyA',
+    modifiers,
+    windowsVirtualKeyCode: 65,
+    nativeVirtualKeyCode: 65
+  }, signal)
+}
+
 const SNAPSHOT_EXPRESSION = `(() => {
   const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
   const esc = value => CSS.escape(String(value));
@@ -315,14 +341,24 @@ function validateUrl(url: string): string {
   return parsed.toString()
 }
 
-async function withTarget<T>(targetId: string | undefined, signal: AbortSignal | undefined, action: (client: CdpClient, target: BrowserTarget) => Promise<T>): Promise<T> {
-  const target = await resolveTarget(targetId, signal)
+function assertVisibleBrowserInteraction(expression: string): void {
+  const hiddenInteraction = /\.(?:click|focus|blur|submit|requestSubmit|scroll|scrollTo|scrollBy|scrollIntoView|dispatchEvent|setAttribute|removeAttribute|toggleAttribute|append|appendChild|prepend|before|after|replaceWith|replaceChildren|insertAdjacentElement|insertAdjacentHTML|insertAdjacentText|remove)\s*\(|\.(?:value|checked|selectedIndex|innerHTML|outerHTML|textContent|className)\s*=(?!=)|\.style\.[\w-]+\s*=(?!=)|\bwindow\.(?:open|close)\s*\(|\b(?:window\.)?location(?:\.href)?\s*=(?!=)|\b(?:window\.)?location\.(?:assign|replace)\s*\(/
+  if (!hiddenInteraction.test(expression)) return
+  throw new Error('页面交互不能通过 browser_evaluate 隐藏执行，请改用 browser_click、browser_type、browser_hover、browser_scroll 或 browser_navigate')
+}
+
+async function withResolvedTarget<T>(target: BrowserTarget, signal: AbortSignal | undefined, action: (client: CdpClient, target: BrowserTarget) => Promise<T>): Promise<T> {
   const client = await CdpClient.connect(target.webSocketDebuggerUrl, signal)
   try {
+    await showBrowserCursorPresence(client, signal)
     return await action(client, target)
   } finally {
     client.close()
   }
+}
+
+async function withTarget<T>(targetId: string | undefined, signal: AbortSignal | undefined, action: (client: CdpClient, target: BrowserTarget) => Promise<T>): Promise<T> {
+  return await withResolvedTarget(await resolveTarget(targetId, signal), signal, action)
 }
 
 const BROWSER_TOOL_NAMES = new Set<AgentToolName>([
@@ -331,6 +367,8 @@ const BROWSER_TOOL_NAMES = new Set<AgentToolName>([
   'browser_snapshot',
   'browser_click',
   'browser_type',
+  'browser_hover',
+  'browser_scroll',
   'browser_debug',
   'browser_evaluate'
 ])
@@ -340,9 +378,21 @@ export function isBrowserToolName(name: AgentToolName): boolean {
 }
 
 export async function executeBrowserTool(call: AgentToolCall, signal?: AbortSignal): Promise<AgentToolResult> {
+  await ensureBrowserAutomation(signal)
   const targetId = stringValue(call.args.target_id) || undefined
   if (call.name === 'browser_pages') {
     const pages = await listBrowserPages(signal)
+    const visibleTarget = pages.find(page => page.id === targetId)
+      ?? pages.find(page => !page.url.startsWith('devtools://'))
+      ?? pages[0]
+    if (visibleTarget) {
+      try {
+        await withResolvedTarget(visibleTarget, signal, async client => showBrowserReadActivity(client, signal))
+      } catch {
+        // Listing pages must remain available even when the active browser tab
+        // is a restricted internal page that does not allow debugger attachment.
+      }
+    }
     return {
       ok: true,
       content: clippedJson(pages.map(page => ({ id: page.id, title: page.title, url: page.url }))),
@@ -353,12 +403,15 @@ export async function executeBrowserTool(call: AgentToolCall, signal?: AbortSign
     const url = validateUrl(stringValue(call.args.url))
     if (!targetId && call.args.new_page === true) {
       const target = await createBrowserPage(url, signal)
+      await withResolvedTarget(target, signal, async client => showBrowserNavigationCue(client, true, signal))
       return { ok: true, content: clippedJson({ id: target.id, title: target.title, url }), summary: '打开 ' + url }
     }
     return await withTarget(targetId, signal, async (client, target) => {
+      await showBrowserNavigationCue(client, false, signal)
       await client.call('Page.enable', {}, signal)
       await client.call('Page.navigate', { url }, signal)
       await waitForReady(client, signal)
+      await showBrowserNavigationCue(client, true, signal)
       const snapshot = await evaluate(client, '({ title: document.title, url: location.href, readyState: document.readyState })', signal)
       return { ok: true, content: clippedJson({ targetId: target.id, ...record(snapshot) }), summary: '访问 ' + url }
     })
@@ -366,6 +419,7 @@ export async function executeBrowserTool(call: AgentToolCall, signal?: AbortSign
   if (call.name === 'browser_snapshot') {
     return await withTarget(targetId, signal, async (client, target) => {
       await client.call('Runtime.enable', {}, signal)
+      await showBrowserReadActivity(client, signal)
       const snapshot = await evaluate(client, SNAPSHOT_EXPRESSION, signal)
       return { ok: true, content: clippedJson({ targetId: target.id, ...record(snapshot) }), summary: '读取页面 ' + target.title }
     })
@@ -373,27 +427,60 @@ export async function executeBrowserTool(call: AgentToolCall, signal?: AbortSign
   if (call.name === 'browser_click') {
     const selector = stringValue(call.args.selector).trim()
     if (!selector) throw new Error('缺少 selector')
-    const expression = `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!element) return { ok: false, error: '未找到元素' }; element.scrollIntoView({ block: 'center', inline: 'center' }); element.click(); return { ok: true, tag: element.tagName.toLowerCase(), text: String(element.innerText || element.getAttribute('aria-label') || '').trim().slice(0, 200) }; })()`
     return await withTarget(targetId, signal, async (client, target) => {
-      const result = record(await evaluate(client, expression, signal))
-      if (!result?.ok) return { ok: false, content: stringValue(result?.error) || '点击失败', summary: '点击失败 ' + selector }
-      return { ok: true, content: clippedJson({ targetId: target.id, ...result }), summary: '点击 ' + selector }
+      try {
+        const point = await locateBrowserElement(client, selector, false, signal)
+        await dispatchBrowserClick(client, point, signal)
+        return { ok: true, content: clippedJson({ targetId: target.id, ok: true, tag: point.tag, text: point.text, point: { x: point.x, y: point.y }, pointTarget: point.target }), summary: '点击 ' + selector }
+      } catch (error) {
+        throwIfAborted(signal)
+        const message = error instanceof Error ? error.message : '点击失败'
+        return { ok: false, content: message, summary: '点击失败 ' + selector }
+      }
     })
   }
   if (call.name === 'browser_type') {
     const selector = stringValue(call.args.selector).trim()
     const text = stringValue(call.args.text)
     if (!selector) throw new Error('缺少 selector')
-    const expression = `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!element) return { ok: false, error: '未找到元素' }; element.scrollIntoView({ block: 'center', inline: 'center' }); element.focus(); const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLInputElement ? HTMLInputElement.prototype : null; const setter = prototype ? Object.getOwnPropertyDescriptor(prototype, 'value')?.set : null; if (setter) setter.call(element, ${JSON.stringify(text)}); else if (element.isContentEditable) element.textContent = ${JSON.stringify(text)}; else return { ok: false, error: '元素不支持输入' }; element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ${JSON.stringify(text)} })); element.dispatchEvent(new Event('change', { bubbles: true })); if (${call.args.submit === true ? 'true' : 'false'}) { const form = element.form; if (form?.requestSubmit) form.requestSubmit(); else element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true })); } return { ok: true, value: element.value ?? element.textContent ?? '' }; })()`
     return await withTarget(targetId, signal, async (client, target) => {
-      const result = record(await evaluate(client, expression, signal))
-      if (!result?.ok) return { ok: false, content: stringValue(result?.error) || '输入失败', summary: '输入失败 ' + selector }
-      return { ok: true, content: clippedJson({ targetId: target.id, ...result }), summary: '输入到 ' + selector }
+      try {
+        const point = await locateBrowserElement(client, selector, true, signal)
+        await dispatchBrowserClick(client, point, signal)
+        await selectBrowserInputContent(client, signal)
+        await client.call('Input.insertText', { text }, signal)
+        const value = await evaluate(client, `(() => { const element = document.querySelector(${JSON.stringify(selector)}); return element ? (element.value ?? element.textContent ?? '') : ''; })()`, signal)
+        return { ok: true, content: clippedJson({ targetId: target.id, ok: true, value, submitted: false, nextAction: '如需提交，请调用 browser_click 点击页面中的可见提交按钮' }), summary: '输入到 ' + selector + '（尚未提交）' }
+      } catch (error) {
+        throwIfAborted(signal)
+        const message = error instanceof Error ? error.message : '输入失败'
+        return { ok: false, content: message, summary: '输入失败 ' + selector }
+      }
+    })
+  }
+  if (call.name === 'browser_hover') {
+    const selector = stringValue(call.args.selector).trim()
+    if (!selector) throw new Error('缺少 selector')
+    return await withTarget(targetId, signal, async (client, target) => {
+      const point = await locateBrowserElement(client, selector, false, signal)
+      await dispatchBrowserHover(client, point, signal)
+      return { ok: true, content: clippedJson({ targetId: target.id, ok: true, tag: point.tag, text: point.text, point: { x: point.x, y: point.y }, pointTarget: point.target }), summary: '悬停 ' + selector }
+    })
+  }
+  if (call.name === 'browser_scroll') {
+    const directionValue = stringValue(call.args.direction)
+    if (directionValue !== 'up' && directionValue !== 'down') throw new Error('direction 必须是 up 或 down')
+    const direction = directionValue
+    const amount = Math.min(1_600, Math.max(160, Number(call.args.amount) || 640))
+    return await withTarget(targetId, signal, async (client, target) => {
+      const result = await dispatchBrowserScroll(client, direction, amount, signal)
+      return { ok: true, content: clippedJson({ targetId: target.id, direction, amount, ...result }), summary: `${direction === 'up' ? '向上' : '向下'}滚动 ${amount} 像素` }
     })
   }
   if (call.name === 'browser_debug') {
     const duration = Math.min(2_000, Math.max(100, Number(call.args.duration_ms) || 500))
     return await withTarget(targetId, signal, async (client, target) => {
+      await showBrowserReadActivity(client, signal)
       const events: Array<{ method: string; params: unknown }> = []
       const removeListener = client.onEvent((method, params) => {
         if (method === 'Runtime.consoleAPICalled' || method === 'Runtime.exceptionThrown' || method === 'Log.entryAdded' || method === 'Network.loadingFailed') {
@@ -428,7 +515,9 @@ export async function executeBrowserTool(call: AgentToolCall, signal?: AbortSign
   if (call.name === 'browser_evaluate') {
     const expression = stringValue(call.args.expression).trim()
     if (!expression) throw new Error('缺少 expression')
+    assertVisibleBrowserInteraction(expression)
     return await withTarget(targetId, signal, async (client, target) => {
+      await showBrowserReadActivity(client, signal)
       const result = await evaluate(client, expression, signal)
       return { ok: true, content: clippedJson({ targetId: target.id, result }), summary: '执行页面调试脚本' }
     })

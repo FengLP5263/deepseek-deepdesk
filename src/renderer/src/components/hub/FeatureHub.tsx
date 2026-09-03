@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Blocks, Check, ChevronDown, ExternalLink, Globe2, Link2, MessageSquare, MoreHorizontal, Plus, PlugZap, QrCode, RefreshCw, Search, Settings, Sparkles, UserRoundCog, type LucideIcon } from 'lucide-react'
+import { Blocks, Check, ChevronDown, Copy, ExternalLink, Globe2, Link2, MessageSquare, MoreHorizontal, Plus, PlugZap, QrCode, RefreshCw, Search, Settings, Sparkles, UserRoundCog, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { useAgentStore } from '../../stores/useAgentStore'
 import type { SettingsTab } from '../settings/SettingsView'
-import type { ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfigPatch, ConnectorId, ConnectorState, ConnectorStatus } from '@shared/types'
+import type { BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfigPatch, ConnectorId, ConnectorState, ConnectorStatus } from '@shared/types'
 import { Modal } from '../ui'
 import feishuIcon from '../../assets/icons/feishu.svg'
 import wechatIcon from '../../assets/icons/wechat.svg'
@@ -203,6 +203,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
   const [busyConnectorId, setBusyConnectorId] = useState<ConnectorId | null>(null)
   const [connectorAction, setConnectorAction] = useState<ConnectorActionResult | null>(null)
   const [qrConnectorId, setQrConnectorId] = useState<ConnectorId | null>(null)
+  const [browserSetupOpen, setBrowserSetupOpen] = useState(false)
   const [showConnectorAdvanced, setShowConnectorAdvanced] = useState(false)
   const [connectorAuth, setConnectorAuth] = useState<ConnectorAuthSession | null>(null)
   const [connectorAuthLoading, setConnectorAuthLoading] = useState(false)
@@ -261,6 +262,27 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
     void refreshConnectorActivities()
   }, [refreshConnectorActivities, refreshConnectors, view])
 
+  useEffect(() => {
+    if (view !== 'connectors') return
+    const timer = window.setInterval(() => {
+      void window.api.connectors.list().then(setConnectors).catch(() => {})
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [view])
+
+  useEffect(() => {
+    if (!browserSetupOpen) return
+    const browser = connectors.find(connector => connector.id === 'browser')
+    if (browser?.state !== 'connected') return
+    setBrowserSetupOpen(false)
+    setConnectorAction({
+      id: 'browser',
+      ok: true,
+      message: '浏览器已连接',
+      detail: '扩展已安装并完成连接，后续使用无需重复安装。'
+    })
+  }, [browserSetupOpen, connectors])
+
   const startWithDraft = (task: string): void => {
     clear()
     setDraftTask(task)
@@ -276,13 +298,14 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
     })
   }
 
-  const runConnectorAction = async (id: ConnectorId): Promise<void> => {
+  const runConnectorAction = async (id: ConnectorId): Promise<ConnectorActionResult | null> => {
     setBusyConnectorId(id)
     try {
       const result = await window.api.connectors.connect(id)
       setConnectorAction(result)
       setConnectors(await window.api.connectors.list())
       await refreshConnectorActivities()
+      return result
     } catch (error) {
       setConnectorAction({
         id,
@@ -290,6 +313,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
         message: '连接器操作失败',
         detail: error instanceof Error ? error.message : String(error)
       })
+      return null
     } finally {
       setBusyConnectorId(null)
     }
@@ -331,6 +355,29 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
     } finally {
       setBusyConnectorId(null)
     }
+  }
+
+  const setupBrowserSharing = async (action: BrowserExtensionSetupAction): Promise<void> => {
+    setBusyConnectorId('browser')
+    try {
+      const result = await window.api.connectors.setupBrowser(action)
+      setConnectorAction(result)
+      await refreshConnectors()
+    } catch (error) {
+      setConnectorAction({
+        id: 'browser',
+        ok: false,
+        message: '浏览器扩展操作失败',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      setBusyConnectorId(null)
+    }
+  }
+
+  const connectCurrentBrowser = async (): Promise<void> => {
+    const result = await runConnectorAction('browser')
+    if (result?.message === '需要安装浏览器扩展') setBrowserSetupOpen(true)
   }
 
   const updateConnectorDraft = (id: ConnectorId, key: keyof ConnectorConfigPatch, value: string): void => {
@@ -448,7 +495,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
         <div className='hub-header'>
           <div className='hub-icon'><PlugZap size={20} /></div>
           <h1>连接器</h1>
-          <p>连接消息工具和浏览器能力。</p>
+          <p>连接消息工具和当前浏览器。</p>
         </div>
         <div className='connector-toolbar'>
           <button className='btn btn-ghost btn-sm' onClick={() => void refreshConnectorActivities()} disabled={connectorFeedLoading}>
@@ -462,6 +509,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
           {connectors.map(connector => {
             const meta = connectorMeta[connector.id]
             const Icon = meta.icon
+            const browserNeedsSetup = connector.id === 'browser' && connector.browserMode !== 'extension'
             return (
               <section key={connector.id} className={clsx('connector-card', `state-${connector.state}`)}>
                 <div className='connector-card-head'>
@@ -472,11 +520,17 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
                     <div className='connector-title'>{connector.name}</div>
                     <div className='connector-subtitle'>{meta.desc}</div>
                   </div>
-                  <span className='connector-state'>{connectorStateLabels[connector.state]}</span>
+                  <span className='connector-state'>
+                    {connectorStateLabels[connector.state]}
+                  </span>
                 </div>
                 <div className='connector-summary'>{connector.summary}</div>
                 <div className='connector-actions'>
-                  {connector.state === 'connected' && connector.disconnectAction ? (
+                  {browserNeedsSetup ? (
+                    <button className='btn btn-primary btn-sm' onClick={() => void connectCurrentBrowser()} disabled={busyConnectorId === 'browser'}>
+                      {busyConnectorId === 'browser' ? '连接中' : '连接'}
+                    </button>
+                  ) : connector.state === 'connected' && connector.disconnectAction ? (
                     <button className='btn btn-ghost btn-sm' onClick={() => void disconnectConnector(connector.id)} disabled={busyConnectorId === connector.id}>
                       {busyConnectorId === connector.id ? '处理中' : connector.disconnectAction}
                     </button>
@@ -504,7 +558,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
           <div className='connector-activity-head'>
             <div>
               <h2>连接器消息</h2>
-              <p>微信和飞书接入服务收到的消息会显示在这里；浏览器连接后会显示可自动化页面。</p>
+              <p>微信和飞书消息会显示在这里；浏览器工具运行后会显示最近调试的页面。</p>
             </div>
             <span>{connectorFeed ? '更新于 ' + formatActivityTime(connectorFeed.syncedAt) : '未刷新'}</span>
           </div>
@@ -534,7 +588,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
             })}
           </div>
         </section>
-        {connectorAction && !qrConnector && (
+        {connectorAction && !qrConnector && !browserSetupOpen && (
           <div className={clsx('connector-result', connectorAction.ok ? 'ok' : 'warn')}>
             <div>
               <strong>{connectorAction.message}</strong>
@@ -610,6 +664,37 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
                 </div>
               )}
               {connectorAction?.id === qrConnector.id && (
+                <div className={clsx('connector-modal-result', connectorAction.ok ? 'ok' : 'warn')}>
+                  <strong>{connectorAction.message}</strong>
+                  {connectorAction.detail && <span>{connectorAction.detail}</span>}
+                </div>
+              )}
+            </div>
+          </Modal>
+        )}
+        {browserSetupOpen && (
+          <Modal
+            title='安装浏览器扩展'
+            onClose={() => setBrowserSetupOpen(false)}
+            width={420}
+            footer={<button className='btn btn-ghost' onClick={() => setBrowserSetupOpen(false)}>关闭</button>}
+          >
+            <div className='browser-setup-panel'>
+              <p>浏览器会要求你确认一次扩展安装。完成后 DeepDesk 会自动连接，无需再点击“连接”。</p>
+              <ol>
+                <li>复制扩展目录。</li>
+                <li>打开扩展管理页并开启“开发人员模式”。</li>
+                <li>选择“加载解压缩的扩展”，粘贴刚才复制的目录。</li>
+              </ol>
+              <div className='browser-setup-actions'>
+                <button className='btn btn-ghost' onClick={() => void setupBrowserSharing('copy-extension-directory')} disabled={busyConnectorId === 'browser'}>
+                  <Copy size={14} /> 复制扩展目录
+                </button>
+                <button className='btn btn-primary' onClick={() => void setupBrowserSharing('open-extension-manager')} disabled={busyConnectorId === 'browser'}>
+                  <ExternalLink size={14} /> 打开扩展管理页
+                </button>
+              </div>
+              {connectorAction?.id === 'browser' && (
                 <div className={clsx('connector-modal-result', connectorAction.ok ? 'ok' : 'warn')}>
                   <strong>{connectorAction.message}</strong>
                   {connectorAction.detail && <span>{connectorAction.detail}</span>}

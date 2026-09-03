@@ -18,6 +18,7 @@
 | `docs/` | `docs/AGENTS.md` | 架构和流程文档 |
 | `.agents/` | `.agents/AGENTS.md` | 项目内 AI Skill 和协作资产 |
 | `.github/` | `.github/AGENTS.md` | CI 和 Release 工作流 |
+| `scripts/architecture-budget.json` | `docs/architecture-quality.md` | 文件规模预算、历史例外和分层门禁 |
 
 ## AI 读取顺序
 
@@ -32,15 +33,20 @@
 | --- | --- | --- |
 | 新增 IPC | `src/shared`、`src/preload`、`src/main`、`src/renderer` | 对应 4 个局部 `AGENTS.md` |
 | 新增 Agent 工具 | `src/main`、`tests` | `src/main/AGENTS.md`、`tests/AGENTS.md` |
+| 修改项目指令装配 | `src/main/project-instructions.ts`、`src/main/agent.ts`、`tests` | Main、Tests 局部说明 |
 | 修改平台行为 | `src/main/platform`、`src/renderer`、`tests`、`e2e` | Main、Renderer、Tests、E2E 局部说明 |
 | 调整聊天 UI | `src/renderer`、`tests` | `src/renderer/AGENTS.md`、`tests/AGENTS.md` |
 | 改 LLM 协议 | `src/shared/llm`、`tests` | `src/shared/AGENTS.md`、`tests/AGENTS.md` |
+| 改 MCP Host 或外部工具 | `src/shared`、`src/main/mcp.ts`、`src/main/mcp-install.ts`、`src/renderer`、`tests` | Shared、Main、Renderer、Tests 局部说明 |
 | 改构建/发布流程 | `scripts`、`docs`、`.agents` | 三个局部 `AGENTS.md` |
 | 改 CI/Release | `.github`、`scripts`、`docs` | 对应局部 `AGENTS.md` |
+| 改分支与发布协作流程 | `AGENTS.md`、`CONTRIBUTING.md`、`docs/git-flow.md`、`.github` | 根规则、Docs 与 GitHub 局部说明 |
+| 新增模块或拆分大文件 | 目标源码目录、`scripts/architecture-budget.json` | 局部说明、`docs/architecture-quality.md`、工程 Skill 架构质量 reference |
 
 ## 验证策略
 
 - 文档/脚本映射改动：`pnpm flow -- doctor`
 - 工程脚本改动：`pnpm flow -- check`
 - 源码行为改动：`pnpm flow -- check --include-build`
+- 模块边界或文件组织改动：`pnpm architecture` + `pnpm flow -- check`
 - 发版流程改动：`pnpm flow -- check --include-build --include-smoke`

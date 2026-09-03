@@ -40,7 +40,6 @@ export const useMemoryStore = create<MemoryState>()((set, get) => ({
   draft: emptyDraft,
   editingId: null,
   init: async () => {
-    if (get().loaded) return
     const memories = await window.api.memories.list()
     set({ loaded: true, memories: memories.sort((a, b) => b.updatedAt - a.updatedAt) })
   },

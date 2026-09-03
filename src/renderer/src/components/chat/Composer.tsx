@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { ChevronDown, Send, Settings } from 'lucide-react'
 import { useChatStore } from '../../stores/useChatStore'
 import { useSettingsStore } from '../../stores/useSettingsStore'
+import { shouldSubmitComposer } from '../../lib/composer-keyboard'
 import clsx from 'clsx'
 
 export default function Composer({ onOpenSettings }: { onOpenSettings: () => void }) {
@@ -41,7 +42,7 @@ export default function Composer({ onOpenSettings }: { onOpenSettings: () => voi
   }
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey && enterToSend) {
+    if (shouldSubmitComposer(e, enterToSend)) {
       e.preventDefault()
       void submit()
     }
@@ -81,7 +82,7 @@ export default function Composer({ onOpenSettings }: { onOpenSettings: () => voi
         <textarea
           ref={taRef}
           className='composer-textarea'
-          placeholder='输入消息，Enter 发送，Shift+Enter 换行…'
+          placeholder={enterToSend ? '输入消息，Enter 发送，Shift+Enter 换行…' : '输入消息，Ctrl+Enter 发送…'}
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={onKeyDown}

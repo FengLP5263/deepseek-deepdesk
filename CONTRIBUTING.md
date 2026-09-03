@@ -28,10 +28,13 @@ pnpm flow -- help
 
 ## 分支与提交
 
-- 不直接向 `main` 提交功能代码，所有改动通过 Pull Request 合并。
+- `main` 与 `develop` 是两个常驻分支：`main` 只保存发布版本，`develop` 是日常开发集成分支。
+- 外部贡献和多人协作从 `develop` 创建 `feature/*`、`fix/*`、`docs/*` 或 `chore/*` 短期分支，并以 `develop` 为 Pull Request 目标。
+- 不直接向 `main` 提交功能代码；只有经过完整发布门禁的 `develop` 才能通过发布 PR 合入 `main`。
 - 每个 PR 聚焦一个明确问题，避免把无关重构、格式化和功能混在一起。
 - 提交信息使用 Conventional Commits：`feat` / `fix` / `docs` / `test` / `refactor` / `chore`。
 - 提交说明可以使用中文，但类型前缀必须规范，例如：`fix: 修复模型菜单关闭逻辑`。
+- 完整分支、合并和标签规则见 `docs/git-flow.md`。
 
 ## 版本规则
 
@@ -93,6 +96,14 @@ PR 描述需要包含：
 - 潜在风险和回滚方式。
 - 是否涉及版本号、文档、Skill 或测试更新。
 
+涉及以下内容时，必须在同一 PR 中更新对应文档：
+
+- 用户可见功能、配置方式、快捷键、平台支持范围或安全边界。
+- 架构、目录职责、IPC、Agent 工具或跨进程数据流。
+- 开发命令、测试策略、CI、分支流程、打包或发布方式。
+
+如果确认不需要更新文档，请在 PR 描述中填写“不适用”并简要说明原因。文档不得把规划中的能力描述为已实现功能。
+
 仓库提供了 `.github/pull_request_template.md`，提交 PR 时请按模板填写。
 
 ## Code Review 规则
@@ -104,12 +115,13 @@ PR 描述需要包含：
 - 所有 review comment 已处理或明确达成共识。
 - 关键路径改动由熟悉对应模块的人 review。
 - 安全、权限、持久化、Agent 工具、发版流程改动需要更严格审查。
+- README、架构说明和专项文档与实际实现保持一致。
 
-建议使用 squash merge，保持主干历史清晰。大型重构或有意保留分阶段提交时，可以使用 rebase merge。
+普通功能 PR 合入 `develop` 时建议使用 Squash Merge。`develop` → `main` 的发布 PR 同样使用 Squash Merge，使 `main` 每个版本只保留一个清晰的发布提交；合并后维护者必须立即将新的 `main` 通过普通 Merge Commit 合并回 `develop`，恢复两个常驻分支的共同祖先关系。禁止用 rebase、reset 或 force push 代替回合。
 
 ## 保护分支建议
 
-GitHub / Gitee 的 `main` 分支建议开启：
+GitHub / Gitee 的 `main` 和 `develop` 分支建议开启：
 
 - 禁止直接 push。
 - 合并前必须通过 PR。
@@ -117,6 +129,8 @@ GitHub / Gitee 的 `main` 分支建议开启：
 - 至少 1 个 approval。
 - 新提交推送后自动取消旧 approval。
 - 禁止 force push；只有维护者在历史清理等明确场景下临时打开。
+
+此外，`main` 只接受来自 `develop` 的发布 PR；普通贡献 PR 的目标分支必须是 `develop`。
 
 ## 不要提交的内容
 

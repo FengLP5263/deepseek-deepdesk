@@ -24,7 +24,7 @@ beforeEach(() => {
   cancelledRunIds = []
   const api = {
     settings: {
-      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true }),
+      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true }),
       set: async (patch: Record<string, unknown>) => ({ ...patch })
     },
     providers: { list: async () => makeProviders(), upsert: async () => {}, remove: async () => {}, test: async () => ({ ok: true, message: '' }) },
@@ -38,7 +38,8 @@ beforeEach(() => {
       list: async () => memoryResults,
       upsert: async (memory: MemoryItem) => memory,
       remove: async () => {},
-      search: async () => memoryResults
+      search: async () => memoryResults,
+      capture: async () => []
     },
     chat: {
       start: async (req: ChatStartRequest) => { startRequests.push(req); return { ok: true } },
@@ -47,7 +48,7 @@ beforeEach(() => {
     }
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
-  useSettingsStore.setState({ loaded: true, providers: makeProviders(), settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true } })
+  useSettingsStore.setState({ loaded: true, providers: makeProviders(), settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-chat', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true } })
   useChatStore.setState({ initialized: false, conversations: [], activeId: null, streaming: null, notice: null, pendingModel: null })
 })
 

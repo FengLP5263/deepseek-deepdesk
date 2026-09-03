@@ -1,32 +1,59 @@
-import { useEffect, useRef, useState } from 'react'
-import { Blocks, ChevronDown, Link2, MoreHorizontal, Settings, SquarePen, UserRound } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Blocks, ChevronDown, Link2, MoreHorizontal, Search, Settings, SquarePen, UserRound } from 'lucide-react'
 import DeepSeekLogo from '../DeepSeekLogo'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { formatTime } from '../../lib/format'
+import { orderSidebarSessions } from '../../lib/session-order'
 import { APP_VERSION } from '@shared/app-meta'
 import type { SettingsTab } from '../settings/SettingsView'
 import clsx from 'clsx'
 
 type AppView = 'chat' | 'settings' | 'connectors' | 'skills' | 'more'
 
+function SessionRunningIndicator() {
+  const dots = [
+    { cx: 7, cy: 1.5, opacity: 1 },
+    { cx: 10.9, cy: 3.1, opacity: 0.86 },
+    { cx: 12.5, cy: 7, opacity: 0.72 },
+    { cx: 10.9, cy: 10.9, opacity: 0.6 },
+    { cx: 7, cy: 12.5, opacity: 0.48 },
+    { cx: 3.1, cy: 10.9, opacity: 0.38 },
+    { cx: 1.5, cy: 7, opacity: 0.3 },
+    { cx: 3.1, cy: 3.1, opacity: 0.22 }
+  ]
+  return (
+    <svg className='session-running-indicator spin' style={{ animationDuration: '1.8s' }} width='14' height='14' viewBox='0 0 14 14' role='status' aria-label='任务进行中'>
+      {dots.map(dot => <circle key={`${dot.cx}-${dot.cy}`} cx={dot.cx} cy={dot.cy} r='1.15' fill='currentColor' opacity={dot.opacity} />)}
+    </svg>
+  )
+}
+
+function SessionUnreadIndicator() {
+  return <span className='session-unread-indicator' style={{ width: '0.5em', height: '0.5em', flex: 'none', borderRadius: '50%', background: '#34c759', boxShadow: '0 0 0 2px rgba(52, 199, 89, 0.16)' }} role='status' aria-label='未读更新' />
+}
+
 export default function Sidebar({
   view,
   onNavigate,
   onNewTask,
+  onSearch,
   onOpenSettings,
   collapsed
 }: {
   view: AppView
   onNavigate: (view: AppView) => void
   onNewTask: () => void
+  onSearch: () => void
   onOpenSettings: (tab?: SettingsTab) => void
   collapsed: boolean
 }) {
   const sessions = useAgentStore(s => s.sessions)
   const activeSessionId = useAgentStore(s => s.activeSessionId)
+  const runningSessions = useAgentStore(s => s.runningSessions)
   const loadSession = useAgentStore(s => s.loadSession)
   const deleteSession = useAgentStore(s => s.deleteSession)
   const renameSession = useAgentStore(s => s.renameSession)
+  const toggleSessionPinned = useAgentStore(s => s.toggleSessionPinned)
   const [menuId, setMenuId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -35,8 +62,10 @@ export default function Sidebar({
   const [connectorSessionsOpen, setConnectorSessionsOpen] = useState(true)
   const menuRef = useRef<HTMLDivElement>(null)
   const settingsShortcut = window.api.platform.id === 'macos' ? '⌘,' : 'Ctrl+,'
-  const normalSessions = sessions.filter(session => session.source?.type !== 'connector')
-  const connectorSessions = sessions.filter(session => session.source?.type === 'connector')
+  const searchShortcut = window.api.platform.id === 'macos' ? '⌘ K' : 'Ctrl K'
+  const orderedSessions = orderSidebarSessions(sessions)
+  const normalSessions = orderedSessions.filter(session => session.source?.type !== 'connector')
+  const connectorSessions = orderedSessions.filter(session => session.source?.type === 'connector')
 
   useEffect(() => {
     const closeMenu = (event: PointerEvent): void => {
@@ -48,6 +77,10 @@ export default function Sidebar({
     document.addEventListener('pointerdown', closeMenu)
     return () => document.removeEventListener('pointerdown', closeMenu)
   }, [])
+
+  useLayoutEffect(() => {
+    if (view === 'chat' && activeSessionId && sessions.find(session => session.id === activeSessionId)?.hasUnread) loadSession(activeSessionId)
+  }, [activeSessionId, loadSession, sessions, view])
 
   const commitRename = (id: string): void => {
     const t = renameText.trim()
@@ -75,6 +108,12 @@ export default function Sidebar({
     setMenuId(null)
   }
 
+  const exportSession = async (id: string, format: 'markdown' | 'json'): Promise<void> => {
+    const result = await window.api.agent.exportSession(id, format)
+    if (!result.ok && !result.canceled) console.warn('Failed to export session', result.message)
+    setMenuId(null)
+  }
+
   const connectorLabel = (session: (typeof sessions)[number]): string => {
     if (session.source?.type !== 'connector') return ''
     return session.source.connectorId === 'wechat' ? '微信' : '飞书'
@@ -87,7 +126,9 @@ export default function Sidebar({
       ) : (
         <div className='conv-title'>
           {s.source?.type === 'connector' && <span className='conv-source'>{connectorLabel(s)}</span>}
-          <span>{s.task}</span>
+          <span className='conv-title-text'>{s.task}</span>
+          {runningSessions[s.id] && !(activeSessionId === s.id && view === 'chat') && <SessionRunningIndicator />}
+          {!runningSessions[s.id] && s.hasUnread && !(activeSessionId === s.id && view === 'chat') && <SessionUnreadIndicator />}
         </div>
       )}
       {renamingId !== s.id && <div className='conv-time'>{formatTime(s.updatedAt)}</div>}
@@ -118,7 +159,10 @@ export default function Sidebar({
             </>
           ) : (
             <>
+              <button type='button' className='conv-menu-item' role='menuitem' onClick={() => { toggleSessionPinned(s.id); setMenuId(null) }}>{s.pinnedAt ? '取消置顶' : '置顶会话'}</button>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => beginRename(s.id, s.task)}>编辑标题</button>
+              <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'markdown')}>导出 Markdown</button>
+              <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'json')}>导出 JSON</button>
               <button type='button' className='conv-menu-item danger' role='menuitem' onClick={() => setConfirmId(s.id)}>删除会话</button>
             </>
           )}
@@ -142,6 +186,7 @@ export default function Sidebar({
           </div>
           <div className='sidebar-nav'>
             <button className={clsx('sidebar-nav-item', view === 'chat' && !activeSessionId && 'active')} onClick={onNewTask}><SquarePen className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 新建任务</button>
+            <button className='sidebar-nav-item' onClick={onSearch} title={'搜索任务 (' + searchShortcut + ')'}><Search className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 搜索任务 <span className='sidebar-shortcut'>{searchShortcut}</span></button>
             <button className={clsx('sidebar-nav-item', view === 'connectors' && 'active')} onClick={() => onNavigate('connectors')}><Link2 className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 连接器</button>
             <button className={clsx('sidebar-nav-item', view === 'skills' && 'active')} onClick={() => onNavigate('skills')}><Blocks className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 技能广场</button>
             <button className={clsx('sidebar-nav-item', view === 'more' && 'active')} onClick={() => onNavigate('more')}><MoreHorizontal className='sidebar-nav-icon' size={17} strokeWidth={1.9} /> 更多</button>

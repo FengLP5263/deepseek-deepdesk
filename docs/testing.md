@@ -1,6 +1,6 @@
 # DeepDesk 测试策略
 
-DeepDesk 当前具备基础质量门禁，并已接入真实 Electron UI 端到端测试。后续重点是补齐 mock LLM 聊天流、会话读回和 Agent 审批链路。
+DeepDesk 当前具备完整的基础质量门禁，并已接入真实 Electron UI 端到端测试。测试通过临时用户目录和本地 mock 服务覆盖聊天、Agent、设置、上下文、记忆与浏览器交互，不依赖外部模型或平台服务。
 
 ## 当前测试层级
 
@@ -9,6 +9,7 @@ DeepDesk 当前具备基础质量门禁，并已接入真实 Electron UI 端到�
 | 类型检查 | `pnpm typecheck` | 已有 |
 | E2E 类型检查 | `pnpm typecheck:e2e` | 已有 |
 | 静态检查 | `pnpm lint` | 已有 |
+| 架构检查 | `pnpm architecture` | 已有，文件预算与跨层边界 |
 | 单元/集成测试 | `pnpm test` | 已有，Vitest |
 | 构建验证 | `pnpm build` | 已有 |
 | Electron smoke | `pnpm smoke` | 已有，验证 renderer 加载 |
@@ -21,17 +22,26 @@ DeepDesk 当前具备基础质量门禁，并已接入真实 Electron UI 端到�
 pnpm flow -- check --include-build --include-smoke
 ```
 
+GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。普通开发 PR 以 `develop` 为目标；`develop` → `main` 的发布 PR还必须满足 `docs/release.md` 的完整发布检查。
+
 ## 已覆盖重点
 
-- OpenAI 兼容 SSE 流式解析
+- OpenAI 兼容、OpenAI Responses 与 Anthropic Messages SSE 流式解析、鉴权头、无状态加密推理回放、prompt caching、缓存用量和工具协议转换
 - LLM 错误、usage、reasoning 内容处理
 - Agent 工具调用与权限审批
+- 工作目录 `AGENTS.md` / `AGENTS.override.md` 的优先级、有界读取与系统上下文装配
 - Windows PowerShell 与 macOS zsh 平台适配、提示词和参数引用
 - 文件工具工作目录边界
 - Zustand store 行为
-- AppStore 持久化链路
+- AppStore 持久化链路、临时文件恢复和 Windows 瞬时文件锁重试
+- 长期记忆显式捕获、偏好提取、敏感信息过滤和去重
+- 跨供应商模型搜索、键盘选择与会话级 provider/model 持久化，以及 Max 模式的输出预算透传、上下文面板回复预留、最终 AI 回复占用刷新和重启持久化
+- 上下文预算计入工具定义与消息封装开销，主进程计算结果可在上下文面板中按类别展示
+- 架构预算、Renderer 禁止直连网络和跨层导入失败用例
 - Electron renderer 加载 smoke
-- Playwright Electron 覆盖启动、设置页、平台快捷键、Windows 自定义窗口按钮、macOS 原生交通灯布局、侧边栏、模型入口、权限模式、模拟工作目录选择、输入框发送状态、多行输入、上下文面板、Provider 增删改、API Key 显隐、常规设置重启读回、窗口最大化，以及长会话中的回到底部控件定位与滚动行为
+- 工具结果卡片展开、复制反馈，以及复制操作不改变折叠状态
+- Playwright Electron 覆盖启动、设置页、平台快捷键、Windows 自定义窗口按钮、macOS 原生交通灯布局、系统全局唤起快捷键、托盘新建任务事件、侧边栏、模型入口、权限模式、模拟工作目录选择、输入框发送状态、全局 Enter 发送偏好、未发送草稿重启恢复与发送后清理、失败任务原地重试、多行输入、上下文面板、Provider 增删改、API Key 显隐、常规设置重启读回、Ctrl + 滚轮整体界面缩放与持久化、高倍率下的图标和弹窗布局、窗口最大化、会话置顶与重启持久化、会话导出，以及长会话中的回到底部控件定位与滚动行为
+- 可见 UI 改动在自动化测试后还需进行真实客户端视觉验收：Windows 优先使用 Computer Use 检查受影响页面、窗口边缘、弹窗以及最小/默认/最大状态；Computer Use 不可用时，改用已构建 Electron 客户端的多状态截图，并在交付说明中明确记录替代方式。
 - E2E 同时支持 CI 友好的 isolated 模式和人工观察友好的 session 模式
 
 ## 不应在测试中做的事
@@ -89,3 +99,4 @@ pnpm flow -- check --include-build --include-smoke
 - 改权限：补允许、拒绝、越界、危险命令测试。
 - 改 LLM 协议：补 mock HTTP 流式测试。
 - 改 UI 关键交互：至少补 store 测试；E2E 建好后补 UI 测试。
+- 新增领域 E2E 时优先创建独立 `*.spec.ts`，不要继续扩张历史综合验收文件。

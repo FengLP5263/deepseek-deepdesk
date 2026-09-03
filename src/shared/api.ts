@@ -1,5 +1,5 @@
-import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus } from './types'
-import type { AgentEvent, AgentRunRequest, AgentSession } from './agent-types'
+import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus, McpActionResult, McpServerConfig, McpServerStatus } from './types'
+import type { AgentEvent, AgentRunRequest, AgentSession, AgentSessionExportFormat, AgentSessionExportResult } from './agent-types'
 import type { PlatformInfo } from './platform'
 
 export interface DeepDeskApi {
@@ -14,6 +14,13 @@ export interface DeepDeskApi {
     remove: (id: string) => Promise<void>
     test: (provider: ProviderConfig) => Promise<ProviderTestResult>
   }
+  mcp: {
+    list: () => Promise<McpServerStatus[]>
+    save: (config: McpServerConfig) => Promise<McpServerStatus>
+    remove: (id: string) => Promise<void>
+    connect: (id: string) => Promise<McpActionResult>
+    disconnect: (id: string) => Promise<McpActionResult>
+  }
   conversations: {
     list: () => Promise<Conversation[]>
     get: (id: string) => Promise<Conversation | null>
@@ -25,6 +32,7 @@ export interface DeepDeskApi {
     upsert: (memory: MemoryItem) => Promise<MemoryItem>
     remove: (id: string) => Promise<void>
     search: (request: MemorySearchRequest) => Promise<MemoryItem[]>
+    capture: (request: MemoryCaptureRequest) => Promise<MemoryItem[]>
   }
   connectors: {
     list: () => Promise<ConnectorStatus[]>
@@ -33,6 +41,7 @@ export interface DeepDeskApi {
     authStatus: (id: ConnectorId, sessionId: string) => Promise<ConnectorAuthSession>
     connect: (id: ConnectorId) => Promise<ConnectorActionResult>
     disconnect: (id: ConnectorId) => Promise<ConnectorActionResult>
+    setupBrowser: (action: BrowserExtensionSetupAction) => Promise<ConnectorActionResult>
     activities: (id?: ConnectorId) => Promise<ConnectorActivityFeed>
     sendMessage: (id: ConnectorId, message: ConnectorOutboundMessage) => Promise<ConnectorActionResult>
   }
@@ -51,6 +60,7 @@ export interface DeepDeskApi {
     saveSession: (session: AgentSession) => Promise<void>
     deleteSession: (id: string) => Promise<void>
     renameSession: (id: string, title: string) => Promise<void>
+    exportSession: (id: string, format: AgentSessionExportFormat) => Promise<AgentSessionExportResult>
   }
   window: {
     minimize: () => Promise<void>
@@ -60,5 +70,6 @@ export interface DeepDeskApi {
     onMaximizedChange: (cb: (maximized: boolean) => void) => () => void
   }
   openExternal: (url: string) => Promise<void>
+  onNewTaskRequested: (cb: () => void) => () => void
   appVersion: () => Promise<string>
 }

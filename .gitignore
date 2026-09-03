@@ -11,3 +11,6 @@ probe.txt
 test-results/
 playwright-report/
 blob-report/
+
+# AI 助手本地记忆（可能包含个人信息，不纳入版本控制）
+.agents/MEMORY.md

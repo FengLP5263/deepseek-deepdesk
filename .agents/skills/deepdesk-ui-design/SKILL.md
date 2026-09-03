@@ -17,6 +17,7 @@ Use this skill together with `deepdesk-engineering` for repository changes. Read
 4. Update tests for visual behavior that can regress: layout alignment, one-popover-at-a-time behavior, icon metrics, font stacks, action visibility, and collapsed states.
 5. Run `pnpm flow -- check`; run `pnpm flow -- e2e` for visible interaction/layout changes.
 6. For feature/fix UI changes, update SemVer in both `package.json` and `src/shared/app-meta.ts`.
+7. After building visible UI changes on Windows, use Computer Use for a real-client visual pass when available. Inspect the affected surface, window edges, popovers, and relevant min/default/max states. If Computer Use is unavailable, inspect screenshots from the built Electron app instead and explicitly report the fallback; automated assertions do not replace this visual review.
 
 ## Design principles
 

@@ -4,8 +4,13 @@ import { startChat, cancelChat } from './llm'
 import { startAgent, cancelAgent, approveCommand } from './agent'
 import { connectConnector, disconnectConnector, getConnectorActivityFeed, getConnectorAuthStatus, listConnectors, sendConnectorMessage, startConnectorAuth } from './connectors'
 import type { AppStore } from './store'
-import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage } from '../shared/types'
-import type { AgentRunRequest, AgentSession } from '../shared/agent-types'
+import type { AppSettings, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage } from '../shared/types'
+import type { AgentRunRequest, AgentSession, AgentSessionExportFormat, AgentSessionExportResult } from '../shared/agent-types'
+import { setupBrowserSessionSharing } from './browser-runtime'
+import { connectMcpServer, deleteMcpServer, disconnectMcpServer, listMcpStatuses, saveMcpServer } from './mcp'
+import type { McpServerConfig } from '../shared/types'
+import { exportAgentSession } from './agent-session-export'
+import { testProviderConnection } from './provider-models'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.SettingsGet, () => store.getSnapshot().settings)
@@ -25,28 +30,18 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   })
 
   ipcMain.handle(IPC.ProviderTest, async (_event, provider: ProviderConfig): Promise<ProviderTestResult> => {
-    let base = provider.baseUrl.trim()
-    while (base.endsWith('/')) base = base.slice(0, -1)
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 8000)
-    try {
-      const res = await fetch(base + '/models', {
-        headers: { 'Authorization': 'Bearer ' + provider.apiKey },
-        signal: controller.signal
-      })
-      if (!res.ok) {
-        return { ok: false, message: 'HTTP ' + res.status }
-      }
-      const json = (await res.json()) as { data?: Array<{ id: string }> }
-      const models = (json.data ?? []).map(m => ({ id: m.id }))
-      return { ok: true, message: '连接成功，发现 ' + models.length + ' 个模型', models }
-    } catch (err) {
-      const e = err as Error
-      return { ok: false, message: e && e.message ? e.message : '连接失败' }
-    } finally {
-      clearTimeout(timer)
-    }
+    return testProviderConnection(provider)
   })
+
+  ipcMain.handle(IPC.McpServersList, () => listMcpStatuses())
+
+  ipcMain.handle(IPC.McpServerSave, (_event, config: McpServerConfig) => saveMcpServer(config))
+
+  ipcMain.handle(IPC.McpServerDelete, (_event, id: string) => deleteMcpServer(id))
+
+  ipcMain.handle(IPC.McpServerConnect, (_event, id: string) => connectMcpServer(id))
+
+  ipcMain.handle(IPC.McpServerDisconnect, (_event, id: string) => disconnectMcpServer(id))
 
   ipcMain.handle(IPC.ConversationsList, () => store.getSnapshot().conversations)
 
@@ -69,6 +64,7 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   })
 
   ipcMain.handle(IPC.MemoriesSearch, (_event, request: MemorySearchRequest) => store.searchMemories(request))
+  ipcMain.handle(IPC.MemoriesCapture, (_event, request: MemoryCaptureRequest) => store.captureMemories(request))
 
   ipcMain.handle(IPC.ConnectorsList, () => listConnectors(store.getSnapshot().connectors))
 
@@ -81,6 +77,8 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   ipcMain.handle(IPC.ConnectorConnect, (_event, id: ConnectorId) => connectConnector(store, id))
 
   ipcMain.handle(IPC.ConnectorDisconnect, (_event, id: ConnectorId) => disconnectConnector(store, id))
+
+  ipcMain.handle(IPC.ConnectorBrowserSetup, (_event, action: BrowserExtensionSetupAction) => setupBrowserSessionSharing(action))
 
   ipcMain.handle(IPC.ConnectorActivities, (_event, id?: ConnectorId) => getConnectorActivityFeed(store, id))
 
@@ -131,6 +129,15 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
 
   ipcMain.handle(IPC.AgentSessionRename, (_event, id: string, title: string) => {
     store.renameAgentSession(id, title)
+  })
+
+  ipcMain.handle(IPC.AgentSessionExport, async (event, id: string, format: AgentSessionExportFormat): Promise<AgentSessionExportResult> => {
+    const session = store.getSnapshot().agentSessions.find(item => item.id === id)
+    const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow()
+    if (!session) return { ok: false, message: '未找到会话' }
+    if (!win) return { ok: false, message: '窗口不可用' }
+    if (format !== 'markdown' && format !== 'json') return { ok: false, message: '不支持的导出格式' }
+    return exportAgentSession(win, session, format)
   })
 
   ipcMain.handle(IPC.AgentPickDirectory, async (event) => {

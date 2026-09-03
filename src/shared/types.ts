@@ -1,4 +1,4 @@
-import type { AgentSession } from './agent-types'
+import type { AgentInteractionMode, AgentSession } from './agent-types'
 
 export type Theme = 'dark' | 'light' | 'system'
 
@@ -6,7 +6,7 @@ export type AgentPermissionMode = 'ask' | 'auto' | 'full'
 
 export type AppFont = 'default' | 'system' | 'microsoft' | 'serif' | 'mono'
 
-export type ProviderType = 'openai'
+export type ProviderType = 'openai' | 'openai-responses' | 'anthropic'
 
 export interface ModelConfig {
   id: string
@@ -74,6 +74,11 @@ export interface MemorySearchRequest {
   limit?: number
 }
 
+export interface MemoryCaptureRequest {
+  text: string
+  source: NonNullable<MemoryItem['source']>
+}
+
 export type ConnectorId = 'lark' | 'wechat' | 'browser'
 
 export type ConnectorState = 'connected' | 'available' | 'needs_setup' | 'unavailable'
@@ -107,6 +112,7 @@ export interface ConnectorStatus {
   disconnectAction?: string
   command?: string
   config?: ConnectorConfig
+  browserMode?: 'extension' | 'idle'
 }
 
 export type ConnectorAuthState = 'pending' | 'scanned' | 'connected' | 'expired' | 'failed'
@@ -130,6 +136,8 @@ export interface ConnectorActionResult {
   detail?: string
   command?: string
 }
+
+export type BrowserExtensionSetupAction = 'copy-extension-directory' | 'open-extension-manager'
 
 export type ConnectorActivityDirection = 'inbound' | 'outbound' | 'system'
 
@@ -163,6 +171,57 @@ export interface ConnectorOutboundMessage {
   replyToken?: string
 }
 
+export type McpTransport = 'stdio' | 'http'
+
+export interface McpServerConfig {
+  id: string
+  name: string
+  transport: McpTransport
+  enabled: boolean
+  command: string
+  args: string[]
+  env: Record<string, string>
+  cwd: string
+  url: string
+  token: string
+  headers: Record<string, string>
+  createdAt: number
+  updatedAt: number
+}
+
+export interface McpToolAnnotations {
+  title?: string
+  readOnlyHint?: boolean
+  destructiveHint?: boolean
+  idempotentHint?: boolean
+  openWorldHint?: boolean
+}
+
+export interface McpToolInfo {
+  name: string
+  description?: string
+  inputSchema: Record<string, unknown>
+  annotations?: McpToolAnnotations
+}
+
+export type McpConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error'
+
+export interface McpServerStatus {
+  config: McpServerConfig
+  state: McpConnectionState
+  message: string
+  serverName?: string
+  serverVersion?: string
+  toolCount: number
+  tools: McpToolInfo[]
+}
+
+export interface McpActionResult {
+  ok: boolean
+  message: string
+  status?: McpServerStatus
+}
+
 export interface AppSettings {
   version: number
   defaultProviderId: string
@@ -170,14 +229,18 @@ export interface AppSettings {
   temperature: number
   theme: Theme
   appFont: AppFont
+  appFontScale: number
   enterToSend: boolean
   agentWorkdir: string
   agentPermissionMode: AgentPermissionMode
+  agentInteractionMode?: AgentInteractionMode
+  agentMaxMode?: boolean
 }
 
 export interface AppState {
   settings: AppSettings
   providers: ProviderConfig[]
+  mcpServers: McpServerConfig[]
   connectors: ConnectorConfig[]
   connectorActivities: ConnectorActivity[]
   conversations: Conversation[]

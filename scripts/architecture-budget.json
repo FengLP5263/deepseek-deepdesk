@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "limits": {
+    "component": 500,
+    "store": 500,
+    "service": 600,
+    "source": 500,
+    "stylesheet": 700,
+    "test": 600,
+    "script": 500
+  },
+  "exceptions": {
+    "src/main/connectors.ts": {
+      "maxLines": 1059,
+      "targetLines": 600,
+      "reason": "历史连接器编排集中，后续按协议适配器、同步调度和授权流程拆分"
+    },
+    "src/renderer/src/assets/app.css": {
+      "maxLines": 940,
+      "targetLines": 700,
+      "reason": "历史全局样式集中，新增样式必须进入对应功能样式文件"
+    },
+    "src/renderer/src/stores/useAgentStore.ts": {
+      "maxLines": 876,
+      "targetLines": 500,
+      "reason": "历史 Agent 运行与会话状态耦合，后续拆分运行协调器和持久化适配器"
+    },
+    "src/renderer/src/components/hub/FeatureHub.tsx": {
+      "maxLines": 823,
+      "targetLines": 500,
+      "reason": "历史功能广场页面集中，后续按连接器、技能和设置卡片拆分"
+    },
+    "e2e/app.spec.ts": {
+      "maxLines": 932,
+      "targetLines": 600,
+      "reason": "历史综合验收集，新增领域测试必须使用独立 spec 文件"
+    }
+  }
+}

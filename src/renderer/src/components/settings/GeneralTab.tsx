@@ -88,7 +88,7 @@ export default function GeneralTab() {
         <div className='settings-row'>
           <div>
             <div className='settings-row-label'>界面字体</div>
-            <div className='settings-row-desc'>默认使用当前 DeepDesk 风格字体，也可以切换成系统、微软雅黑、宋体或等宽字体</div>
+            <div className='settings-row-desc'>可切换字体；按住 Ctrl 滚动鼠标滚轮等比缩放文字、图标和界面，当前 {Math.round(settings.appFontScale * 100)}%</div>
           </div>
           <div className='font-options' aria-label='界面字体'>
             {fonts.map(font => (

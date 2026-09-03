@@ -223,6 +223,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const payload = conv.messages
       .filter(m => !m.streaming)
       .map(m => ({ role: m.role, content: m.content }))
+    await window.api.memories.capture({ text: trimmed, source: { type: 'conversation', id: conv.id } }).catch(error => console.warn('Failed to capture chat memory', error))
     const memories = await window.api.memories.search({ query: trimmed, scopes: ['user', 'project'], limit: 6 })
     const memoryContext = formatMemoryContext(memories)
     const messages = memoryContext

@@ -30,7 +30,7 @@ beforeEach(async () => {
     },
     providers: { list: async () => store.getSnapshot().providers, upsert: async () => {}, remove: async () => {}, test: async () => ({ ok: true, message: '' }) },
     conversations: { list: async () => [], get: async () => null, upsert: async () => {}, remove: async () => {} },
-    memories: { list: async () => [], upsert: async (memory: never) => memory, remove: async () => {}, search: async () => [] },
+    memories: { list: async () => [], upsert: async (memory: never) => memory, remove: async () => {}, search: async () => [], capture: async () => [] },
     chat: { start: async () => ({ ok: true }), cancel: async () => {}, onChunk: () => () => {} },
     agent: {
       start: async (req: { runId: string }) => { startedRunId = req.runId; return { ok: true } },
@@ -49,10 +49,13 @@ beforeEach(async () => {
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
   useSettingsStore.setState({ loaded: true, providers: [{ id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }], settings: { ...store.getSnapshot().settings } })
-  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', draftTask: '', steps: [], history: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
+  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentProviderId: '', currentModelId: '', currentSessionId: '', draftTask: '', steps: [], history: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
 })
 
-afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+afterEach(async () => {
+  await store.flush()
+  rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+})
 
 describe('Agent 会话保存真实链路', () => {
   it('done 事件触发 -> 写入真实 store -> 重开仍可读回', async () => {
@@ -65,6 +68,7 @@ describe('Agent 会话保存真实链路', () => {
     expect(store.getSnapshot().agentSessions.length).toBe(1)
     expect(store.getSnapshot().agentSessions[0].task).toBe('帮我写一个冒泡排序')
     // 2) 重新加载 store，读回磁盘
+    await store.flush()
     const store2 = new AppStore(dir)
     await store2.init()
     expect(store2.getSnapshot().agentSessions.length).toBe(1)

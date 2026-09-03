@@ -1,3 +1,9 @@
+import type { ContextUsage } from './context-manager'
+
+export type McpAgentToolName = `mcp__${string}`
+
+export type AgentInteractionMode = 'execute' | 'plan'
+
 export type AgentToolName =
   | 'run_command'
   | 'read_file'
@@ -12,8 +18,26 @@ export type AgentToolName =
   | 'browser_snapshot'
   | 'browser_click'
   | 'browser_type'
+  | 'browser_hover'
+  | 'browser_scroll'
   | 'browser_debug'
   | 'browser_evaluate'
+  | 'inspect_mcp_server'
+  | 'install_mcp_server'
+  | 'search_mcp_tools'
+  | McpAgentToolName
+
+export interface McpInstallApproval {
+  candidateId: string
+  name: string
+  source: string
+  transport?: 'http' | 'stdio'
+  command?: string
+  args?: string[]
+  cwd?: string
+  serverVersion?: string
+  toolNames: string[]
+}
 
 export interface AgentQueuedMessage {
   id: string
@@ -46,6 +70,8 @@ export interface AgentRunRequest {
   workdir: string
   task: string
   temperature: number
+  interactionMode?: AgentInteractionMode
+  maxMode?: boolean
   history?: Array<Record<string, unknown>>
   memoryContext?: string
 }
@@ -56,7 +82,7 @@ export interface AgentToolResult {
   summary: string
 }
 
-export type AgentEventType = 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
+export type AgentEventType = 'thinking' | 'text' | 'context_usage' | 'context_compacting' | 'context_compacted' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
 
 export interface AgentEvent {
   runId: string
@@ -72,11 +98,15 @@ export interface AgentEvent {
   cwd?: string
   target?: string
   reason?: string
+  mcpInstall?: McpInstallApproval
   history?: Array<Record<string, unknown>>
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+  beforeTokens?: number
+  afterTokens?: number
+  contextUsage?: ContextUsage
 }
 
-export type AgentStepKind = 'task' | 'thinking' | 'text' | 'tool' | 'error'
+export type AgentStepKind = 'task' | 'thinking' | 'context' | 'text' | 'tool' | 'error'
 
 export interface AgentStep {
   kind: AgentStepKind
@@ -91,17 +121,33 @@ export interface AgentStep {
   feedback?: 'positive' | 'negative'
   sourceActivityId?: string
   sourceConnectorId?: 'lark' | 'wechat'
+  beforeTokens?: number
+  afterTokens?: number
+  startedAt?: number
 }
 
 export interface AgentSession {
   id: string
   task: string
   workdir: string
+  providerId?: string
   modelId: string
   createdAt: number
   updatedAt: number
+  pinnedAt?: number
   steps: AgentStep[]
   history: Array<Record<string, unknown>>
   queuedMessages?: AgentQueuedMessage[]
+  hasUnread?: boolean
+  contextUsage?: ContextUsage
   source?: AgentSessionSource
+}
+
+export type AgentSessionExportFormat = 'markdown' | 'json'
+
+export interface AgentSessionExportResult {
+  ok: boolean
+  canceled?: boolean
+  filePath?: string
+  message?: string
 }

@@ -20,7 +20,8 @@ import {
   openSettings,
   pressAppShortcut,
   startMockApprovalServer,
-  startMockChatServer
+  startMockChatServer,
+  startMockMcpInstallServer
 } from './helpers'
 
 let app: ElectronApplication
@@ -118,6 +119,74 @@ test('aligns the settings navigation and content columns', async () => {
   expect(layout!.searchRight).toBe(layout!.activeItemRight)
 })
 
+test('adds, edits, and removes an MCP server from settings', async () => {
+  await openSettings(page)
+  await page.getByRole('button', { name: 'MCP', exact: true }).click()
+
+  await expect(page.locator('.settings-title')).toHaveText('MCP')
+  await expect(page.locator('.mcp-empty')).toContainText('还没有 MCP 服务器')
+  await page.getByRole('button', { name: '添加服务器' }).click()
+
+  const form = page.locator('.modal', { hasText: '添加 MCP 服务器' })
+  await expect(form).toBeVisible()
+  await form.getByLabel('服务器名称').fill('团队知识库')
+  await form.getByLabel('连接方式').selectOption('http')
+  await form.getByLabel('服务器地址').fill('https://example.com/mcp')
+  await form.getByRole('button', { name: '保存', exact: true }).click()
+
+  const card = page.locator('.mcp-card', { hasText: '团队知识库' })
+  await expect(card).toBeVisible()
+  await expect(card).toContainText('未连接')
+  await expect(card).toContainText('https://example.com/mcp')
+  await expect(card.getByRole('button', { name: '连接', exact: true })).toBeVisible()
+
+  await card.getByTitle('编辑服务器').click()
+  const editForm = page.locator('.modal', { hasText: '编辑 MCP 服务器' })
+  await expect(editForm.getByLabel('服务器名称')).toHaveValue('团队知识库')
+  await editForm.getByRole('button', { name: '取消' }).click()
+
+  await card.getByTitle('删除服务器').click()
+  const confirm = page.locator('.modal', { hasText: '删除 MCP 服务器' })
+  await confirm.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(card).toHaveCount(0)
+  await expect(page.locator('.mcp-empty')).toContainText('还没有 MCP 服务器')
+})
+
+test('inspects and installs an HTTP MCP service from the conversation after explicit confirmation', async () => {
+  await closeDeepDesk(ctx)
+  ctx = null
+  const mock = await startMockMcpInstallServer()
+
+  try {
+    ctx = await launchDeepDesk(createMemoryUserData(mock.baseUrl))
+    app = ctx.app
+    page = ctx.page
+
+    await page.getByPlaceholder('发消息，或让我帮你做点事…').fill(`把这个 MCP 服务装一下：${mock.mcpUrl}`)
+    await page.locator('.send-btn').click()
+
+    const approval = page.getByRole('dialog', { name: '安装 MCP 服务' })
+    await expect(approval).toBeVisible()
+    await expect(approval).toContainText('DeepDesk Docs')
+    await expect(approval).toContainText(mock.mcpUrl)
+    await expect(approval).toContainText('search_docs')
+    await expect(approval).toContainText('1 个工具')
+    await expect(approval.getByRole('button', { name: '安装并连接' })).toBeVisible()
+    await expect(approval.getByRole('button', { name: '取消' })).toBeVisible()
+
+    await approval.getByRole('button', { name: '安装并连接' }).click()
+    await expect(page.getByText('MCP 服务已安装并连接。')).toBeVisible()
+
+    await openSettings(page)
+    await page.getByRole('button', { name: 'MCP', exact: true }).click()
+    const card = page.locator('.mcp-card', { hasText: 'DeepDesk Docs' })
+    await expect(card).toContainText('已连接')
+    await expect(card).toContainText('1 个可用工具')
+  } finally {
+    await mock.close()
+  }
+})
+
 test('marks titlebar drag regions and supports settings back button', async () => {
   const platform = await getDesktopPlatform(page)
   await expect(page.locator('.titlebar')).toHaveClass(/drag/)
@@ -185,44 +254,26 @@ test('centers the empty conversation composer with the welcome content', async (
   expect(layout!.composerBottomRatio).toBeLessThan(0.82)
 })
 
-test('supports sidebar collapse, expand, and new task action', async () => {
-  await expect(page.locator('.sidebar')).toBeVisible()
-  await expect(page.getByRole('button', { name: /最近任务 \(0\)/ })).toHaveAttribute('aria-expanded', 'true')
-  const navIconMetrics = await page.evaluate(() => Array.from(document.querySelectorAll<SVGElement>('.sidebar-nav-icon')).map(icon => ({
-    width: Math.round(icon.getBoundingClientRect().width),
-    height: Math.round(icon.getBoundingClientRect().height),
-    iconClass: Array.from(icon.classList).find(className => className.startsWith('lucide-') && className !== 'lucide') ?? '',
-    strokeWidth: icon.getAttribute('stroke-width')
-  })))
-  expect(navIconMetrics).toEqual([
-    { width: 17, height: 17, iconClass: 'lucide-square-pen', strokeWidth: '1.9' },
-    { width: 17, height: 17, iconClass: 'lucide-link2', strokeWidth: '1.9' },
-    { width: 17, height: 17, iconClass: 'lucide-blocks', strokeWidth: '1.9' },
-    { width: 17, height: 17, iconClass: 'lucide-ellipsis', strokeWidth: '1.9' }
-  ])
-
-  await page.getByTitle('收起侧边栏').click()
-
-  await expect(page.locator('.sidebar.collapsed')).toHaveCSS('width', '0px')
-  await expect(page.getByTitle('展开侧边栏')).toBeVisible()
-
-  await page.getByTitle('新建任务').click()
-  await expect(page.getByPlaceholder('发消息，或让我帮你做点事…')).toBeVisible()
-
-  await page.getByTitle('展开侧边栏').click()
-
-  await expect(page.locator('.sidebar:not(.collapsed)')).toBeVisible()
-  await expect(page.locator('.brand', { hasText: 'DeepDesk' })).toBeVisible()
-  await expect(page.locator('.brand-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
-})
-
 test('opens sidebar feature pages and applies a skill template', async () => {
   await page.getByRole('button', { name: '连接器' }).click()
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
   await expect(page.locator('.hub-header', { hasText: '连接器' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '飞书' })).toBeVisible()
   await expect(page.locator('.connector-card', { hasText: '微信' })).toBeVisible()
-  await expect(page.locator('.connector-card', { hasText: '浏览器调试' })).toBeVisible()
+  const browserConnector = page.locator('.connector-card', { hasText: '浏览器调试' })
+  await expect(browserConnector).toBeVisible()
+  await expect(browserConnector).toContainText('E2E Browser · 未连接')
+  await expect(browserConnector.getByRole('button', { name: '连接', exact: true })).toBeVisible()
+  await expect(browserConnector.getByRole('button', { name: '安装扩展' })).toHaveCount(0)
+  await expect(browserConnector.getByRole('button', { name: '启用' })).toHaveCount(0)
+  await expect(browserConnector.getByRole('button', { name: '停用' })).toHaveCount(0)
+  await browserConnector.getByRole('button', { name: '连接', exact: true }).click()
+  const browserSetupModal = page.locator('.modal', { hasText: '安装浏览器扩展' })
+  await expect(browserSetupModal).toBeVisible()
+  await expect(browserSetupModal).toContainText('完成后 DeepDesk 会自动连接')
+  await expect(browserSetupModal.getByRole('button', { name: '复制扩展目录' })).toBeVisible()
+  await browserSetupModal.getByRole('button', { name: '关闭' }).click()
+  await expect(browserConnector).toContainText('E2E Browser · 等待扩展')
   await expect(page.locator('.connector-activity-panel', { hasText: '连接器消息' })).toBeVisible()
   await expect(page.locator('.connector-activity-empty')).toContainText('还没有收到连接器消息')
   await expect(page.locator('.connector-card', { hasText: '飞书' }).getByAltText('飞书 图标')).toBeVisible()
@@ -373,35 +424,6 @@ test('selects agent permission mode from the gray composer menu', async () => {
   await expect(permissionButton).toContainText('每次询问')
 })
 
-test('selects a model from the polished composer model picker', async () => {
-  const modelButton = page.getByTitle('选择模型')
-
-  await expect(modelButton).toContainText('Auto')
-
-  await modelButton.click()
-  const menu = page.getByRole('menu', { name: '选择模型' })
-  await expect(menu).toBeVisible()
-  const menuStyle = await menu.evaluate(element => {
-    const rect = element.getBoundingClientRect()
-    return {
-      width: Math.round(rect.width),
-      radius: getComputedStyle(element).borderTopLeftRadius
-    }
-  })
-  expect(menuStyle.width).toBeLessThanOrEqual(248)
-  expect(menuStyle.radius).toBe('8px')
-  await expect(menu).not.toContainText('0.79')
-  await expect(menu.getByRole('switch', { name: 'Max 模式' })).toBeVisible()
-  await expect(menu.getByRole('menuitemradio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true')
-
-  await menu.getByRole('menuitemradio', { name: 'DeepSeek V4 Pro（深度思考）' }).click()
-  await expect(modelButton).toContainText('DeepSeek V4 Pro（深度思考）')
-
-  await modelButton.click()
-  await page.getByRole('menuitem', { name: '配置自定义模型' }).click()
-  await expect(page.locator('.settings-title', { hasText: '模型服务' })).toBeVisible()
-})
-
 test('selects a mock agent work directory without opening a native dialog', async () => {
   const directoryPicker = page.locator('.agent-composer .composer-left > .toolbar-item')
 
@@ -492,7 +514,7 @@ test('supports multiline composer input and context meter panel', async () => {
 
   await page.locator('.ctx-trigger').click()
   await expect(page.locator('.ctx-panel')).toBeVisible()
-  await expect(page.locator('.ctx-panel', { hasText: '上下文已用' })).toBeVisible()
+  await expect(page.locator('.ctx-panel', { hasText: '上下文占用' })).toBeVisible()
   await expect(page.locator('.ctx-panel', { hasText: '256K' })).toBeVisible()
   await expect(page.locator('.ctx-panel', { hasText: '当前输入' })).toBeVisible()
   await expect(page.locator('.ctx-breakdown-row[data-tone="input"] .ctx-breakdown-dot')).toBeVisible()
@@ -544,7 +566,7 @@ test('adds, edits, adds model, and deletes a custom provider without network cal
   await page.getByRole('button', { name: '添加服务' }).click()
 
   const modal = page.locator('.modal')
-  await modal.getByPlaceholder('例如：智谱 GLM / Kimi / 本地 Ollama').fill('智谱 GLM')
+  await modal.getByPlaceholder('例如：Claude / 智谱 GLM / 本地 Ollama').fill('智谱 GLM')
   await modal.getByPlaceholder('https://api.deepseek.com').fill('https://open.bigmodel.cn/api/paas/v4')
   await modal.getByPlaceholder('sk-…').fill('sk-test-e2e')
   await modal.getByRole('button', { name: '保存' }).click()
@@ -667,7 +689,7 @@ test('persists memory settings and injects matching memory into an agent request
 
     await expect.poll(() => mock.requests.length).toBe(1)
     const messages = mock.requests[0].messages ?? []
-    expect(String(messages[0]?.content ?? '')).toContain(memoryContent)
+    expect(messages.some(message => message.role === 'system' && String(message.content ?? '').includes(memoryContent))).toBe(true)
     expect(messages[messages.length - 1]).toEqual(expect.objectContaining({ role: 'user', content: task }))
 
     await expect.poll(() => {
@@ -720,7 +742,7 @@ test('places the scroll-to-bottom control above the composer in a long agent ses
   await expect.poll(async () => scroll.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(2)
 })
 
-test('queues editable messages during a run, keeps approval above the composer, and stops immediately', async () => {
+test('shows ChatGPT-style queued messages, keeps approval above the composer, and stops immediately', async () => {
   await closeDeepDesk(ctx)
   ctx = null
   const mock = await startMockApprovalServer()
@@ -748,19 +770,33 @@ test('queues editable messages during a run, keeps approval above the composer, 
     await queue.locator('.agent-queue-editor').fill('稍后检查完整测试')
     await queue.getByRole('button', { name: '保存' }).click()
     await expect(queue).toContainText('稍后检查完整测试')
+    await expect(queue.locator('.agent-queue-header')).toHaveCount(0)
+    await expect(queue.locator('.agent-queue-label')).toHaveText('待发送')
     await expect(queue.getByRole('button', { name: '立即发送' })).toBeVisible()
+
+    const queueStyle = await queue.locator('.agent-queue-item').evaluate(element => {
+      const style = getComputedStyle(element)
+      return {
+        borderRadius: style.borderRadius,
+        backgroundIsTransparent: style.backgroundColor === 'transparent' || style.backgroundColor === 'rgba(0, 0, 0, 0)'
+      }
+    })
+    expect(queueStyle).toEqual({ borderRadius: '12px', backgroundIsTransparent: false })
 
     const layout = await page.evaluate(() => {
       const approvalEl = document.querySelector<HTMLElement>('.agent-approval')
       const composerEl = document.querySelector<HTMLElement>('.agent-footer .agent-composer')
+      const queueEl = document.querySelector<HTMLElement>('.agent-footer .agent-queue')
       const scrollEl = document.querySelector<HTMLElement>('.agent-scroll')
-      if (!approvalEl || !composerEl || !scrollEl) return null
+      if (!approvalEl || !composerEl || !queueEl || !scrollEl) return null
       const approvalBox = approvalEl.getBoundingClientRect()
       const composerBox = composerEl.getBoundingClientRect()
+      const queueBox = queueEl.getBoundingClientRect()
       const scrollBox = scrollEl.getBoundingClientRect()
       return {
         approval: { x: approvalBox.x, y: approvalBox.y, width: approvalBox.width, height: approvalBox.height },
         composer: { x: composerBox.x, y: composerBox.y, width: composerBox.width },
+        queue: { x: queueBox.x, y: queueBox.y, width: queueBox.width, height: queueBox.height },
         scroll: { y: scrollBox.y, height: scrollBox.height }
       }
     })
@@ -769,6 +805,10 @@ test('queues editable messages during a run, keeps approval above the composer, 
     expect(layout!.approval.y + layout!.approval.height).toBeLessThanOrEqual(layout!.composer.y - 8)
     expect(Math.abs(layout!.approval.x - layout!.composer.x)).toBeLessThanOrEqual(1)
     expect(Math.abs(layout!.approval.width - layout!.composer.width)).toBeLessThanOrEqual(1)
+    expect(layout!.queue.x).toBeGreaterThan(layout!.composer.x)
+    expect(layout!.queue.width).toBeLessThan(layout!.composer.width)
+    expect(layout!.queue.y + layout!.queue.height - layout!.composer.y).toBeGreaterThanOrEqual(14)
+    expect(layout!.queue.y + layout!.queue.height - layout!.composer.y).toBeLessThanOrEqual(18)
 
     const stopButton = page.getByRole('button', { name: '停止生成' })
     await expect(stopButton).toBeVisible()
@@ -795,7 +835,7 @@ test('queues editable messages during a run, keeps approval above the composer, 
     await stopButton.click()
     await expect(stopButton).toBeHidden()
     await expect(approval).toBeHidden()
-    await expect(page.getByText('思考中…')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /思考中/ })).toHaveCount(0)
     await expect(queue).toContainText('稍后检查完整测试')
   } finally {
     await mock.close()

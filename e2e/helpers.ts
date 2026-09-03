@@ -17,12 +17,17 @@ export interface MockChatRequest {
   messages?: Array<Record<string, unknown>>
   tools?: Array<Record<string, unknown>>
   stream?: boolean
+  max_tokens?: number
 }
 
 export interface MockChatServer {
   baseUrl: string
   requests: MockChatRequest[]
   close: () => Promise<void>
+}
+
+export interface MockMcpInstallServer extends MockChatServer {
+  mcpUrl: string
 }
 
 function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -44,7 +49,7 @@ function writeSse(res: ServerResponse, payload: unknown): void {
   res.write('data: ' + JSON.stringify(payload) + '\n\n')
 }
 
-export async function startMockChatServer(reply = '已收到记忆上下文。'): Promise<MockChatServer> {
+export async function startMockChatServer(reply = '已收到记忆上下文。', responseDelayMs = 0, reasoning = ''): Promise<MockChatServer> {
   const requests: MockChatRequest[] = []
   const server = createServer(async (req, res) => {
     if (req.url === '/models') {
@@ -60,7 +65,9 @@ export async function startMockChatServer(reply = '已收到记忆上下文。')
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive'
       })
+      if (responseDelayMs > 0) await new Promise(resolve => setTimeout(resolve, responseDelayMs))
       writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { role: 'assistant' } }] })
+      if (reasoning) writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { reasoning_content: reasoning } }] })
       writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { content: reply } }] })
       writeSse(res, { id: 'mock-1', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } })
       res.write('data: [DONE]\n\n')
@@ -131,6 +138,104 @@ export async function startMockApprovalServer(): Promise<MockChatServer> {
   }
 }
 
+export async function startMockMcpInstallServer(): Promise<MockMcpInstallServer> {
+  const requests: MockChatRequest[] = []
+  let mcpUrl = ''
+
+  const server = createServer(async (req, res) => {
+    if (req.url === '/mcp') {
+      const body = await readJsonBody(req) as { jsonrpc?: string; id?: string | number; method?: string; params?: Record<string, unknown> }
+      if (body.method === 'notifications/initialized') {
+        res.writeHead(202)
+        res.end()
+        return
+      }
+      let result: Record<string, unknown>
+      if (body.method === 'initialize') {
+        result = {
+          protocolVersion: String(body.params?.protocolVersion ?? '2025-11-25'),
+          capabilities: { tools: {} },
+          serverInfo: { name: 'DeepDesk Docs', version: '1.2.0' }
+        }
+      } else if (body.method === 'tools/list') {
+        result = {
+          tools: [{
+            name: 'search_docs',
+            description: '搜索团队文档',
+            inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+            annotations: { readOnlyHint: true, destructiveHint: false }
+          }]
+        }
+      } else if (body.method === 'tools/call') {
+        result = { content: [{ type: 'text', text: 'result:ok' }] }
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id ?? null, error: { code: -32601, message: 'Method not found' } }))
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result }))
+      return
+    }
+    if (req.url === '/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: [{ id: 'mock-chat' }] }))
+      return
+    }
+    if (req.url === '/chat/completions') {
+      const body = await readJsonBody(req) as MockChatRequest
+      requests.push(body)
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      })
+      const toolMessages = (body.messages ?? []).filter(message => message.role === 'tool')
+      if (toolMessages.length === 0) {
+        writeSse(res, {
+          id: 'mock-mcp-inspect',
+          model: body.model ?? 'mock-chat',
+          choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_inspect_mcp', type: 'function', function: { name: 'inspect_mcp_server', arguments: JSON.stringify({ source: mcpUrl }) } }] } }]
+        })
+        writeSse(res, { id: 'mock-mcp-inspect', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })
+      } else if (toolMessages.length === 1) {
+        const content = String(toolMessages[0].content ?? '{}')
+        let candidateId = ''
+        try {
+          candidateId = (JSON.parse(content) as { candidate_id?: string }).candidate_id ?? ''
+        } catch {
+          throw new Error(`MCP inspection failed in E2E: ${content}`)
+        }
+        writeSse(res, {
+          id: 'mock-mcp-install',
+          model: body.model ?? 'mock-chat',
+          choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_install_mcp', type: 'function', function: { name: 'install_mcp_server', arguments: JSON.stringify({ candidate_id: candidateId }) } }] } }]
+        })
+        writeSse(res, { id: 'mock-mcp-install', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })
+      } else {
+        writeSse(res, { id: 'mock-mcp-done', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { role: 'assistant' } }] })
+        writeSse(res, { id: 'mock-mcp-done', model: body.model ?? 'mock-chat', choices: [{ index: 0, delta: { content: 'MCP 服务已安装并连接。' } }] })
+        writeSse(res, { id: 'mock-mcp-done', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+      }
+      res.write('data: [DONE]\n\n')
+      res.end()
+      return
+    }
+    res.writeHead(404)
+    res.end('not found')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = (server.address() as { port: number }).port
+  const baseUrl = 'http://127.0.0.1:' + port
+  mcpUrl = baseUrl + '/mcp'
+  return {
+    baseUrl,
+    mcpUrl,
+    requests,
+    close: () => new Promise(resolve => server.close(() => resolve()))
+  }
+}
+
 export function createMemoryUserData(baseUrl: string): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
@@ -162,9 +267,63 @@ export function createMemoryUserData(baseUrl: string): string {
   return userDataDir
 }
 
+export function createMultiProviderUserData(baseUrl: string, theme: 'light' | 'dark' = 'light'): string {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
+  const state = {
+    settings: {
+      version: 1,
+      defaultProviderId: 'mock-local',
+      defaultModelId: 'mock-chat',
+      temperature: 1,
+      theme,
+      appFont: 'default',
+      enterToSend: true,
+      agentWorkdir: '',
+      agentPermissionMode: 'ask'
+    },
+    providers: [
+      {
+        id: 'mock-local',
+        name: 'Mock Local',
+        type: 'openai',
+        baseUrl,
+        apiKey: 'sk-mock',
+        models: [{ id: 'mock-chat', name: 'Mock Chat' }],
+        createdAt: 1
+      },
+      {
+        id: 'zhipu-local',
+        name: '智谱模型',
+        type: 'openai',
+        baseUrl,
+        apiKey: 'sk-zhipu',
+        models: [{ id: 'glm-5.3-flash', name: 'GLM 5.3 Flash' }],
+        createdAt: 2
+      },
+      {
+        id: 'deepseek-local',
+        name: 'DeepSeek',
+        type: 'openai',
+        baseUrl,
+        apiKey: 'sk-deepseek',
+        models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }],
+        createdAt: 3
+      }
+    ],
+    conversations: [],
+    agentSessions: [],
+    memories: []
+  }
+  writeFileSync(join(userDataDir, 'deepdesk.json'), JSON.stringify(state), 'utf8')
+  return userDataDir
+}
+
 export function createLongAgentSessionUserData(): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
-  const content = Array.from({ length: 36 }, (_, index) => `第 ${index + 1} 段本地验收内容，用于验证长对话阅读和回到底部操作。`).join('\n\n')
+  const steps = Array.from({ length: 180 }, (_, index) => ({
+    kind: index % 2 === 0 ? 'task' : 'text',
+    text: `第 ${index + 1} 条本地验收内容，用于验证长对话阅读和分批加载。`
+  }))
   const state = {
     settings: {
       version: 1,
@@ -186,10 +345,7 @@ export function createLongAgentSessionUserData(): string {
       modelId: 'deepseek-v4-flash',
       createdAt: 1,
       updatedAt: 1,
-      steps: [
-        { kind: 'task', text: '请展示一段较长的本地会话内容。' },
-        { kind: 'text', text: content }
-      ],
+      steps,
       history: []
     }]
   }
@@ -197,7 +353,7 @@ export function createLongAgentSessionUserData(): string {
   return userDataDir
 }
 
-export function createMessageActionsUserData(): string {
+export function createMessageActionsUserData(theme: 'light' | 'dark' = 'light'): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
     settings: {
@@ -205,7 +361,7 @@ export function createMessageActionsUserData(): string {
       defaultProviderId: 'deepseek',
       defaultModelId: 'deepseek-v4-flash',
       temperature: 1,
-      theme: 'light',
+      theme,
       appFont: 'default',
       enterToSend: true,
       agentWorkdir: '',
@@ -232,7 +388,7 @@ export function createMessageActionsUserData(): string {
   return userDataDir
 }
 
-export function createContextBreakdownUserData(): string {
+export function createContextBreakdownUserData(compacting = false): string {
   const userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))
   const state = {
     settings: {
@@ -255,8 +411,10 @@ export function createContextBreakdownUserData(): string {
       modelId: 'deepseek-v4-flash',
       createdAt: 1,
       updatedAt: 1,
+      contextUsage: { used: 6500, parts: [{ label: '系统指令 / 记忆', tokens: 1200, tone: 'system' }, { label: '用户消息', tokens: 800, tone: 'user' }, { label: 'AI 回复', tokens: 1800, tone: 'assistant' }, { label: '工具调用参数', tokens: 300, tone: 'tool-call' }, { label: '工具返回结果', tokens: 900, tone: 'tool-result' }, { label: '工具定义', tokens: 1500, tone: 'tool-schema' }] },
       steps: [
         { kind: 'task', text: '解释上下文组成' },
+        { kind: 'context', beforeTokens: 146000, afterTokens: 82000, ...(compacting ? { status: 'running', startedAt: Date.now() } : {}) },
         { kind: 'tool', callId: 'call-1', name: 'read_file', args: JSON.stringify({ path: 'src/main/store.ts' }), status: 'ok', result: 'store.ts 中包含持久化逻辑。' },
         { kind: 'text', text: '上下文由系统指令、用户消息、AI 回复和工具信息共同组成。' }
       ],
@@ -337,14 +495,19 @@ export function createConnectorSessionUserData(): string {
   return userDataDir
 }
 
-export async function launchDeepDesk(userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-'))): Promise<DeepDeskE2EApp> {
+export async function launchDeepDesk(userDataDir = mkdtempSync(join(tmpdir(), 'deepdesk-e2e-')), extraEnv: Record<string, string> = {}): Promise<DeepDeskE2EApp> {
   const app = await electron.launch({
     args: ['.'],
     env: {
       ...process.env,
       DEEPDESK_USER_DATA_DIR: userDataDir,
       DEEPDESK_E2E_PICK_DIRECTORY: userDataDir,
-      DEEPDESK_DISABLE_DIRECT_CONNECTORS: '1'
+      DEEPDESK_DISABLE_DIRECT_CONNECTORS: '1',
+      DEEPDESK_DISABLE_BROWSER_EXTENSION_BRIDGE: '1',
+      DEEPDESK_BROWSER_CONNECT_TIMEOUT_MS: '0',
+      DEEPDESK_BROWSER_EXECUTABLE: process.execPath,
+      DEEPDESK_BROWSER_NAME: 'E2E Browser',
+      ...extraEnv
     }
   })
   const page = await app.firstWindow()

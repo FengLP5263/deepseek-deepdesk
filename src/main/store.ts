@@ -1,10 +1,12 @@
 import { app } from 'electron'
-import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityStatus, ConnectorConfig, ConnectorConfigPatch, ConnectorId } from '../shared/types'
+import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityStatus, ConnectorConfig, ConnectorConfigPatch, ConnectorId, McpServerConfig } from '../shared/types'
 import type { AgentSession } from '../shared/agent-types'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
-import { searchMemories } from '../shared/memory'
+import { extractMemoryCandidates, relateMemory, searchMemories, type MemoryCandidate } from '../shared/memory'
+import { normalizeAppFontScale } from '../shared/font-scale'
+import { mapAppStateSecrets, plaintextSecretCodec, SecretStorageError, type SecretCodec } from './secret-storage'
+import { CoalescedJsonWriter, readJsonWithTempRecovery } from './json-file-store'
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
@@ -13,15 +15,27 @@ const DEFAULT_SETTINGS: AppSettings = {
   temperature: 1,
   theme: 'dark',
   appFont: 'default',
+  appFontScale: 1,
   enterToSend: true,
   agentWorkdir: '',
-  agentPermissionMode: 'ask'
+  agentPermissionMode: 'ask',
+  agentInteractionMode: 'execute',
+  agentMaxMode: false
 }
 
 function cloneProviders(): ProviderConfig[] {
   return BUILTIN_PROVIDERS.map(p => ({
     ...p,
     models: p.models.map(m => ({ ...m }))
+  }))
+}
+
+function normalizeProviders(providers: unknown): ProviderConfig[] {
+  if (!Array.isArray(providers)) return []
+  return (providers as ProviderConfig[]).map(provider => ({
+    ...provider,
+    type: provider.type === 'anthropic' || provider.type === 'openai-responses' ? provider.type : 'openai',
+    models: Array.isArray(provider.models) ? provider.models : []
   }))
 }
 
@@ -78,37 +92,67 @@ function normalizeConnectorActivities(activities: unknown): ConnectorActivity[] 
     .slice(0, 200)
 }
 
+function normalizeMcpServers(servers: unknown): McpServerConfig[] {
+  const incoming = Array.isArray(servers) ? servers as Partial<McpServerConfig>[] : []
+  return incoming
+    .filter(server => typeof server.id === 'string' && server.id.trim() && typeof server.name === 'string' && server.name.trim())
+    .map(server => ({
+      id: String(server.id),
+      name: String(server.name),
+      transport: server.transport === 'http' ? 'http' : 'stdio',
+      enabled: server.enabled === true,
+      command: typeof server.command === 'string' ? server.command : '',
+      args: Array.isArray(server.args) ? server.args.filter((arg): arg is string => typeof arg === 'string') : [],
+      env: server.env && typeof server.env === 'object' && !Array.isArray(server.env)
+        ? Object.fromEntries(Object.entries(server.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+        : {},
+      cwd: typeof server.cwd === 'string' ? server.cwd : '',
+      url: typeof server.url === 'string' ? server.url : '',
+      token: typeof server.token === 'string' ? server.token : '',
+      headers: server.headers && typeof server.headers === 'object' && !Array.isArray(server.headers)
+        ? Object.fromEntries(Object.entries(server.headers).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+        : {},
+      createdAt: Number(server.createdAt) || Date.now(),
+      updatedAt: Number(server.updatedAt) || Date.now()
+    }))
+}
+
 export class AppStore {
   private file: string
   private data: AppState
-  private writing: Promise<void> = Promise.resolve()
+  private secrets: SecretCodec
+  private writer: CoalescedJsonWriter
 
-  constructor(storageDir?: string) {
+  constructor(storageDir?: string, secrets: SecretCodec = plaintextSecretCodec) {
     const dir = storageDir ?? app.getPath('userData')
     this.file = path.join(dir, 'deepdesk.json')
+    this.secrets = secrets
     this.data = {
       settings: { ...DEFAULT_SETTINGS },
       providers: cloneProviders(),
+      mcpServers: [],
       connectors: normalizeConnectors([]),
       connectorActivities: [],
       conversations: [],
       agentSessions: [],
       memories: []
     }
+    this.writer = new CoalescedJsonWriter(this.file, () => JSON.stringify(mapAppStateSecrets(this.data, this.secrets, 'protect'), null, 2))
   }
 
   async init(): Promise<void> {
     try {
-      const raw = await fs.readFile(this.file, 'utf-8')
-      const parsed = JSON.parse(raw) as Partial<AppState>
-      this.data = this.migrate(parsed)
-    } catch {
-      // 首次启动，使用默认数据
+      const loaded = await readJsonWithTempRecovery<Partial<AppState>>(this.file)
+      this.data = mapAppStateSecrets(this.migrate(loaded.value), this.secrets, 'reveal')
+      if (loaded.recovered) console.warn('[store] 已从未完成写入的临时文件恢复本地数据')
+    } catch (error) {
+      if (error instanceof SecretStorageError) throw error
     }
     if (!this.data.providers || this.data.providers.length === 0) {
       this.data.providers = cloneProviders()
     }
     if (!this.data.settings) this.data.settings = { ...DEFAULT_SETTINGS }
+    this.data.mcpServers = normalizeMcpServers(this.data.mcpServers)
     this.data.connectors = normalizeConnectors(this.data.connectors)
     if (!this.data.conversations) this.data.conversations = []
     if (!this.data.agentSessions) this.data.agentSessions = []
@@ -116,22 +160,32 @@ export class AppStore {
     this.data.connectorActivities = normalizeConnectorActivities(this.data.connectorActivities)
     this.migrateDeepSeekV4()
     this.hydrateBuiltInProviderModels()
-    await this.persist()
+    this.backfillMemories()
+    this.persist()
+    await this.flush()
   }
 
   private migrate(parsed: Partial<AppState>): AppState {
     const raw = parsed.settings as (Partial<AppSettings> & { agentAutoApprove?: boolean }) | undefined
     const settings: AppSettings = { ...DEFAULT_SETTINGS, ...raw }
+    settings.appFontScale = normalizeAppFontScale(settings.appFontScale)
     if (raw?.agentAutoApprove === true && settings.agentPermissionMode === 'ask') {
       settings.agentPermissionMode = 'auto'
     }
-    const providers = Array.isArray(parsed.providers) ? parsed.providers : []
+    const providers = normalizeProviders(parsed.providers)
+    const mcpServers = normalizeMcpServers(parsed.mcpServers)
     const connectors = normalizeConnectors(parsed.connectors)
     const connectorActivities = normalizeConnectorActivities(parsed.connectorActivities)
     const conversations = Array.isArray(parsed.conversations) ? parsed.conversations : []
-    const agentSessions = Array.isArray(parsed.agentSessions) ? parsed.agentSessions : []
+    const agentSessions = Array.isArray(parsed.agentSessions)
+      ? parsed.agentSessions.map(session => ({
+          ...session,
+          hasUnread: session.hasUnread === true,
+          providerId: session.providerId || providers.find(provider => provider.models?.some(model => model.id === session.modelId))?.id || settings.defaultProviderId
+        }))
+      : []
     const memories = Array.isArray(parsed.memories) ? parsed.memories : []
-    return { settings, providers, connectors, connectorActivities, conversations, agentSessions, memories }
+    return { settings, providers, mcpServers, connectors, connectorActivities, conversations, agentSessions, memories }
   }
 
   private migrateDeepSeekV4(): void {
@@ -181,11 +235,13 @@ export class AppStore {
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     this.data.settings = { ...this.data.settings, ...patch }
+    this.data.settings.appFontScale = normalizeAppFontScale(this.data.settings.appFontScale)
     this.persist()
     return structuredClone(this.data.settings)
   }
 
   upsertProvider(provider: ProviderConfig): void {
+    provider = { ...provider, type: provider.type === 'anthropic' || provider.type === 'openai-responses' ? provider.type : 'openai' }
     const idx = this.data.providers.findIndex(p => p.id === provider.id)
     if (idx >= 0) this.data.providers[idx] = structuredClone(provider)
     else this.data.providers.push(structuredClone(provider))
@@ -198,6 +254,31 @@ export class AppStore {
     if (settings.defaultProviderId === id && this.data.providers.length > 0) {
       settings.defaultProviderId = this.data.providers[0].id
     }
+    this.persist()
+  }
+
+  upsertMcpServer(config: McpServerConfig): McpServerConfig {
+    const now = Date.now()
+    const current = this.data.mcpServers.find(server => server.id === config.id)
+    const next: McpServerConfig = {
+      ...structuredClone(config),
+      name: config.name.trim(),
+      command: config.command.trim(),
+      cwd: config.cwd.trim(),
+      url: config.url.trim(),
+      token: config.token.trim(),
+      createdAt: current?.createdAt ?? config.createdAt ?? now,
+      updatedAt: now
+    }
+    const idx = this.data.mcpServers.findIndex(server => server.id === config.id)
+    if (idx >= 0) this.data.mcpServers[idx] = next
+    else this.data.mcpServers.push(next)
+    this.persist()
+    return structuredClone(next)
+  }
+
+  deleteMcpServer(id: string): void {
+    this.data.mcpServers = this.data.mcpServers.filter(server => server.id !== id)
     this.persist()
   }
 
@@ -271,6 +352,7 @@ export class AppStore {
       id,
       task: title,
       workdir: this.data.settings.agentWorkdir,
+      providerId: this.data.settings.defaultProviderId,
       modelId: this.data.settings.defaultModelId,
       createdAt: activity.createdAt,
       updatedAt: activity.createdAt,
@@ -335,6 +417,58 @@ export class AppStore {
     return structuredClone(searchMemories(this.data.memories, request.query, request.scopes, request.limit))
   }
 
+  captureMemories(request: MemoryCaptureRequest): MemoryItem[] {
+    const captured = this.captureMemoryCandidates(extractMemoryCandidates(request.text), request.source)
+    if (captured.length > 0) this.persist()
+    return structuredClone(captured)
+  }
+
+  private captureMemoryCandidates(candidates: MemoryCandidate[], source: NonNullable<MemoryItem['source']>): MemoryItem[] {
+    const captured: MemoryItem[] = []
+    for (const candidate of candidates) {
+      const related = this.data.memories
+        .map(memory => ({ memory, relationship: relateMemory(memory, candidate) }))
+        .find(item => item.relationship !== 'distinct')
+      const now = Date.now()
+      if (related) {
+        const existing = related.memory
+        existing.content = candidate.content
+        existing.enabled = true
+        existing.updatedAt = now
+        existing.source = source
+        existing.tags = Array.from(new Set([...existing.tags, ...candidate.tags, ...(related.relationship === 'conflict' ? ['已更新'] : [])]))
+        captured.push(existing)
+        continue
+      }
+      const memory: MemoryItem = {
+        id: `memory-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        ...candidate,
+        source,
+        enabled: true,
+        createdAt: now,
+        updatedAt: now
+      }
+      this.data.memories.push(memory)
+      captured.push(memory)
+    }
+    return captured
+  }
+
+  private backfillMemories(): void {
+    for (const conversation of this.data.conversations) {
+      for (const message of conversation.messages) {
+        if (message.role !== 'user') continue
+        this.captureMemoryCandidates(extractMemoryCandidates(message.content), { type: 'conversation', id: conversation.id })
+      }
+    }
+    for (const session of this.data.agentSessions) {
+      for (const step of session.steps) {
+        if (step.kind !== 'task' || !step.text) continue
+        this.captureMemoryCandidates(extractMemoryCandidates(step.text), { type: 'agent', id: session.id })
+      }
+    }
+  }
+
   upsertAgentSession(session: AgentSession): void {
     const idx = this.data.agentSessions.findIndex(s => s.id === session.id)
     if (idx >= 0) this.data.agentSessions[idx] = structuredClone(session)
@@ -361,22 +495,11 @@ export class AppStore {
     this.persist()
   }
 
-  private persist(): Promise<void> {
-    const snapshot = JSON.stringify(this.data, null, 2)
-    const write = this.writing
-      .then(async () => {
-        const tmp = this.file + '.tmp'
-        await fs.writeFile(tmp, snapshot, 'utf-8')
-        await fs.rename(tmp, this.file)
-      })
-      .catch(err => {
-        console.error('[store] 持久化失败:', err)
-      })
-    this.writing = write
-    return write
+  private persist(): void {
+    this.writer.request()
   }
 
   flush(): Promise<void> {
-    return this.writing
+    return this.writer.flush()
   }
 }

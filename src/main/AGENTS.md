@@ -6,6 +6,7 @@
 
 - `index.ts`：Electron 生命周期、单实例、退出 flush、smoke-test。
 - `window.ts`：窗口创建、安全导航、外部链接策略。
+- `desktop-presence.ts`：系统托盘、全局唤起快捷键与退出清理。
 - `store.ts`：本地 JSON 存储、原子写、迁移入口。
 - `ipc.ts`：IPC handler 注册。
 - `llm.ts`：聊天流式调度、取消、主进程网络调用。

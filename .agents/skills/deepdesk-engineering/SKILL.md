@@ -13,8 +13,9 @@ Use this skill to keep DeepDesk changes reproducible and AI-friendly. Prefer scr
 
 1. Read `AGENTS.md`.
 2. Inspect the current worktree with `git -c core.quotepath=false status --short`.
-3. Read the nearest folder-level `AGENTS.md` for every directory being edited.
-4. Use `pnpm flow -- ...` for checks, builds, smoke tests, packages, and releases.
+3. Confirm ordinary development is on `develop` or a short-lived branch created from `develop`; do not modify `main` outside an explicit release workflow.
+4. Read the nearest folder-level `AGENTS.md` for every directory being edited.
+5. Use `pnpm flow -- ...` for checks, builds, smoke tests, packages, and releases.
 
 ## Command entrypoint
 
@@ -42,13 +43,16 @@ Common commands:
 ## Validation rules
 
 - Ordinary code change: run `pnpm flow -- check`.
+- Structural change or new module: read `references/architecture-quality.md` and run `pnpm architecture`.
 - Behavior change: update or add tests, then run `pnpm flow -- check`.
 - IPC, permission, persistence, or Agent tool change: run `pnpm flow -- check --include-build`.
 - Feature or bugfix change: update SemVer in both `package.json` and `src/shared/app-meta.ts`. Before the first stable public release, keep the major version at `0` (`feat` -> minor, `fix` -> patch, breaking -> minor with explicit release notes). Only the first stable public release may become `1.0.0`.
 - Release candidate: run `pnpm flow -- release --target <platform>`.
+- Git Flow: ordinary changes target `develop`; a reviewed release PR uses Squash Merge from `develop` into `main`, then the new `main` commit must be merged back into `develop` with a normal merge commit and both branches synchronized to both remotes. Create the annotated `vX.Y.Z` tag matching `package.json` only for a formal release.
 - macOS packages must be built on macOS.
 - DeepDesk currently supports Windows x64 and macOS arm64; Linux is out of scope.
-- Playwright Electron E2E is installed; run isolated mode for CI and session mode for local visual acceptance.
+- Playwright Electron E2E is installed; isolated mode automatically discovers every domain spec except `session.spec.ts`, while session mode is reserved for local single-window acceptance.
+- Documentation changes ship with the behavior they describe: update `README.md` for user-visible capabilities or support changes, architecture documents for boundaries and data-flow changes, and engineering documents plus this skill for workflow changes. If no documentation changes are needed, state why in the PR description.
 
 ## Architecture guardrails
 
@@ -58,9 +62,13 @@ Common commands:
 - Agent tool changes follow: tool schema -> executor branch -> permission evaluation -> tests.
 - Shared code belongs in `src/shared`; do not import Electron across layers.
 - Tests must not call real model services, send real Feishu messages, or execute dangerous commands.
+- Documentation must describe implemented behavior and must not present planned work as an existing capability.
+- New files must stay within `scripts/architecture-budget.json`; legacy exceptions are frozen and cannot grow. Split responsibilities instead of raising limits to pass CI.
 
 ## References
 
 Read `references/workflows.md` when changing IPC, Agent tools, or preparing release candidates.
+
+Read `references/architecture-quality.md` when adding features, changing module boundaries, or touching a file near its size budget.
 
 Read `docs/folder-map.md` when routing work across multiple project folders.

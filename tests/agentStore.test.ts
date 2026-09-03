@@ -8,6 +8,7 @@ let chunkCb: ((ev: AgentEvent) => void) | null = null
 let saved: AgentSession[] = []
 let startReqs: AgentRunRequest[] = []
 let memoryResults: MemoryItem[] = []
+let capturedMemoryTexts: string[] = []
 let connectorMessages: Array<{ id: string; sessionId: string; threadId: string; text: string; replyToken?: string }> = []
 let cancelledRunIds: string[] = []
 
@@ -16,12 +17,13 @@ beforeEach(() => {
   saved = []
   startReqs = []
   memoryResults = []
+  capturedMemoryTexts = []
   connectorMessages = []
   cancelledRunIds = []
   const api = {
     platform: { id: 'macos', shellName: 'zsh', nativeWindowControls: true },
     settings: {
-      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }),
+      get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }),
       set: async (patch: Record<string, unknown>) => ({ ...patch })
     },
     providers: { list: async () => [], upsert: async () => {}, remove: async () => {}, test: async () => ({ ok: true, message: '' }) },
@@ -30,7 +32,8 @@ beforeEach(() => {
       list: async () => memoryResults,
       upsert: async (memory: MemoryItem) => memory,
       remove: async () => {},
-      search: async () => memoryResults
+      search: async () => memoryResults,
+      capture: async (request: { text: string }) => { capturedMemoryTexts.push(request.text); return [] }
     },
     connectors: {
       list: async () => [],
@@ -62,8 +65,11 @@ beforeEach(() => {
     appVersion: async () => '1.0.0'
   }
   ;(globalThis as unknown as { window: unknown }).window = { api, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
-  useSettingsStore.setState({ loaded: true, providers: [{ id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [], createdAt: 0 }], settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' } })
-  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentModelId: '', currentSessionId: '', currentSource: undefined, draftTask: '', steps: [], history: [], queuedMessages: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
+  useSettingsStore.setState({ loaded: true, providers: [
+    { id: 'deepseek', name: 'DeepSeek', type: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'sk', models: [{ id: 'deepseek-v4-pro' }], createdAt: 0 },
+    { id: 'zhipu', name: '智谱', type: 'openai', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: 'glm-key', models: [{ id: 'glm-5.3-flash', name: 'GLM 5.3 Flash' }], createdAt: 0 }
+  ], settings: { version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' } })
+  useAgentStore.setState({ initialized: false, workdir: '', running: false, currentRunId: null, currentTask: '', currentProviderId: '', currentModelId: '', currentSessionId: '', currentSource: undefined, draftTask: '', steps: [], history: [], queuedMessages: [], sessions: [], activeSessionId: null, runningSessions: {}, pendingApprovalsBySessionId: {}, pendingApproval: null, error: null })
 })
 
 describe('useAgentStore 会话持久化', () => {
@@ -90,17 +96,73 @@ describe('useAgentStore 会话持久化', () => {
     expect(useAgentStore.getState().steps.some(step => step.kind === 'thinking')).toBe(false)
   })
 
+  it('运行错误会结束状态并把未完成工具标记为出错', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('读取浏览器页面')
+    const runId = startReqs[0].runId
+    chunkCb!({ runId, type: 'tool_call', call: { id: 'browser-1', name: 'browser_snapshot', args: { target_id: 'stale-page' } } })
+
+    chunkCb!({ runId, type: 'error', message: '未找到浏览器页面：stale-page' })
+
+    const failed = useAgentStore.getState()
+    expect(failed.running).toBe(false)
+    expect(failed.currentRunId).toBeNull()
+    expect(failed.steps.find(step => step.callId === 'browser-1')).toMatchObject({
+      status: 'error',
+      summary: '未找到浏览器页面：stale-page',
+      result: '未找到浏览器页面：stale-page'
+    })
+    expect(failed.steps.some(step => step.kind === 'thinking')).toBe(false)
+  })
+
+  it('运行标识异常丢失时停止操作仍会清理界面运行态', () => {
+    useAgentStore.setState({ running: true, currentRunId: null, pendingApproval: { callId: 'approval-1', command: '', cwd: '', target: '', reason: '等待批准' } })
+
+    useAgentStore.getState().stop()
+
+    expect(useAgentStore.getState()).toMatchObject({ running: false, currentRunId: null, pendingApproval: null })
+  })
+
   it('任务完成后自动保存会话', async () => {
     useAgentStore.getState().init()
     await useAgentStore.getState().start('写一个文件')
     expect(startReqs.length).toBe(1)
     const req = startReqs[0]
+    chunkCb!({ runId: req.runId, type: 'thinking' })
+    chunkCb!({ runId: req.runId, type: 'thinking', text: '先分析需求，' })
+    chunkCb!({ runId: req.runId, type: 'thinking', text: '再执行任务。' })
+    chunkCb!({ runId: req.runId, type: 'text', text: '已完成' })
     chunkCb!({ runId: req.runId, type: 'done' })
     await new Promise(r => setTimeout(r, 80))
     expect(saved.length).toBe(1)
     expect(saved[0].task).toBe('写一个文件')
     expect(saved[0].steps[0].kind).toBe('task')
     expect(saved[0].modelId).toBe('deepseek-v4-pro')
+    expect(saved[0].steps.find(step => step.kind === 'thinking')).toMatchObject({ text: '先分析需求，再执行任务。', status: 'ok' })
+    expect(saved[0].hasUnread).toBe(true)
+    expect(useAgentStore.getState().sessions[0].hasUnread).toBe(true)
+    useAgentStore.getState().loadSession(saved[0].id)
+    await new Promise(r => setTimeout(r, 20))
+    expect(useAgentStore.getState().sessions[0].hasUnread).toBe(false)
+    expect(saved[0].hasUnread).toBe(false)
+  })
+
+  it('合并高频正文与思考分片，避免每个分片触发完整状态提交', async () => {
+    useAgentStore.getState().init()
+    await useAgentStore.getState().start('分析大量流式分片')
+    const runId = startReqs[0].runId
+    let stateUpdates = 0
+    const unsubscribe = useAgentStore.subscribe(() => { stateUpdates += 1 })
+
+    for (let index = 0; index < 120; index += 1) chunkCb!({ runId, type: 'thinking', text: '思' })
+    for (let index = 0; index < 120; index += 1) chunkCb!({ runId, type: 'text', text: '答' })
+    chunkCb!({ runId, type: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 80))
+    unsubscribe()
+
+    expect(saved[0].steps.find(step => step.kind === 'thinking')).toMatchObject({ text: '思'.repeat(120), status: 'ok' })
+    expect(saved[0].steps.find(step => step.kind === 'text')?.text).toBe('答'.repeat(120))
+    expect(stateUpdates).toBeLessThan(8)
   })
 
   it('运行中按顺序排队消息，并在上一轮完成后使用编辑后的内容继续发送', async () => {
@@ -185,16 +247,22 @@ describe('useAgentStore 会话持久化', () => {
     await useAgentStore.getState().start('提交代码')
 
     expect(startReqs[0].memoryContext).toContain('提交前先跑 pnpm flow -- check')
+    expect(capturedMemoryTexts).toEqual(['提交代码'])
   })
 
-  it('当前会话选择的模型优先于全局默认模型并随会话保存', async () => {
+  it('当前会话可选择其他供应商模型并将供应商与模型一起保存', async () => {
     useAgentStore.getState().init()
-    useAgentStore.getState().setCurrentModel('glm-5.3-flash')
+    useSettingsStore.setState(state => ({ settings: state.settings ? { ...state.settings, agentInteractionMode: 'plan', agentMaxMode: true } : state.settings }))
+    useAgentStore.getState().setCurrentModel('zhipu', 'glm-5.3-flash')
     await useAgentStore.getState().start('用当前模型继续')
 
+    expect(startReqs[0].providerId).toBe('zhipu')
     expect(startReqs[0].modelId).toBe('glm-5.3-flash')
+    expect(startReqs[0].interactionMode).toBe('plan')
+    expect(startReqs[0].maxMode).toBe(true)
     chunkCb!({ runId: startReqs[0].runId, type: 'done' })
     await new Promise(r => setTimeout(r, 80))
+    expect(saved[0].providerId).toBe('zhipu')
     expect(saved[0].modelId).toBe('glm-5.3-flash')
   })
 
