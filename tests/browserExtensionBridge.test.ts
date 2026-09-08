@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
-import { afterEach, describe, expect, it } from 'vitest'
-import WebSocket from 'ws'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_EXTENSION_ID, BrowserExtensionBridge } from '../src/main/browser-extension-bridge'
 
 function waitForOpen(socket: WebSocket): Promise<void> {
@@ -37,13 +37,23 @@ describe('browser extension bridge', () => {
   })
 
   it('bridges current browser tabs and CDP commands through the signed extension origin', async () => {
+    // Installed extensions scan the production port range. Keep real browsers out
+    // of this test while exercising the bridge's actual origin and CDP handling.
+    const upgrade = WebSocketServer.prototype.handleUpgrade
+    vi.spyOn(WebSocketServer.prototype, 'handleUpgrade').mockImplementation(function (this: WebSocketServer, request, socket, head, callback) {
+      if (request.url === '/extension' && request.headers['x-deepdesk-test'] !== 'isolated-bridge') {
+        socket.destroy()
+        return
+      }
+      upgrade.call(this, request, socket, head, callback)
+    })
     bridge = new BrowserExtensionBridge()
     await bridge.start()
     const baseUrl = bridge.baseUrl
     expect(baseUrl).toBeTruthy()
     const address = new URL(baseUrl!)
     extensionSocket = new WebSocket(`ws://${address.host}/extension`, {
-      headers: { Origin: `chrome-extension://${BROWSER_EXTENSION_ID}` }
+      headers: { Origin: `chrome-extension://${BROWSER_EXTENSION_ID}`, 'x-deepdesk-test': 'isolated-bridge' }
     })
     await waitForOpen(extensionSocket)
 
