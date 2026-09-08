@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { build } from 'vite'
 
 const help = `Seed a local DeepDesk UI review session.
 
@@ -8,7 +9,7 @@ Usage:
   node scripts/seed-ui-session.mjs [--user-data-dir <dir>]
 
 Options:
-  --user-data-dir <dir>   Write deepdesk.json under this userData directory.
+  --user-data-dir <dir>   Write a UI session under this userData directory (close DeepDesk first).
                           Defaults to the existing DeepDesk app data directory,
                           or %APPDATA%/DeepDesk on Windows.
   --help                  Show this help.
@@ -69,6 +70,7 @@ function readState(file) {
   }
   const parsed = JSON.parse(readFileSync(file, 'utf8'))
   return {
+    ...parsed,
     settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
     providers: Array.isArray(parsed.providers) ? parsed.providers : [],
     conversations: Array.isArray(parsed.conversations) ? parsed.conversations : [],
@@ -380,7 +382,7 @@ cases = [
   }
 }
 
-function main() {
+async function main() {
   const flags = parseArgs(process.argv.slice(2))
   if (flags.get('help')) {
     console.log(help)
@@ -393,6 +395,20 @@ function main() {
   const file = join(userDataDir, 'deepdesk.json')
   const state = readState(file)
   const session = buildUiSession(process.cwd())
+  if (state.sessionStorageVersion === 1) {
+    const bundle = await build({ configFile: false, logLevel: 'silent', build: {
+      ssr: resolve('src/main/session-journal.ts'), write: false, minify: false,
+      rollupOptions: { output: { format: 'es' } }
+    } })
+    const code = bundle.output.find(item => item.type === 'chunk').code
+    const { SessionJournal } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'))
+    const journal = new SessionJournal(userDataDir, { protect: value => value, reveal: value => value })
+    await journal.load()
+    journal.upsert('agent', session)
+    await journal.flush()
+    console.log(`Seeded UI session: ${session.task}\nUser data: ${userDataDir}`)
+    return 0
+  }
   const sessions = state.agentSessions.filter(item => item?.id !== session.id && item?.task !== session.task)
   state.agentSessions = [session, ...sessions]
   state.settings = { ...DEFAULT_SETTINGS, ...state.settings, agentWorkdir: state.settings.agentWorkdir || process.cwd() }
@@ -407,7 +423,7 @@ function main() {
 }
 
 try {
-  process.exitCode = main()
+  process.exitCode = await main()
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1

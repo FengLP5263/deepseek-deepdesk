@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, AgentStep, McpInstallApproval } from '@shared/agent-types'
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
-import { appendAgentStep, completeContextCompaction, finishAgentThinking } from '../lib/agent-steps'
+import { startSavedAgent } from '../lib/start-saved-agent'
+import { appendAgentStep, completeContextCompaction, finishAgentThinking, latestAgentTask as latestTask } from '../lib/agent-steps'
 import { applyAgentStreamChunks, bufferAgentStreamChunk, createAgentStreamBuffer, drainAgentStreamBuffer, type AgentStreamBufferState } from '../lib/agent-stream-buffer'
 interface PendingApprovalState {
   callId: string
@@ -62,7 +63,7 @@ interface AgentState {
   refreshSessions: () => Promise<void>
   processPendingConnectorSession: () => Promise<void>
   loadSession: (id: string) => void
-  deleteSession: (id: string) => Promise<void>
+  archiveSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
   toggleSessionPinned: (id: string) => void
   updateStep: (index: number, patch: Partial<AgentStep>) => void
@@ -83,14 +84,6 @@ const connectorStatusTimers = new Map<string, number>()
 
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
-}
-
-function latestTask(steps: AgentStep[]): string {
-  for (let index = steps.length - 1; index >= 0; index -= 1) {
-    const step = steps[index]
-    if (step.kind === 'task') return step.text?.trim() ?? ''
-  }
-  return ''
 }
 
 function replaceUserHistoryAtTaskIndex(history: Array<Record<string, unknown>>, steps: AgentStep[], taskIndex: number, text: string): Array<Record<string, unknown>> {
@@ -459,7 +452,8 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     await window.api.memories.capture({ text: t, source: { type: 'agent', id: sessionId } }).catch(error => console.warn('Failed to capture Agent memory', error))
     const memories = await window.api.memories.search({ query: [t, workdir].filter(Boolean).join(' '), scopes: ['user', 'project', 'agent'], limit: 8 })
     const memoryContext = formatMemoryContext(memories)
-    const res = await window.api.agent.start({ runId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, interactionMode: ss.settings?.agentInteractionMode ?? 'execute', maxMode: ss.settings?.agentMaxMode ?? false, history: previousHistory, memoryContext })
+    const res = await startSavedAgent(sessionFromContext(ctx), { runId, sessionId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, interactionMode: ss.settings?.agentInteractionMode ?? 'execute', maxMode: ss.settings?.agentMaxMode ?? false, history: previousHistory, memoryContext }, () => runContexts.get(runId) === ctx)
+    if (!runContexts.has(runId)) return false
     if (!res.ok) {
       append(ctx, { kind: 'error', message: res.message ?? '启动失败' })
       finishRun(ctx, ctx.history, false, true)
@@ -758,37 +752,39 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       }))
       if (session.hasUnread) saveSession(s)
     },
-    deleteSession: async (id) => {
+    archiveSession: async (id) => {
       const runId = runIdBySessionId.get(id)
       if (runId) {
-        void window.api.agent.cancel(runId)
+        flushStreamBuffer(runId)
         runContexts.delete(runId)
         runIdBySessionId.delete(id)
         clearStreamBuffer(runId)
       }
-      await window.api.agent.deleteSession(id)
-      set(s => {
-        const nextSessions = s.sessions.filter(x => x.id !== id)
-        const cleared = removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, id)
-        if (s.activeSessionId !== id && s.currentSessionId !== id) return { sessions: nextSessions, ...cleared }
-        return {
-          sessions: nextSessions,
-          ...cleared,
-          activeSessionId: null,
-          currentSessionId: '',
-          currentSource: undefined,
-          currentTask: '',
-          currentProviderId: '',
-          currentModelId: '',
-          steps: [],
-          history: [],
-          queuedMessages: [],
-          running: false,
-          currentRunId: null,
-          pendingApproval: null,
-          error: null
-        }
-      })
+      let archived = false
+      try { await window.api.sessionArchive.archive({ kind: 'agent', id }); archived = true } finally {
+        set(s => {
+          const nextSessions = archived ? s.sessions.filter(x => x.id !== id) : s.sessions
+          const cleared = removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, id)
+          if (s.activeSessionId !== id && s.currentSessionId !== id) return { sessions: nextSessions, ...cleared }
+          return {
+            sessions: nextSessions,
+            ...cleared,
+            activeSessionId: null,
+            currentSessionId: '',
+            currentSource: undefined,
+            currentTask: '',
+            currentProviderId: '',
+            currentModelId: '',
+            steps: [],
+            history: [],
+            queuedMessages: [],
+            running: false,
+            currentRunId: null,
+            pendingApproval: null,
+            error: null
+          }
+        })
+      }
     },
     renameSession: async (id, title) => {
       const t = title.trim()

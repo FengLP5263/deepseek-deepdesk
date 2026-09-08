@@ -51,11 +51,12 @@ export default function Sidebar({
   const activeSessionId = useAgentStore(s => s.activeSessionId)
   const runningSessions = useAgentStore(s => s.runningSessions)
   const loadSession = useAgentStore(s => s.loadSession)
-  const deleteSession = useAgentStore(s => s.deleteSession)
+  const archiveSession = useAgentStore(s => s.archiveSession)
   const renameSession = useAgentStore(s => s.renameSession)
   const toggleSessionPinned = useAgentStore(s => s.toggleSessionPinned)
   const [menuId, setMenuId] = useState<string | null>(null)
-  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [menuError, setMenuError] = useState('')
+  const [archiving, setArchiving] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameText, setRenameText] = useState('')
   const [tasksOpen, setTasksOpen] = useState(true)
@@ -71,7 +72,7 @@ export default function Sidebar({
     const closeMenu = (event: PointerEvent): void => {
       if (event.target instanceof Node && !menuRef.current?.contains(event.target)) {
         setMenuId(null)
-        setConfirmId(null)
+        setMenuError('')
       }
     }
     document.addEventListener('pointerdown', closeMenu)
@@ -90,22 +91,24 @@ export default function Sidebar({
   }
 
   const openSession = (id: string): void => {
-    if (renamingId || confirmId) return
+    if (renamingId || archiving) return
     loadSession(id)
     onNavigate('chat')
   }
 
   const beginRename = (id: string, task: string): void => {
-    setConfirmId(null)
+    setMenuError('')
     setMenuId(null)
     setRenamingId(id)
     setRenameText(task)
   }
 
-  const confirmDelete = async (id: string): Promise<void> => {
-    await deleteSession(id)
-    setConfirmId(null)
-    setMenuId(null)
+  const archive = async (id: string): Promise<void> => {
+    setArchiving(true)
+    setMenuError('')
+    try { await archiveSession(id); setMenuId(null) }
+    catch { setMenuError('归档失败，请重试') }
+    finally { setArchiving(false) }
   }
 
   const exportSession = async (id: string, format: 'markdown' | 'json'): Promise<void> => {
@@ -140,7 +143,7 @@ export default function Sidebar({
           aria-expanded={menuId === s.id}
           onClick={e => {
             e.stopPropagation()
-            setConfirmId(null)
+            setMenuError('')
             setMenuId(menuId === s.id ? null : s.id)
           }}
         >
@@ -149,23 +152,12 @@ export default function Sidebar({
       )}
       {menuId === s.id && (
         <div className='conv-menu' ref={menuRef} role='menu' aria-label='会话操作' onClick={e => e.stopPropagation()}>
-          {confirmId === s.id ? (
-            <>
-              <div className='conv-menu-confirm'>删除这个会话？</div>
-              <div className='conv-menu-actions'>
-                <button type='button' className='conv-menu-button' onClick={() => setConfirmId(null)}>取消</button>
-                <button type='button' className='conv-menu-button danger' onClick={() => void confirmDelete(s.id)}>确认删除</button>
-              </div>
-            </>
-          ) : (
-            <>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => { toggleSessionPinned(s.id); setMenuId(null) }}>{s.pinnedAt ? '取消置顶' : '置顶会话'}</button>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => beginRename(s.id, s.task)}>编辑标题</button>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'markdown')}>导出 Markdown</button>
               <button type='button' className='conv-menu-item' role='menuitem' onClick={() => void exportSession(s.id, 'json')}>导出 JSON</button>
-              <button type='button' className='conv-menu-item danger' role='menuitem' onClick={() => setConfirmId(s.id)}>删除会话</button>
-            </>
-          )}
+              <button type='button' className='conv-menu-item' role='menuitem' disabled={archiving} onClick={() => void archive(s.id)}>{archiving ? '正在归档…' : '归档会话'}</button>
+              {menuError && <div role='alert' className='conv-menu-confirm'>{menuError}</div>}
         </div>
       )}
     </div>

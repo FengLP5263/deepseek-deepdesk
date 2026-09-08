@@ -10,10 +10,11 @@ import { createStreamEventBuffer } from './stream-event-buffer'
 
 const controllers = new Map<string, AbortController>()
 
-export function startChat(win: BrowserWindow, req: ChatStartRequest, provider: ProviderConfig): void {
+export function startChat(win: BrowserWindow, req: ChatStartRequest, provider: ProviderConfig, persist?: (event: ChatChunkPayload) => void): void {
   const controller = new AbortController()
   controllers.set(req.runId, controller)
   const sendNow = (payload: ChatChunkPayload): void => {
+    persist?.(payload)
     if (!win.isDestroyed()) win.webContents.send(IPC.ChatChunk, payload)
   }
   const streamEvents = createStreamEventBuffer(sendNow, {

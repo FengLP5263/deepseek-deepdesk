@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { startChat, cancelChat } from './llm'
+import { createAgentPersistence, createChatPersistence } from './run-persistence'
 import { startAgent, cancelAgent, approveCommand } from './agent'
 import { connectConnector, disconnectConnector, getConnectorActivityFeed, getConnectorAuthStatus, listConnectors, sendConnectorMessage, startConnectorAuth } from './connectors'
 import type { AppStore } from './store'
@@ -11,8 +12,16 @@ import { connectMcpServer, deleteMcpServer, disconnectMcpServer, listMcpStatuses
 import type { McpServerConfig } from '../shared/types'
 import { exportAgentSession } from './agent-session-export'
 import { testProviderConnection } from './provider-models'
+import { createSessionArchive } from './session-archive'
+import type { SessionTarget } from '../shared/session-archive'
+import { importMcpJson, readMcpJsonFile } from './mcp-json'
 
 export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | null): void {
+  const archive = createSessionArchive(store, (kind, runId) => { if (kind === 'agent') cancelAgent(runId); else cancelChat(runId) })
+  ipcMain.handle(IPC.SessionArchiveList, () => archive.list())
+  ipcMain.handle(IPC.SessionArchive, (_event, target: SessionTarget) => archive.archive(target))
+  ipcMain.handle(IPC.SessionRestore, (_event, target: SessionTarget) => archive.restore(target))
+  ipcMain.handle(IPC.SessionPurge, (_event, target: SessionTarget) => archive.remove(target))
   ipcMain.handle(IPC.SettingsGet, () => store.getSnapshot().settings)
 
   ipcMain.handle(IPC.SettingsSet, (_event, patch: Partial<AppSettings>) => {
@@ -34,6 +43,14 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   })
 
   ipcMain.handle(IPC.McpServersList, () => listMcpStatuses())
+  ipcMain.handle(IPC.McpJsonImport, (_event, text: string) => importMcpJson(store, text))
+  ipcMain.handle(IPC.McpJsonPick, async event => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow()
+    if (!win) throw new Error('窗口不可用')
+    const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'JSON 配置', extensions: ['json'] }] })
+    if (result.canceled || !result.filePaths[0]) return null
+    return readMcpJsonFile(result.filePaths[0])
+  })
 
   ipcMain.handle(IPC.McpServerSave, (_event, config: McpServerConfig) => saveMcpServer(config))
 
@@ -43,17 +60,16 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
 
   ipcMain.handle(IPC.McpServerDisconnect, (_event, id: string) => disconnectMcpServer(id))
 
-  ipcMain.handle(IPC.ConversationsList, () => store.getSnapshot().conversations)
+  ipcMain.handle(IPC.ConversationsList, () => store.getSnapshot().conversations.filter(s => !s.archivedAt))
 
   ipcMain.handle(IPC.ConversationGet, (_event, id: string) => store.getConversation(id))
 
-  ipcMain.handle(IPC.ConversationUpsert, (_event, conversation: Conversation) => {
+  ipcMain.handle(IPC.ConversationUpsert, async (_event, conversation: Conversation) => {
     store.upsertConversation(conversation)
+    await store.sessions.flush()
   })
 
-  ipcMain.handle(IPC.ConversationDelete, (_event, id: string) => {
-    store.deleteConversation(id)
-  })
+  ipcMain.handle(IPC.ConversationDelete, (_event, id: string) => archive.archive({ kind: 'chat', id }))
 
   ipcMain.handle(IPC.MemoriesList, () => store.listMemories())
 
@@ -85,12 +101,13 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   ipcMain.handle(IPC.ConnectorMessageSend, (_event, id: ConnectorId, message: ConnectorOutboundMessage) => sendConnectorMessage(store, id, message))
 
   ipcMain.handle(IPC.ChatStart, (event, req: ChatStartRequest) => {
+    if (store.getConversation(req.conversationId)?.archivedAt || store.sessions.isDeleted('chat', req.conversationId)) return { ok: false, message: '请先恢复会话' }
     const provider = store.getSnapshot().providers.find(p => p.id === req.providerId)
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow()
     if (!provider) return { ok: false, message: '未找到该模型服务' }
     if (!win) return { ok: false, message: '窗口不可用' }
     if (!provider.apiKey) return { ok: false, message: '请先在设置中配置 API Key' }
-    startChat(win, req, provider)
+    startChat(win, req, provider, createChatPersistence(store, req))
     return { ok: true }
   })
 
@@ -99,13 +116,14 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
   })
 
   ipcMain.handle(IPC.AgentStart, (event, req: AgentRunRequest) => {
+    if (req.sessionId && (store.getAgentSession(req.sessionId)?.archivedAt || store.sessions.isDeleted('agent', req.sessionId))) return { ok: false, message: '请先恢复会话' }
     const provider = store.getSnapshot().providers.find(p => p.id === req.providerId)
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow()
     if (!provider) return { ok: false, message: '未找到该模型服务' }
     if (!win) return { ok: false, message: '窗口不可用' }
     if (!provider.apiKey) return { ok: false, message: '请先在设置中配置 API Key' }
     const workdir = req.workdir && req.workdir.trim() ? req.workdir : app.getPath('home')
-    startAgent(win, { ...req, workdir }, provider, store.getSnapshot().settings)
+    startAgent(win, { ...req, workdir }, provider, store.getSnapshot().settings, createAgentPersistence(store, req))
     return { ok: true }
   })
 
@@ -117,15 +135,14 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
     approveCommand(callId, approved)
   })
 
-  ipcMain.handle(IPC.AgentSessionsList, () => store.getSnapshot().agentSessions)
+  ipcMain.handle(IPC.AgentSessionsList, () => store.getSnapshot().agentSessions.filter(s => !s.archivedAt))
 
-  ipcMain.handle(IPC.AgentSessionUpsert, (_event, session: AgentSession) => {
+  ipcMain.handle(IPC.AgentSessionUpsert, async (_event, session: AgentSession) => {
     store.upsertAgentSession(session)
+    await store.sessions.flush()
   })
 
-  ipcMain.handle(IPC.AgentSessionDelete, (_event, id: string) => {
-    store.deleteAgentSession(id)
-  })
+  ipcMain.handle(IPC.AgentSessionDelete, (_event, id: string) => archive.archive({ kind: 'agent', id }))
 
   ipcMain.handle(IPC.AgentSessionRename, (_event, id: string, title: string) => {
     store.renameAgentSession(id, title)

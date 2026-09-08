@@ -33,6 +33,9 @@
 | --- | --- | --- |
 | 新增 IPC | `src/shared`、`src/preload`、`src/main`、`src/renderer` | 对应 4 个局部 `AGENTS.md` |
 | 新增 Agent 工具 | `src/main`、`tests` | `src/main/AGENTS.md`、`tests/AGENTS.md` |
+| 会话持久化与上下文原文 | `src/main/session-journal.ts`、`session-objects.ts`、`session-recovery.ts`、`run-persistence.ts`、`store.ts` | Main、Tests、E2E 局部说明；`docs/session-storage.md` |
+| 会话归档与恢复 | `src/shared/session-archive.ts`、`src/main/session-archive.ts`、`session-purge.ts`、Renderer `settings/ArchiveTab.tsx` | Main、Renderer、Tests、E2E 局部说明；`docs/session-storage.md` |
+| MCP JSON 导入 | `src/shared/mcp-json.ts`、`src/main/mcp-json.ts`、Renderer `settings/McpJsonImport.tsx` | Shared、Main、Preload、Renderer、Tests、E2E 局部说明；`docs/mcp.md` |
 | 修改项目指令装配 | `src/main/project-instructions.ts`、`src/main/agent.ts`、`tests` | Main、Tests 局部说明 |
 | 修改平台行为 | `src/main/platform`、`src/renderer`、`tests`、`e2e` | Main、Renderer、Tests、E2E 局部说明 |
 | 调整聊天 UI | `src/renderer`、`tests` | `src/renderer/AGENTS.md`、`tests/AGENTS.md` |

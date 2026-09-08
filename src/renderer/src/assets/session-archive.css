@@ -1,0 +1,10 @@
+.archive-section { display: flex; flex-direction: column; gap: 1em; min-width: 0; }
+.archive-section > p { margin: 0; }
+.archive-row { display: flex; align-items: center; flex-wrap: wrap; gap: 1em; padding: 1em; border: 1px solid var(--border); border-radius: 12px; }
+.archive-copy { flex: 1 1 12em; min-width: 0; }
+.archive-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.archive-meta { color: var(--text-muted); font-size: 0.85em; margin-top: 0.5em; overflow-wrap: anywhere; }
+.archive-actions { display: flex; gap: 0.5em; flex-wrap: wrap; }
+.archive-actions button { white-space: nowrap; }
+.archive-empty { padding: 2em 1em; text-align: center; color: var(--text-muted); }
+.archive-confirm { overflow-wrap: anywhere; line-height: 1.6; }

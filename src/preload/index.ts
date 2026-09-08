@@ -1,12 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type { DeepDeskApi } from '../shared/api'
+import type { ArchivedSession, SessionTarget } from '../shared/session-archive'
 import type { AgentEvent, AgentRunRequest, AgentSession, AgentSessionExportFormat, AgentSessionExportResult } from '../shared/agent-types'
 import type { AppSettings, ChatChunkPayload, ChatStartRequest, Conversation, ProviderConfig, ProviderTestResult, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus, McpActionResult, McpServerConfig, McpServerStatus } from '../shared/types'
 import { platformInfoFromNode } from '../shared/platform'
 
 const api: DeepDeskApi = {
   platform: platformInfoFromNode(process.platform),
+  sessionArchive: {
+    list: () => ipcRenderer.invoke(IPC.SessionArchiveList) as Promise<ArchivedSession[]>,
+    archive: (target: SessionTarget) => ipcRenderer.invoke(IPC.SessionArchive, target) as Promise<void>,
+    restore: (target: SessionTarget) => ipcRenderer.invoke(IPC.SessionRestore, target) as Promise<void>,
+    remove: (target: SessionTarget) => ipcRenderer.invoke(IPC.SessionPurge, target) as Promise<void>
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC.SettingsGet) as Promise<AppSettings>,
     set: (patch: Partial<AppSettings>) => ipcRenderer.invoke(IPC.SettingsSet, patch) as Promise<AppSettings>
@@ -18,6 +25,8 @@ const api: DeepDeskApi = {
     test: (provider: ProviderConfig) => ipcRenderer.invoke(IPC.ProviderTest, provider) as Promise<ProviderTestResult>
   },
   mcp: {
+    pickJson: () => ipcRenderer.invoke(IPC.McpJsonPick),
+    importJson: (text: string) => ipcRenderer.invoke(IPC.McpJsonImport, text),
     list: () => ipcRenderer.invoke(IPC.McpServersList) as Promise<McpServerStatus[]>,
     save: (config: McpServerConfig) => ipcRenderer.invoke(IPC.McpServerSave, config) as Promise<McpServerStatus>,
     remove: (id: string) => ipcRenderer.invoke(IPC.McpServerDelete, id) as Promise<void>,

@@ -1,4 +1,6 @@
 export const IPC = {
+  McpJsonPick: 'mcp:json:pick',
+  McpJsonImport: 'mcp:json:import',
   SettingsGet: 'settings:get',
   SettingsSet: 'settings:set',
   ProvidersList: 'providers:list',
@@ -14,6 +16,10 @@ export const IPC = {
   ConversationGet: 'conversations:get',
   ConversationUpsert: 'conversations:upsert',
   ConversationDelete: 'conversations:delete',
+  SessionArchiveList: 'sessions:archive:list',
+  SessionArchive: 'sessions:archive',
+  SessionRestore: 'sessions:restore',
+  SessionPurge: 'sessions:purge',
   MemoriesList: 'memories:list',
   MemoryUpsert: 'memories:upsert',
   MemoryDelete: 'memories:delete',

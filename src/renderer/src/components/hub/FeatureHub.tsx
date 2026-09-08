@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Blocks, Check, ChevronDown, Copy, ExternalLink, Globe2, Link2, MessageSquare, MoreHorizontal, Plus, PlugZap, QrCode, RefreshCw, Search, Settings, Sparkles, UserRoundCog, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, Copy, ExternalLink, Globe2, MessageSquare, MoreHorizontal, Plus, PlugZap, QrCode, RefreshCw, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { useAgentStore } from '../../stores/useAgentStore'
 import type { SettingsTab } from '../settings/SettingsView'
@@ -12,7 +12,6 @@ type HubView = 'connectors' | 'skills' | 'more'
 
 interface FeatureHubProps {
   view: HubView
-  onNavigate: (view: HubView) => void
   onOpenChat: () => void
   onOpenSettings: (tab?: SettingsTab) => void
 }
@@ -189,7 +188,7 @@ const builtInSkills: BuiltInSkill[] = [
   }
 ]
 
-export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSettings }: FeatureHubProps) {
+export default function FeatureHub({ view, onOpenChat, onOpenSettings }: FeatureHubProps) {
   const clear = useAgentStore(s => s.clear)
   const setDraftTask = useAgentStore(s => s.setDraftTask)
   const refreshSessions = useAgentStore(s => s.refreshSessions)
@@ -711,11 +710,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
     return (
       <div className='hub-view skill-market'>
         <div className='skill-market-top'>
-          <div className='skill-top-tabs' aria-label='功能类型'>
-            <button className='skill-top-tab' onClick={() => startWithDraft('请作为专家顾问，帮我拆解当前项目下一步最应该解决的问题。')}><UserRoundCog size={15} /> 专家</button>
-            <button className='skill-top-tab active'><Blocks size={15} /> 技能</button>
-            <button className='skill-top-tab' onClick={() => onNavigate('connectors')}><Link2 size={15} /> 连接器</button>
-          </div>
+          <h1 className='skill-market-title'>技能广场</h1>
           <div className='skill-market-actions'>
             <label className='skill-search'>
               <Search size={15} />
@@ -732,7 +727,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
 
         <section className='skill-section'>
           <div className='skill-section-head'>
-            <h1>精选技能</h1>
+            <h2>精选技能</h2>
             <button className='skill-text-button' onClick={() => setFeaturedOffset(offset => (offset + 1) % builtInSkills.filter(skill => skill.featured).length)}>
               <RefreshCw size={14} /> 换一换
             </button>
@@ -753,11 +748,7 @@ export default function FeatureHub({ view, onNavigate, onOpenChat, onOpenSetting
         </section>
 
         <section className='skill-section'>
-          <div className='skill-tabs'>
-            <button className='skill-tab strong'>推荐</button>
-            <button className='skill-tab'>SkillHub</button>
-            <button className='skill-tab'>套件</button>
-          </div>
+          <h2 className='skill-list-title'>推荐技能</h2>
           <div className='skill-category-row'>
             {categories.map(category => (
               <button key={category} className={clsx('skill-category', activeCategory === category && 'active')} onClick={() => setActiveCategory(category)}>

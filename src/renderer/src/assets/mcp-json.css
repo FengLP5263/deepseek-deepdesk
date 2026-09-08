@@ -1,0 +1,8 @@
+.mcp-json-import { display: flex; flex-direction: column; gap: 1em; min-width: 0; }
+.mcp-json-toolbar, .mcp-settings-actions { display: flex; gap: 0.7em; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.mcp-json-import textarea { min-height: 12em; max-height: 35vh; resize: vertical; font-family: monospace; font-size: 0.9em; line-height: 1.5; }
+.mcp-json-import p { margin: 0; line-height: 1.6; font-size: 0.9em; }
+.mcp-json-error { color: var(--danger); overflow-wrap: anywhere; }
+.mcp-json-preview { padding: 1em; border: 1px solid var(--border); border-radius: 10px; }
+.mcp-json-preview-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5em 1em; margin-top: 0.75em; overflow-wrap: anywhere; }
+.mcp-json-preview-row span { color: var(--text-muted); }

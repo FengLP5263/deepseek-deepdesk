@@ -34,6 +34,7 @@ export function searchAgentSessions(sessions: AgentSession[], query: string, lim
     return orderSidebarSessions(sessions).slice(0, Math.max(1, limit)).map(session => ({ session, snippet: findSnippet(session, terms), score: 0 }))
   }
   return sessions
+    .filter(session => !session.archivedAt)
     .map(session => {
       const title = normalized(session.task)
       const stepText = normalized(session.steps.map(searchableStepText).join(' '))

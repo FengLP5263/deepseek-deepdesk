@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const STORAGE_KEY = 'deepdesk.agent-drafts.v1'
 const MAX_DRAFTS = 30
 const MAX_DRAFT_LENGTH = 20_000
+const removedDrafts = new Set<string>()
 
 interface StoredDraft {
   text: string
@@ -36,7 +37,14 @@ function loadDrafts(): StoredDrafts {
 }
 
 function persistDrafts(drafts: StoredDrafts): void {
-  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(limitStoredDrafts(drafts))) } catch { /* local-only best effort */ }
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(limitStoredDrafts(Object.fromEntries(Object.entries(drafts).filter(([id]) => !removedDrafts.has(id)))))) } catch { /* local-only best effort */ }
+}
+
+export function removeSessionDraft(sessionId: string): void {
+  removedDrafts.add(sessionId)
+  const drafts = loadDrafts()
+  delete drafts[sessionId]
+  persistDrafts(drafts)
 }
 
 export default function useSessionDraft(sessionId: string): [string, (text: string) => void] {

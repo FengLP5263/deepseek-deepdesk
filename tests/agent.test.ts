@@ -66,6 +66,7 @@ vi.mock('../src/main/mcp', () => ({
 }))
 
 import { startAgent, cancelAgent, approveCommand } from '../src/main/agent'
+import { getPlatformAdapter } from '../src/main/platform'
 import type { AgentEvent } from '../src/shared/agent-types'
 import type { AppSettings, ProviderConfig } from '../src/shared/types'
 
@@ -319,30 +320,23 @@ describe('startAgent', () => {
     expect(events.some(e => e.runId === 'r10' && e.type === 'done')).toBe(true)
   })
 
-  it('full 模式：命令直接执行，无需批准', async () => {
-    mocks.responses.push({ content: null, toolCalls: [{ id: 'c3', name: 'run_command', args: { command: outputCommand('auto-run-ok') } }] })
+  it.each([
+    { mode: 'full' as const, output: 'auto-run-ok', label: '命令直接执行，无需批准' },
+    { mode: 'auto' as const, output: 'readonly-ok', label: '只读命令自动批准' }
+  ])('$mode 模式：$label', async ({ mode, output }) => {
+    const command = outputCommand(output)
+    const execute = vi.spyOn(getPlatformAdapter(), 'executeCommand').mockResolvedValue({ stdout: output, stderr: '', code: 0 })
+    mocks.responses.push({ content: null, toolCalls: [{ id: 'permission-command', name: 'run_command', args: { command } }] })
     mocks.responses.push({ content: '完成', toolCalls: [] })
     const { events, win } = makeWin()
-    const fullSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'full' }
-    startAgent(win as never, { runId: 'r3', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '跑命令', temperature: 1 }, provider, fullSettings)
+    const settings: AppSettings = { ...baseSettings, agentPermissionMode: mode }
+    startAgent(win as never, { runId: `r-command-${mode}`, providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '跑命令', temperature: 1 }, provider, settings)
     await runUntilDone(events)
     expect(events.some(e => e.type === 'approval_request')).toBe(false)
     const tr = events.find(e => e.type === 'tool_result')
     expect(tr?.ok).toBe(true)
-    expect(tr?.output).toContain('auto-run-ok')
-  })
-
-  it('auto 模式：只读命令自动批准', async () => {
-    mocks.responses.push({ content: null, toolCalls: [{ id: 'c6', name: 'run_command', args: { command: outputCommand('readonly-ok') } }] })
-    mocks.responses.push({ content: '完成', toolCalls: [] })
-    const { events, win } = makeWin()
-    const autoSettings: AppSettings = { ...baseSettings, agentPermissionMode: 'auto' }
-    startAgent(win as never, { runId: 'r6', providerId: 'deepseek', modelId: 'deepseek-v4-pro', workdir: dir, task: '只读命令', temperature: 1 }, provider, autoSettings)
-    await runUntilDone(events)
-    expect(events.some(e => e.type === 'approval_request')).toBe(false)
-    const tr = events.find(e => e.type === 'tool_result')
-    expect(tr?.ok).toBe(true)
-    expect(tr?.output).toContain('readonly-ok')
+    expect(tr?.output).toContain(output)
+    expect(execute).toHaveBeenCalledExactlyOnceWith(command, dir, undefined, expect.any(AbortSignal))
   })
 
   it('auto 模式：非只读命令仍需批准', async () => {

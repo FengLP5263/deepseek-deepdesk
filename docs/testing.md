@@ -29,11 +29,14 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 - OpenAI 兼容、OpenAI Responses 与 Anthropic Messages SSE 流式解析、鉴权头、无状态加密推理回放、prompt caching、缓存用量和工具协议转换
 - LLM 错误、usage、reasoning 内容处理
 - Agent 工具调用与权限审批
+- 审批单元测试 mock 平台命令执行并验证调用参数，避免 Shell 冷启动耗时和临时目录锁干扰审批断言；真实 Shell 执行保留在 `tests/tools.test.ts` 的工具集成用例中。
+- 浏览器桥接测试在 WebSocket 升级边界仅允许带测试标记的模拟扩展连接，避免已安装的真实扩展扫描本地端口后接管测试会话。
 - 工作目录 `AGENTS.md` / `AGENTS.override.md` 的优先级、有界读取与系统上下文装配
 - Windows PowerShell 与 macOS zsh 平台适配、提示词和参数引用
 - 文件工具工作目录边界
 - Zustand store 行为
 - AppStore 持久化链路、临时文件恢复和 Windows 瞬时文件锁重试
+- 每会话 JSONL 增量/快照/索引重建、旧格式迁移中断与删除记录、防止记忆重复回填、原文分段读取与跨会话边界、流式检查点和 Electron 重启续聊；测试只使用临时 userData
 - 长期记忆显式捕获、偏好提取、敏感信息过滤和去重
 - 跨供应商模型搜索、键盘选择与会话级 provider/model 持久化，以及 Max 模式的输出预算透传、上下文面板回复预留、最终 AI 回复占用刷新和重启持久化
 - 上下文预算计入工具定义与消息封装开销，主进程计算结果可在上下文面板中按类别展示

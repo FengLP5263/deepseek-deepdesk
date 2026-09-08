@@ -7,6 +7,7 @@ export type AgentInteractionMode = 'execute' | 'plan'
 export type AgentToolName =
   | 'run_command'
   | 'read_file'
+  | 'read_context'
   | 'write_file'
   | 'edit_file'
   | 'list_files'
@@ -65,6 +66,7 @@ export interface AgentToolCall {
 
 export interface AgentRunRequest {
   runId: string
+  sessionId?: string
   providerId: string
   modelId: string
   workdir: string
@@ -80,6 +82,8 @@ export interface AgentToolResult {
   ok: boolean
   content: string
   summary: string
+  /** Main-process only: unabridged output for durable context offloading. */
+  rawContent?: string
 }
 
 export type AgentEventType = 'thinking' | 'text' | 'context_usage' | 'context_compacting' | 'context_compacted' | 'tool_call' | 'tool_result' | 'approval_request' | 'done' | 'error'
@@ -128,6 +132,7 @@ export interface AgentStep {
 
 export interface AgentSession {
   id: string
+  archivedAt?: number
   task: string
   workdir: string
   providerId?: string

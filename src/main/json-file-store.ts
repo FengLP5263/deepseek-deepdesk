@@ -8,7 +8,7 @@ function isTransientRenameError(error: unknown): boolean {
   return code === 'EBUSY' || code === 'EACCES' || code === 'EPERM'
 }
 
-async function renameWithRetry(temporary: string, file: string): Promise<void> {
+export async function renameWithRetry(temporary: string, file: string): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       await fs.rename(temporary, file)
@@ -42,11 +42,13 @@ export class CoalescedJsonWriter {
   private writing: Promise<void> = Promise.resolve()
   private pending = false
   private writeQueued = false
+  private failure: unknown
 
   constructor(
     private readonly file: string,
     private readonly serialize: () => string,
-    private readonly delayMs = DEFAULT_WRITE_DELAY_MS
+    private readonly delayMs = DEFAULT_WRITE_DELAY_MS,
+    private readonly beforeWrite?: () => Promise<void>
   ) {}
 
   request(): void {
@@ -65,13 +67,16 @@ export class CoalescedJsonWriter {
       .then(async () => {
         while (this.pending) {
           this.pending = false
+          await this.beforeWrite?.()
           const snapshot = this.serialize()
           const temporary = `${this.file}.tmp`
           await fs.writeFile(temporary, snapshot, 'utf8')
           await renameWithRetry(temporary, this.file)
+          this.failure = undefined
         }
       })
       .catch(error => {
+        this.failure = error
         console.error('[store] 持久化失败:', error)
       })
       .finally(() => {
@@ -87,6 +92,7 @@ export class CoalescedJsonWriter {
     }
     if (this.pending) this.enqueue()
     await this.writing
+    if (this.failure) throw this.failure
     if (this.pending || this.timer || this.writeQueued) await this.flush()
   }
 }

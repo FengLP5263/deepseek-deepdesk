@@ -1,8 +1,10 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 import { createMainWindow } from './window'
 import { AppStore } from './store'
 import { registerIpc } from './ipc'
 import { cancelAllChats } from './llm'
+import { cancelAllAgents } from './agent'
+import { flushRunCheckpoints } from './run-persistence'
 import { getPlatformAdapter } from './platform'
 import { configureBrowserAutomation, shutdownBrowserAutomation } from './browser-runtime'
 import { configureMcp, shutdownMcp } from './mcp'
@@ -74,6 +76,16 @@ if (!gotLock) {
         app.exit(1)
       })
     }
+  }).catch(error => {
+    console.error('[startup] 初始化失败，停止启动并保留本地恢复数据', error)
+    try {
+      dialog.showErrorBox('DeepDesk 启动失败', '本地数据或服务初始化失败。请保留应用数据目录，不要清空聊天记录；可将终端错误日志提供给维护者排查。')
+    } catch {
+      console.error('[startup] 无法显示错误提示，请查看终端日志')
+    } finally {
+      // Do not run normal quit/flush on a partially initialized store.
+      app.exit(1)
+    }
   })
 
   app.on('window-all-closed', () => {
@@ -83,10 +95,14 @@ if (!gotLock) {
   let isQuitting = false
   app.on('before-quit', (event) => {
     cancelAllChats()
+    cancelAllAgents()
     if (isQuitting) return
     event.preventDefault()
     isQuitting = true
     shutdownDesktopPresence()
-    void Promise.all([store.flush(), shutdownBrowserAutomation(), shutdownMcp()]).finally(() => app.quit())
+    flushRunCheckpoints()
+    void Promise.all([store.flush(), shutdownBrowserAutomation(), shutdownMcp()])
+      .catch(error => console.error('[shutdown] 保存或清理失败，保留本地恢复数据', error))
+      .finally(() => app.quit())
   })
 }

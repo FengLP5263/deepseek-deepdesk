@@ -21,6 +21,7 @@ beforeEach(() => {
   connectorMessages = []
   cancelledRunIds = []
   const api = {
+    sessionArchive: { archive: async ({ id }: { id: string }) => { saved = saved.map(s => s.id === id ? { ...s, archivedAt: Date.now() } : s) } },
     platform: { id: 'macos', shellName: 'zsh', nativeWindowControls: true },
     settings: {
       get: async () => ({ version: 1, defaultProviderId: 'deepseek', defaultModelId: 'deepseek-v4-pro', temperature: 1, theme: 'dark', appFont: 'default', appFontScale: 1, enterToSend: true, agentWorkdir: '', agentPermissionMode: 'ask' }),
@@ -573,18 +574,18 @@ describe('useAgentStore 会话持久化', () => {
     expect(saved[0].task).toBe('新标题')
   })
 
-  it('deleteSession 删除历史', async () => {
+  it('archiveSession 从列表移除会话', async () => {
     useAgentStore.setState({ sessions: [{ id: 's1', task: 't', workdir: '', modelId: 'm', createdAt: 1, updatedAt: 1, steps: [], history: [] }] })
-    await useAgentStore.getState().deleteSession('s1')
+    await useAgentStore.getState().archiveSession('s1')
     expect(useAgentStore.getState().sessions.length).toBe(0)
     expect(saved.length).toBe(0)
   })
 
-  it('deleteSession 删除当前会话时清空当前状态', async () => {
+  it('archiveSession 归档当前会话时清空界面但保留历史', async () => {
     const seed = { id: 's1', task: 't', workdir: '', modelId: 'm', createdAt: 1, updatedAt: 1, steps: [{ kind: 'task' as const, text: 't' }], history: [] }
     saved = [seed]
     useAgentStore.setState({ sessions: [seed], activeSessionId: 's1', currentSessionId: 's1', currentTask: 't', currentModelId: 'm', steps: seed.steps, history: [] })
-    await useAgentStore.getState().deleteSession('s1')
+    await useAgentStore.getState().archiveSession('s1')
     const state = useAgentStore.getState()
 
     expect(state.sessions.length).toBe(0)
@@ -592,5 +593,7 @@ describe('useAgentStore 会话持久化', () => {
     expect(state.currentTask).toBe('')
     expect(state.currentModelId).toBe('')
     expect(state.steps.length).toBe(0)
+    expect(saved[0].archivedAt).toBeGreaterThan(0)
+    expect(saved[0].steps).toEqual(seed.steps)
   })
 })

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { DeepDeskE2EApp } from './helpers'
@@ -44,10 +44,7 @@ test('orders recent sessions and persists pinning from the overflow menu', async
   await recent.getByRole('button', { name: '会话操作：Recent' }).click()
   await ctx.page.getByRole('menuitem', { name: '置顶会话' }).click()
   await expect(sessionTitles).toHaveText(['Recent', 'Pinned old', 'Older'])
-  await expect.poll(() => {
-    const state = JSON.parse(readFileSync(join(ctx!.userDataDir, 'deepdesk.json'), 'utf8')) as { agentSessions: Array<{ id: string; pinnedAt?: number }> }
-    return typeof state.agentSessions.find(item => item.id === 'Recent')?.pinnedAt
-  }).toBe('number')
+  await expect.poll(() => ctx!.page.evaluate(async () => typeof (await window.api.agent.listSessions()).find(item => item.id === 'Recent')?.pinnedAt)).toBe('number')
 
   await testInfo.attach('session-pin', { body: await ctx.page.screenshot(), contentType: 'image/png' })
   const userDataDir = ctx.userDataDir

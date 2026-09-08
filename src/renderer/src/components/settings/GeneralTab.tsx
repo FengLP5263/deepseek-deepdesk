@@ -3,15 +3,12 @@ import type { LucideIcon } from 'lucide-react'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import type { AgentPermissionMode, AppFont } from '@shared/types'
 import { Button, Select, Switch } from '../ui'
-import { useChatStore } from '../../stores/useChatStore'
 import clsx from 'clsx'
 
-export default function GeneralTab() {
+export default function GeneralTab({ onOpenArchive }: { onOpenArchive: () => void }) {
   const settings = useSettingsStore(s => s.settings)
   const providers = useSettingsStore(s => s.providers)
   const updateSettings = useSettingsStore(s => s.updateSettings)
-  const conversations = useChatStore(s => s.conversations)
-  const deleteConversation = useChatStore(s => s.deleteConversation)
 
   if (!settings) return null
 
@@ -109,13 +106,13 @@ export default function GeneralTab() {
       </div>
 
       <div className='settings-section-title'>数据</div>
-      <div className='settings-card danger-zone'>
+      <div className='settings-card'>
         <div className='settings-row'>
           <div>
-            <div className='settings-row-label'>任务记录</div>
-            <div className='settings-row-desc'>当前共 {conversations.length} 条记录，全部存储在本地</div>
+            <div className='settings-row-label'>归档会话</div>
+            <div className='settings-row-desc'>恢复归档的会话，或确认后永久删除</div>
           </div>
-          <Button variant='danger' size='sm' onClick={() => { conversations.forEach(c => void deleteConversation(c.id)) }}>清空全部</Button>
+          <Button size='sm' onClick={onOpenArchive}>管理归档</Button>
         </div>
       </div>
     </div>
