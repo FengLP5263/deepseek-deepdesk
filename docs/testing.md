@@ -29,6 +29,7 @@ GitHub CI 会在推送到 `develop`、`main` 以及所有 PR 时执行门禁。�
 - OpenAI 兼容、OpenAI Responses 与 Anthropic Messages SSE 流式解析、鉴权头、无状态加密推理回放、prompt caching、缓存用量和工具协议转换
 - LLM 错误、usage、reasoning 内容处理
 - Agent 工具调用与权限审批
+- 审批单元测试 mock 平台命令执行并验证调用参数，避免 Shell 冷启动耗时和临时目录锁干扰审批断言；真实 Shell 执行保留在 `tests/tools.test.ts` 的工具集成用例中。
 - 工作目录 `AGENTS.md` / `AGENTS.override.md` 的优先级、有界读取与系统上下文装配
 - Windows PowerShell 与 macOS zsh 平台适配、提示词和参数引用
 - 文件工具工作目录边界
