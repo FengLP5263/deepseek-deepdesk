@@ -7,6 +7,9 @@ import { extractMemoryCandidates, relateMemory, searchMemories, type MemoryCandi
 import { normalizeAppFontScale } from '../shared/font-scale'
 import { mapAppStateSecrets, plaintextSecretCodec, SecretStorageError, type SecretCodec } from './secret-storage'
 import { CoalescedJsonWriter, readJsonWithTempRecovery } from './json-file-store'
+import { SessionJournal } from './session-journal'
+import { atomicWrite } from './session-objects'
+import { recoverAgentSession, recoverConversation } from './session-recovery'
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
@@ -122,11 +125,13 @@ export class AppStore {
   private data: AppState
   private secrets: SecretCodec
   private writer: CoalescedJsonWriter
+  readonly sessions: SessionJournal
 
   constructor(storageDir?: string, secrets: SecretCodec = plaintextSecretCodec) {
     const dir = storageDir ?? app.getPath('userData')
     this.file = path.join(dir, 'deepdesk.json')
     this.secrets = secrets
+    this.sessions = new SessionJournal(dir, secrets)
     this.data = {
       settings: { ...DEFAULT_SETTINGS },
       providers: cloneProviders(),
@@ -137,17 +142,31 @@ export class AppStore {
       agentSessions: [],
       memories: []
     }
-    this.writer = new CoalescedJsonWriter(this.file, () => JSON.stringify(mapAppStateSecrets(this.data, this.secrets, 'protect'), null, 2))
+    this.writer = new CoalescedJsonWriter(this.file, () => JSON.stringify({
+      ...mapAppStateSecrets({ ...this.data, agentSessions: [], conversations: [] }, this.secrets, 'protect'),
+      sessionStorageVersion: 1, memoryBackfillVersion: 1
+    }, null, 2), undefined, () => this.sessions.flush())
   }
 
   async init(): Promise<void> {
+    let parsed: Partial<AppState> & { sessionStorageVersion?: number; memoryBackfillVersion?: number } = {}
     try {
-      const loaded = await readJsonWithTempRecovery<Partial<AppState>>(this.file)
+      const loaded = await readJsonWithTempRecovery<typeof parsed>(this.file)
+      parsed = loaded.value
       this.data = mapAppStateSecrets(this.migrate(loaded.value), this.secrets, 'reveal')
       if (loaded.recovered) console.warn('[store] 已从未完成写入的临时文件恢复本地数据')
     } catch (error) {
-      if (error instanceof SecretStorageError) throw error
+      if (error instanceof SecretStorageError || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
+    const saved = await this.sessions.load()
+    if (parsed.sessionStorageVersion !== undefined && parsed.sessionStorageVersion !== 1) throw new Error('会话存储版本较新，请升级 DeepDesk')
+    if (!parsed.sessionStorageVersion) {
+      if (this.data.agentSessions.length || this.data.conversations.length) await atomicWrite(`${this.file}.pre-sessions-v1.bak`, JSON.stringify(parsed))
+      saved.agentSessions.push(...this.data.agentSessions.filter(item => !this.sessions.has('agent', item.id)))
+      saved.conversations.push(...this.data.conversations.filter(item => !this.sessions.has('chat', item.id)))
+    }
+    this.data.agentSessions = saved.agentSessions.map(recoverAgentSession)
+    this.data.conversations = saved.conversations.map(recoverConversation)
     if (!this.data.providers || this.data.providers.length === 0) {
       this.data.providers = cloneProviders()
     }
@@ -160,7 +179,10 @@ export class AppStore {
     this.data.connectorActivities = normalizeConnectorActivities(this.data.connectorActivities)
     this.migrateDeepSeekV4()
     this.hydrateBuiltInProviderModels()
-    this.backfillMemories()
+    if (!parsed.memoryBackfillVersion) this.backfillMemories()
+    for (const session of this.data.agentSessions) this.sessions.upsert('agent', session)
+    for (const conversation of this.data.conversations) this.sessions.upsert('chat', conversation)
+    await this.sessions.flush()
     this.persist()
     await this.flush()
   }
@@ -345,6 +367,7 @@ export class AppStore {
       existing.history.push(historyItem)
       existing.updatedAt = Math.max(existing.updatedAt, activity.createdAt)
       existing.source = source
+      this.sessions.upsert('agent', existing)
       return
     }
 
@@ -360,6 +383,7 @@ export class AppStore {
       history: [historyItem],
       source
     })
+    this.sessions.upsert('agent', this.data.agentSessions[this.data.agentSessions.length - 1])
   }
 
   getConversation(id: string): Conversation | null {
@@ -371,17 +395,17 @@ export class AppStore {
     const idx = this.data.conversations.findIndex(c => c.id === conversation.id)
     if (idx >= 0) this.data.conversations[idx] = structuredClone(conversation)
     else this.data.conversations.push(structuredClone(conversation))
-    this.persist()
+    this.sessions.upsert('chat', conversation)
   }
 
   deleteConversation(id: string): void {
     this.data.conversations = this.data.conversations.filter(c => c.id !== id)
-    this.persist()
+    this.sessions.delete('chat', id)
   }
 
   clearConversations(): void {
+    for (const conversation of this.data.conversations) this.sessions.delete('chat', conversation.id)
     this.data.conversations = []
-    this.persist()
   }
 
   listMemories(): MemoryItem[] {
@@ -473,12 +497,17 @@ export class AppStore {
     const idx = this.data.agentSessions.findIndex(s => s.id === session.id)
     if (idx >= 0) this.data.agentSessions[idx] = structuredClone(session)
     else this.data.agentSessions.push(structuredClone(session))
-    this.persist()
+    this.sessions.upsert('agent', session)
+  }
+
+  getAgentSession(id: string): AgentSession | null {
+    const session = this.data.agentSessions.find(item => item.id === id)
+    return session ? structuredClone(session) : null
   }
 
   deleteAgentSession(id: string): void {
     this.data.agentSessions = this.data.agentSessions.filter(s => s.id !== id)
-    this.persist()
+    this.sessions.delete('agent', id)
   }
 
   renameAgentSession(id: string, title: string): void {
@@ -486,20 +515,21 @@ export class AppStore {
     if (s) {
       s.task = title
       s.updatedAt = Date.now()
-      this.persist()
+      this.sessions.upsert('agent', s)
     }
   }
 
   clearAgentSessions(): void {
+    for (const session of this.data.agentSessions) this.sessions.delete('agent', session.id)
     this.data.agentSessions = []
-    this.persist()
   }
 
   private persist(): void {
     this.writer.request()
   }
 
-  flush(): Promise<void> {
-    return this.writer.flush()
+  async flush(): Promise<void> {
+    await this.sessions.flush()
+    await this.writer.flush()
   }
 }

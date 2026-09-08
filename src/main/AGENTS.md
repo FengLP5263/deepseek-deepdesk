@@ -8,6 +8,7 @@
 - `window.ts`：窗口创建、安全导航、外部链接策略。
 - `desktop-presence.ts`：系统托盘、全局唤起快捷键与退出清理。
 - `store.ts`：本地 JSON 存储、原子写、迁移入口。
+- `session-journal.ts` / `session-objects.ts`：独立会话日志、快照、原文对象与恢复；`run-persistence.ts`：运行检查点和原文读回。格式见 `docs/session-storage.md`。
 - `ipc.ts`：IPC handler 注册。
 - `llm.ts`：聊天流式调度、取消、主进程网络调用。
 - `agent.ts`：Agent 工具循环、权限判断。

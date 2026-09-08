@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename } from 'node:path'
 import type { DeepDeskE2EApp } from './helpers'
 import {
   closeDeepDesk,
@@ -692,14 +691,9 @@ test('persists memory settings and injects matching memory into an agent request
     expect(messages.some(message => message.role === 'system' && String(message.content ?? '').includes(memoryContent))).toBe(true)
     expect(messages[messages.length - 1]).toEqual(expect.objectContaining({ role: 'user', content: task }))
 
-    await expect.poll(() => {
-      const raw = readFileSync(join(userDataDir, 'deepdesk.json'), 'utf8')
-      const state = JSON.parse(raw) as { agentSessions?: Array<{ steps?: Array<{ text?: string }> }> }
-      return state.agentSessions?.length ?? 0
-    }).toBe(1)
-    const raw = readFileSync(join(userDataDir, 'deepdesk.json'), 'utf8')
-    const state = JSON.parse(raw) as { agentSessions: Array<{ steps: Array<{ text?: string }> }> }
-    expect(state.agentSessions[0].steps.map(step => step.text ?? '').join('\n')).not.toContain(memoryContent)
+    await expect.poll(() => page.evaluate(async () => (await window.api.agent.listSessions()).length)).toBe(1)
+    const sessions = await page.evaluate(() => window.api.agent.listSessions())
+    expect(sessions[0].steps.map(step => step.text ?? '').join('\n')).not.toContain(memoryContent)
   } finally {
     await mock.close()
   }

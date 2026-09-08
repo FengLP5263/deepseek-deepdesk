@@ -53,7 +53,7 @@ function truncate(s: string): string {
   return s.slice(0, MAX_OUTPUT) + '\n...（输出过长已截断）'
 }
 
-export async function executeTool(call: AgentToolCall, workdir: string, allowOutside = false, signal?: AbortSignal): Promise<AgentToolResult> {
+export async function executeTool(call: AgentToolCall, workdir: string, allowOutside = false, signal?: AbortSignal, readContext?: (args: Record<string, unknown>) => Promise<string>): Promise<AgentToolResult> {
   throwIfAborted(signal)
   if (isBrowserToolName(call.name)) return await executeBrowserTool(call, signal)
   const resolve = (p: string): string => {
@@ -63,6 +63,10 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
   }
   const a = call.args
   switch (call.name) {
+    case 'read_context': {
+      if (!readContext) return { ok: false, content: '当前运行没有可读取的会话原文', summary: '上下文原文不可用' }
+      return { ok: true, content: await readContext(call.args), summary: '读取上下文原文' }
+    }
     case 'run_command': {
       const command = String(a.command ?? '')
       if (!command.trim()) return { ok: false, content: '命令为空', summary: '命令为空' }
@@ -70,7 +74,8 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       const r = await getPlatformAdapter().executeCommand(command, cwd, undefined, signal)
       throwIfAborted(signal)
       const content = (r.stdout ? truncate(r.stdout) + '\n' : '') + (r.stderr ? '[stderr]\n' + truncate(r.stderr) + '\n' : '') + '[exit code: ' + r.code + ']'
-      return { ok: r.code === 0, content, summary: command }
+      const rawContent = readContext ? (r.stdout ? r.stdout + '\n' : '') + (r.stderr ? '[stderr]\n' + r.stderr + '\n' : '') + '[exit code: ' + r.code + ']' : undefined
+      return { ok: r.code === 0, content, rawContent, summary: command }
     }
     case 'read_file': {
       const p = resolve(String(a.path ?? ''))
@@ -78,7 +83,7 @@ export async function executeTool(call: AgentToolCall, workdir: string, allowOut
       throwIfAborted(signal)
       const lines = raw.split('\n')
       const numbered = lines.map((l, i) => (i + 1) + ': ' + l).join('\n')
-      return { ok: true, content: truncate(numbered), summary: path.basename(p) }
+      return { ok: true, content: truncate(numbered), rawContent: readContext ? numbered : undefined, summary: path.basename(p) }
     }
     case 'write_file': {
       const p = resolve(String(a.path ?? ''))

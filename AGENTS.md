@@ -68,6 +68,7 @@ pnpm release:mac  # 完整门禁 + macOS 打包
 - Agent 文件操作默认限定工作目录；越界、发飞书消息按权限模式审批。
 - 危险命令（rm -rf / format / shutdown 等）在「每次询问/替我审批」下强制询问。
 - 改动权限/安全/持久化逻辑，必须同步补测试。
+- 会话正文使用 `sessions/` 下的独立 JSONL 日志与原文对象；禁止继续向已迁移的 `deepdesk.json` 会话数组写正文。迁移、备份和逻辑删除边界见 `docs/session-storage.md`。`seed-ui-session` 需在客户端退出后运行，测试使用临时 userData。
 
 ## 代码风格
 

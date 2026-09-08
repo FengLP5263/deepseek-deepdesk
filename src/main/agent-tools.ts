@@ -7,6 +7,21 @@ export function createAgentTools(platform: PlatformInfo): Array<Record<string, u
   {
     type: 'function',
     function: {
+      name: 'read_context',
+      description: '读取本会话已卸载的工具结果原文。使用结果中的 reference，offset/limit 按字符计数；省略 reference 则分页列出引用和开头预览，此时 offset/limit 按条目计数（默认20，最多50）。不跨会话、不读取任意路径。',
+      parameters: {
+        type: 'object',
+        properties: {
+          reference: { type: 'string', description: '上下文原文引用' },
+          offset: { type: 'integer', minimum: 0 },
+          limit: { type: 'integer', minimum: 1, maximum: 16000 }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'run_command',
       description: '在用户电脑上执行一条 ' + shell + ' 命令，返回标准输出、错误与退出码。优先用只读命令了解现状。',
       parameters: {

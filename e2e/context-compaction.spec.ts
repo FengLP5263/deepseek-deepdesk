@@ -37,6 +37,13 @@ test('shows context compaction as a compact non-message notice', async ({ browse
 test('uses the thinking shimmer while context compaction is in progress', async ({ browserName: _browserName }, testInfo) => {
   ctx = await launchDeepDesk(createContextBreakdownUserData(true))
   const page = ctx.page
+  // A running flag on disk is recovered as interrupted. Inject a live UI fixture via IPC.
+  await page.evaluate(async () => {
+    const session = (await window.api.agent.listSessions())[0]
+    session.steps = session.steps.map(step => step.kind === 'context' ? { ...step, status: 'running', startedAt: Date.now() } : step)
+    await window.api.agent.saveSession(session)
+  })
+  await page.reload()
   await page.locator('.conv-item', { hasText: '上下文组成视觉回归' }).click()
 
   const notice = page.locator('.agent-context-compaction')

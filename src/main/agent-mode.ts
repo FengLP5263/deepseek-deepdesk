@@ -5,6 +5,7 @@ import { isReadOnlyCommand } from './tools'
 const PLAN_SAFE_TOOLS = new Set([
   'run_command',
   'read_file',
+  'read_context',
   'list_files',
   'search_content',
   'search_feishu_user',
@@ -15,6 +16,7 @@ const PLAN_SAFE_TOOLS = new Set([
 ])
 
 const PARALLEL_SAFE_TOOLS = new Set([
+  'read_context',
   'read_file',
   'list_files',
   'search_content',

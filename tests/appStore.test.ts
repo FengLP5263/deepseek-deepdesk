@@ -196,10 +196,7 @@ describe('AppStore', () => {
   })
 
   it('启动时从已有 Agent 会话回填高置信长期记忆', async () => {
-    const first = new AppStore(dir)
-    stores.push(first)
-    await first.init()
-    first.upsertAgentSession({
+    writeFileSync(join(dir, 'deepdesk.json'), JSON.stringify({ agentSessions: [{
       id: 'history-session',
       task: '历史会话',
       workdir: '',
@@ -209,8 +206,7 @@ describe('AppStore', () => {
       updatedAt: 1,
       steps: [{ kind: 'task', text: '以后请默认先给结论，再补充细节' }],
       history: []
-    })
-    await first.flush()
+    }] }), 'utf8')
 
     const reopened = new AppStore(dir)
     stores.push(reopened)

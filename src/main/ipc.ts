@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { startChat, cancelChat } from './llm'
+import { createAgentPersistence, createChatPersistence } from './run-persistence'
 import { startAgent, cancelAgent, approveCommand } from './agent'
 import { connectConnector, disconnectConnector, getConnectorActivityFeed, getConnectorAuthStatus, listConnectors, sendConnectorMessage, startConnectorAuth } from './connectors'
 import type { AppStore } from './store'
@@ -47,8 +48,9 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
 
   ipcMain.handle(IPC.ConversationGet, (_event, id: string) => store.getConversation(id))
 
-  ipcMain.handle(IPC.ConversationUpsert, (_event, conversation: Conversation) => {
+  ipcMain.handle(IPC.ConversationUpsert, async (_event, conversation: Conversation) => {
     store.upsertConversation(conversation)
+    await store.sessions.flush()
   })
 
   ipcMain.handle(IPC.ConversationDelete, (_event, id: string) => {
@@ -90,7 +92,7 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
     if (!provider) return { ok: false, message: '未找到该模型服务' }
     if (!win) return { ok: false, message: '窗口不可用' }
     if (!provider.apiKey) return { ok: false, message: '请先在设置中配置 API Key' }
-    startChat(win, req, provider)
+    startChat(win, req, provider, createChatPersistence(store, req))
     return { ok: true }
   })
 
@@ -105,7 +107,7 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
     if (!win) return { ok: false, message: '窗口不可用' }
     if (!provider.apiKey) return { ok: false, message: '请先在设置中配置 API Key' }
     const workdir = req.workdir && req.workdir.trim() ? req.workdir : app.getPath('home')
-    startAgent(win, { ...req, workdir }, provider, store.getSnapshot().settings)
+    startAgent(win, { ...req, workdir }, provider, store.getSnapshot().settings, createAgentPersistence(store, req))
     return { ok: true }
   })
 
@@ -119,8 +121,9 @@ export function registerIpc(store: AppStore, getWindow: () => BrowserWindow | nu
 
   ipcMain.handle(IPC.AgentSessionsList, () => store.getSnapshot().agentSessions)
 
-  ipcMain.handle(IPC.AgentSessionUpsert, (_event, session: AgentSession) => {
+  ipcMain.handle(IPC.AgentSessionUpsert, async (_event, session: AgentSession) => {
     store.upsertAgentSession(session)
+    await store.sessions.flush()
   })
 
   ipcMain.handle(IPC.AgentSessionDelete, (_event, id: string) => {

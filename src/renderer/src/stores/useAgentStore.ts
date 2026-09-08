@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import type { AgentEvent, AgentQueuedMessage, AgentSession, AgentSessionSource, AgentStep, McpInstallApproval } from '@shared/agent-types'
 import { formatMemoryContext } from '@shared/memory'
 import { useSettingsStore } from './useSettingsStore'
-import { appendAgentStep, completeContextCompaction, finishAgentThinking } from '../lib/agent-steps'
+import { startSavedAgent } from '../lib/start-saved-agent'
+import { appendAgentStep, completeContextCompaction, finishAgentThinking, latestAgentTask as latestTask } from '../lib/agent-steps'
 import { applyAgentStreamChunks, bufferAgentStreamChunk, createAgentStreamBuffer, drainAgentStreamBuffer, type AgentStreamBufferState } from '../lib/agent-stream-buffer'
 interface PendingApprovalState {
   callId: string
@@ -83,14 +84,6 @@ const connectorStatusTimers = new Map<string, number>()
 
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
-}
-
-function latestTask(steps: AgentStep[]): string {
-  for (let index = steps.length - 1; index >= 0; index -= 1) {
-    const step = steps[index]
-    if (step.kind === 'task') return step.text?.trim() ?? ''
-  }
-  return ''
 }
 
 function replaceUserHistoryAtTaskIndex(history: Array<Record<string, unknown>>, steps: AgentStep[], taskIndex: number, text: string): Array<Record<string, unknown>> {
@@ -459,7 +452,8 @@ export const useAgentStore = create<AgentState>()((set, get) => {
     await window.api.memories.capture({ text: t, source: { type: 'agent', id: sessionId } }).catch(error => console.warn('Failed to capture Agent memory', error))
     const memories = await window.api.memories.search({ query: [t, workdir].filter(Boolean).join(' '), scopes: ['user', 'project', 'agent'], limit: 8 })
     const memoryContext = formatMemoryContext(memories)
-    const res = await window.api.agent.start({ runId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, interactionMode: ss.settings?.agentInteractionMode ?? 'execute', maxMode: ss.settings?.agentMaxMode ?? false, history: previousHistory, memoryContext })
+    const res = await startSavedAgent(sessionFromContext(ctx), { runId, sessionId, providerId, modelId, workdir, task: t, temperature: ss.settings?.temperature ?? 1, interactionMode: ss.settings?.agentInteractionMode ?? 'execute', maxMode: ss.settings?.agentMaxMode ?? false, history: previousHistory, memoryContext }, () => runContexts.get(runId) === ctx)
+    if (!runContexts.has(runId)) return false
     if (!res.ok) {
       append(ctx, { kind: 'error', message: res.message ?? '启动失败' })
       finishRun(ctx, ctx.history, false, true)

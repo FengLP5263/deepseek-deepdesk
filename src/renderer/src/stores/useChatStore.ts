@@ -229,6 +229,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const messages = memoryContext
       ? [{ role: 'system', content: memoryContext }, ...payload]
       : payload
+    await window.api.conversations.upsert(conv)
     const res = await window.api.chat.start({
       runId,
       conversationId: conv.id,

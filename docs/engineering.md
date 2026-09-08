@@ -34,6 +34,8 @@ pnpm flow -- <command> [options]
 
 ## 流程分层
 
+`seed-ui-session` 必须在客户端完全退出后运行，优先传 `--user-data-dir <临时目录>`。脚本兼容旧 JSON 和 0.43.0 的独立会话日志；新格式复用主进程日志模块，不向已迁移的设置文件追加会话数组。持久化结构见 [session-storage.md](./session-storage.md)。
+
 1. 开发前：确认位于 `develop` 或从 `develop` 创建的短期分支，再运行 `pnpm flow -- doctor`
 2. 改代码中：按影响范围运行 `pnpm flow -- check`
 3. 改安全、权限、持久化、IPC、Agent 工具：必须补或更新测试

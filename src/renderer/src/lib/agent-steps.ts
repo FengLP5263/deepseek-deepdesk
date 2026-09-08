@@ -1,5 +1,9 @@
 import type { AgentStep } from '@shared/agent-types'
 
+export function latestAgentTask(steps: AgentStep[]): string {
+  return steps.findLast(step => step.kind === 'task')?.text?.trim() ?? ''
+}
+
 export function appendAgentStep(steps: AgentStep[], step: AgentStep): AgentStep[] {
   const next = [...steps]
   const previous = next.at(-1)
