@@ -1,7 +1,7 @@
 import type { AgentSession } from '@shared/agent-types'
 
 export function orderSidebarSessions(sessions: AgentSession[]): AgentSession[] {
-  return [...sessions].sort((left, right) => {
+  return sessions.filter(session => !session.archivedAt).sort((left, right) => {
     const leftPinned = left.pinnedAt ?? 0
     const rightPinned = right.pinnedAt ?? 0
     if (leftPinned !== rightPinned) {

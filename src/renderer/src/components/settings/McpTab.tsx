@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { useMcpStore } from '../../stores/useMcpStore'
 import { Button, Modal, Spinner } from '../ui'
 import McpServerForm from './McpServerForm'
+import McpJsonImport from './McpJsonImport'
 
 function endpoint(config: McpServerConfig): string {
   return config.transport === 'stdio'
@@ -78,6 +79,8 @@ export default function McpTab() {
   const loaded = useMcpStore(state => state.loaded)
   const load = useMcpStore(state => state.load)
   const [editing, setEditing] = useState<McpServerConfig | null | undefined>(undefined)
+  const [importing, setImporting] = useState(false)
+  const [notice, setNotice] = useState('')
 
   useEffect(() => { void load() }, [load])
 
@@ -85,15 +88,17 @@ export default function McpTab() {
     <div className='settings-section'>
       <div className='settings-section-head'>
         <div className='settings-section-title'>MCP 服务器</div>
-        <Button size='sm' onClick={() => setEditing(null)}><Plus size={13} /> 添加服务器</Button>
+        <div className='mcp-settings-actions'><Button size='sm' onClick={() => { setNotice(''); setImporting(true) }}>导入 JSON</Button><Button size='sm' onClick={() => setEditing(null)}><Plus size={13} /> 添加服务器</Button></div>
       </div>
       <div className='settings-section-desc'>连接本地或远程 MCP 服务器。连接后，其工具会自动出现在 Agent 的可用工具中，并遵循当前审批模式。</div>
+      {notice && <div role='status'>{notice}</div>}
       {!loaded && <div className='mcp-empty'><Spinner /> 正在读取服务器配置…</div>}
       {loaded && statuses.length === 0 && <div className='mcp-empty'><ServerCog size={20} />还没有 MCP 服务器，添加后即可扩展 DeepDesk 的工具能力。</div>}
       <div className='mcp-list'>
         {statuses.map(status => <McpServerCard key={status.config.id} status={status} onEdit={() => setEditing(status.config)} />)}
       </div>
       {editing !== undefined && <McpServerForm config={editing ?? undefined} onClose={() => setEditing(undefined)} />}
+      {importing && <McpJsonImport onClose={() => setImporting(false)} onImported={count => { setImporting(false); setNotice(`已导入 ${count} 个服务器，可按需点击“连接”`) }} />}
     </div>
   )
 }

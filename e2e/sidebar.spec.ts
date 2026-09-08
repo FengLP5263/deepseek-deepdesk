@@ -39,7 +39,7 @@ test('supports sidebar collapse, expand, and new task action', async () => {
   await expect(page.locator('.brand-version')).toHaveText(/^v\d+\.\d+\.\d+$/)
 })
 
-test('keeps the delete confirmation aligned at maximum interface scale', async ({ browserName: _browserName }, testInfo) => {
+test('keeps the archive menu aligned at maximum interface scale', async ({ browserName: _browserName }, testInfo) => {
   ctx = await launchDeepDesk(createContextBreakdownUserData())
   const page = ctx.page
   await expect(page.locator('html')).toHaveAttribute('data-font-scale', '100')
@@ -50,15 +50,14 @@ test('keeps the delete confirmation aligned at maximum interface scale', async (
   await expect(page.locator('html')).toHaveAttribute('data-font-scale', '150')
 
   await page.getByRole('button', { name: '会话操作：上下文组成视觉回归' }).click()
-  await page.getByRole('menuitem', { name: '删除会话' }).click()
   const menu = page.getByRole('menu', { name: '会话操作' })
-  await expect(menu.getByText('删除这个会话？')).toBeVisible()
-  await expect(menu.getByRole('button', { name: '确认删除' })).toHaveCSS('white-space', 'nowrap')
+  await expect(menu.getByRole('menuitem', { name: '归档会话' })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: '删除会话' })).toHaveCount(0)
   const geometry = await menu.evaluate(element => {
     const sidebar = document.querySelector('.sidebar')!.getBoundingClientRect()
     const rect = element.getBoundingClientRect()
     return { insideSidebar: rect.left >= sidebar.left && rect.right <= sidebar.right, overflowFree: element.scrollWidth <= element.clientWidth + 1 }
   })
   expect(geometry).toEqual({ insideSidebar: true, overflowFree: true })
-  await page.screenshot({ path: testInfo.outputPath('delete-confirmation-150.png') })
+  await page.screenshot({ path: testInfo.outputPath('archive-menu-150.png') })
 })

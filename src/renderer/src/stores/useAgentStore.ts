@@ -63,7 +63,7 @@ interface AgentState {
   refreshSessions: () => Promise<void>
   processPendingConnectorSession: () => Promise<void>
   loadSession: (id: string) => void
-  deleteSession: (id: string) => Promise<void>
+  archiveSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
   toggleSessionPinned: (id: string) => void
   updateStep: (index: number, patch: Partial<AgentStep>) => void
@@ -752,37 +752,39 @@ export const useAgentStore = create<AgentState>()((set, get) => {
       }))
       if (session.hasUnread) saveSession(s)
     },
-    deleteSession: async (id) => {
+    archiveSession: async (id) => {
       const runId = runIdBySessionId.get(id)
       if (runId) {
-        void window.api.agent.cancel(runId)
+        flushStreamBuffer(runId)
         runContexts.delete(runId)
         runIdBySessionId.delete(id)
         clearStreamBuffer(runId)
       }
-      await window.api.agent.deleteSession(id)
-      set(s => {
-        const nextSessions = s.sessions.filter(x => x.id !== id)
-        const cleared = removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, id)
-        if (s.activeSessionId !== id && s.currentSessionId !== id) return { sessions: nextSessions, ...cleared }
-        return {
-          sessions: nextSessions,
-          ...cleared,
-          activeSessionId: null,
-          currentSessionId: '',
-          currentSource: undefined,
-          currentTask: '',
-          currentProviderId: '',
-          currentModelId: '',
-          steps: [],
-          history: [],
-          queuedMessages: [],
-          running: false,
-          currentRunId: null,
-          pendingApproval: null,
-          error: null
-        }
-      })
+      let archived = false
+      try { await window.api.sessionArchive.archive({ kind: 'agent', id }); archived = true } finally {
+        set(s => {
+          const nextSessions = archived ? s.sessions.filter(x => x.id !== id) : s.sessions
+          const cleared = removeRunFromState(s.runningSessions, s.pendingApprovalsBySessionId, id)
+          if (s.activeSessionId !== id && s.currentSessionId !== id) return { sessions: nextSessions, ...cleared }
+          return {
+            sessions: nextSessions,
+            ...cleared,
+            activeSessionId: null,
+            currentSessionId: '',
+            currentSource: undefined,
+            currentTask: '',
+            currentProviderId: '',
+            currentModelId: '',
+            steps: [],
+            history: [],
+            queuedMessages: [],
+            running: false,
+            currentRunId: null,
+            pendingApproval: null,
+            error: null
+          }
+        })
+      }
     },
     renameSession: async (id, title) => {
       const t = title.trim()

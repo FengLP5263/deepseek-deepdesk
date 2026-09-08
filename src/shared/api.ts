@@ -1,9 +1,16 @@
 import type { AppSettings, ProviderConfig, ProviderTestResult, Conversation, ChatStartRequest, ChatChunkPayload, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, BrowserExtensionSetupAction, ConnectorActionResult, ConnectorActivityFeed, ConnectorAuthSession, ConnectorConfig, ConnectorConfigPatch, ConnectorId, ConnectorOutboundMessage, ConnectorStatus, McpActionResult, McpServerConfig, McpServerStatus } from './types'
 import type { AgentEvent, AgentRunRequest, AgentSession, AgentSessionExportFormat, AgentSessionExportResult } from './agent-types'
 import type { PlatformInfo } from './platform'
+import type { ArchivedSession, SessionTarget } from './session-archive'
 
 export interface DeepDeskApi {
   platform: Readonly<PlatformInfo>
+  sessionArchive: {
+    list: () => Promise<ArchivedSession[]>
+    archive: (target: SessionTarget) => Promise<void>
+    restore: (target: SessionTarget) => Promise<void>
+    remove: (target: SessionTarget) => Promise<void>
+  }
   settings: {
     get: () => Promise<AppSettings>
     set: (patch: Partial<AppSettings>) => Promise<AppSettings>
@@ -15,6 +22,8 @@ export interface DeepDeskApi {
     test: (provider: ProviderConfig) => Promise<ProviderTestResult>
   }
   mcp: {
+    pickJson: () => Promise<string | null>
+    importJson: (text: string) => Promise<number>
     list: () => Promise<McpServerStatus[]>
     save: (config: McpServerConfig) => Promise<McpServerStatus>
     remove: (id: string) => Promise<void>

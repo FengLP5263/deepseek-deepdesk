@@ -86,7 +86,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 | `conversations` / `agentSessions` | 内存领域对象；磁盘设置中只保留空数组兼容旧字段，正文已迁移到 `sessions/` |
 | `memories` | 本地长期记忆（范围、类型、标签、启用状态、来源） |
 
-设置与记忆位于 Electron `userData/deepdesk.json`，沿用合并写入、Windows 短暂文件锁退避与完整 `.tmp` 恢复机制。会话改为 `sessions/<hash>/events.jsonl` 增量追加，带周期快照和可重建索引；超过 16,000 字符的字符串放入同会话对象文件。迁移先备份并确认会话写入成功，再清空旧数组并记录版本。主进程在流式输出期间约每 500 ms 保存检查点，在工具/历史变化时立即排队保存；重启不会自动重试中断的操作。详细格式、逻辑删除和降级边界见 [session-storage.md](./session-storage.md)。
+设置与记忆位于 Electron `userData/deepdesk.json`，沿用合并写入、Windows 短暂文件锁退避与完整 `.tmp` 恢复机制。会话改为 `sessions/<hash>/events.jsonl` 增量追加，带周期快照和可重建索引；超过 16,000 字符的字符串放入同会话对象文件。迁移先备份并确认会话写入成功，再清空旧数组并记录版本。主进程在流式输出期间约每 500 ms 保存检查点，在工具/历史变化时立即排队保存；重启不会自动重试中断的操作。`session-archive.ts` 管理归档/恢复/永久删除及同会话互斥；归档解除运行所有权并取消任务。普通列表排除 `archivedAt`，设置页通过独立 IPC 读取归档元数据。`session-purge.ts` 只清理已校验的单会话目录，删除标记支持中断后继续清理。详细格式、删除和降级边界见 [session-storage.md](./session-storage.md)。
 
 长期记忆默认本地捕获与检索；升级时一次性回扫旧会话，之后不重复恢复用户删除的记忆。发给模型的只有当次命中的格式化上下文。未选择工作目录时使用系统用户主目录。API Key、MCP Token、环境变量、请求头、连接器令牌和回复令牌写盘前统一经 Electron `safeStorage` 处理，包括日志中的连接器回复令牌；正文和原文对象不整体加密。系统安全存储不可用时沿用告警与兼容策略。详细行为见 [memory.md](./memory.md)。
 
@@ -112,6 +112,7 @@ Agent 工具调用流同样保留模型的 `reasoning_content`，渲染层将连
 6. Agent 调用时，主进程把模型参数原样路由到原始 MCP 工具；文本和结构化结果返回模型，图片、音频和二进制资源仅返回元数据摘要，避免把大段 Base64 写入上下文。
 7. “每次询问”会审批所有 MCP 工具；“替我审批”只自动放行明确声明 `readOnlyHint: true` 且非破坏性的工具；“完全访问”直接执行。
 8. 启用的服务器会在下次启动时自动恢复连接；退出应用时关闭 stdio 子进程并终止可终止的 HTTP 会话。
+9. 设置中的 JSON 导入由 `shared/mcp-json.ts` 提供跨层校验，`main/mcp-json.ts` 负责受限文件读取与整批配置保存。Renderer 先检查并展示预览，确认后的 IPC 再次检查；导入的服务器一律禁用，不调用 MCP 工厂、启动命令或远程服务，已有同名配置不覆盖。
 
 详细配置和安全说明见 [mcp.md](./mcp.md)。
 

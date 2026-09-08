@@ -9,6 +9,8 @@
 - `desktop-presence.ts`：系统托盘、全局唤起快捷键与退出清理。
 - `store.ts`：本地 JSON 存储、原子写、迁移入口。
 - `session-journal.ts` / `session-objects.ts`：独立会话日志、快照、原文对象与恢复；`run-persistence.ts`：运行检查点和原文读回。格式见 `docs/session-storage.md`。
+- `session-archive.ts` / `session-purge.ts`：归档/恢复协调、停止运行和单会话永久清理，禁止绕过归档检查直接物理删除。
+- `mcp-json.ts`：用户选择的 JSON 文件读取与配置导入，复用 Shared 校验；导入不执行命令、不自动连接、不覆盖同名配置。
 - `ipc.ts`：IPC handler 注册。
 - `llm.ts`：聊天流式调度、取消、主进程网络调用。
 - `agent.ts`：Agent 工具循环、权限判断。

@@ -5,14 +5,15 @@ import type { AgentSession } from '../shared/agent-types'
 import type { Conversation } from '../shared/types'
 import type { SecretCodec } from './secret-storage'
 import { atomicWrite, SessionObjects, storageKey, type JsonValue } from './session-objects'
+import { clearSessionFiles } from './session-purge'
 
 type Session = AgentSession | Conversation
 type Kind = 'agent' | 'chat'
 type Document = Record<string, JsonValue>
 interface Delta { set: Document; remove: string[]; arrays: Record<string, { from: number; items: JsonValue[] }> }
-interface RecordBody { version: 1; kind: Kind; id: string; seq: number; previous: string; delta: Delta | null }
+interface RecordBody { version: 1; kind: Kind; id: string; seq: number; previous: string; delta: Delta | null; deletedAt?: number }
 interface JournalRecord extends RecordBody { hash: string }
-interface Entry { kind: Kind; id: string; seq: number; hash: string; value: Document | null }
+interface Entry { kind: Kind; id: string; seq: number; hash: string; value: Document | null; deletedAt?: number }
 
 function digest(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex') }
 function diff(previous: Document, next: Document): Delta {
@@ -78,6 +79,17 @@ export class SessionJournal {
   }
 
   private async replay(key: string): Promise<Entry | null> {
+    let markerText: string | undefined
+    try { markerText = await fs.readFile(path.join(this.root, key, 'purge.json'), 'utf8') }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    if (markerText !== undefined) {
+      const marker = JSON.parse(markerText) as JournalRecord
+      const { hash, ...body } = marker
+      if (body.version !== 1 || !['agent', 'chat'].includes(body.kind) || storageKey(body.kind, body.id) !== key || body.delta !== null || body.seq !== 1 || body.previous !== '' || digest(body) !== hash) throw new Error('永久删除记录校验失败')
+      await this.objects.revoke(key)
+      await clearSessionFiles(this.root, key, JSON.stringify(marker))
+      return { kind: body.kind, id: body.id, seq: 1, hash, value: null, deletedAt: body.deletedAt }
+    }
     const file = path.join(this.root, key, 'events.jsonl')
     let bytes: Buffer
     try { bytes = await fs.readFile(file) } catch (error) {
@@ -126,6 +138,7 @@ export class SessionJournal {
     this.mapSecret(session, 'protect')
     this.enqueue(async () => {
       const key = storageKey(kind, session.id)
+      if (this.isDeleted(kind, session.id)) return
       const value = await this.objects.encode(key, JSON.parse(JSON.stringify(session)) as JsonValue) as Document
       const previous = this.entries.get(key)
       const delta = diff(previous?.value ?? {}, value)
@@ -138,6 +151,20 @@ export class SessionJournal {
     this.enqueue(async () => {
       const key = storageKey(kind, id)
       if (this.entries.get(key)?.value) await this.append(key, kind, id, null)
+    })
+  }
+
+  purge(kind: Kind, id: string): void {
+    this.enqueue(async () => {
+      const key = storageKey(kind, id)
+      if (!this.entries.get(key)?.value?.archivedAt) throw new Error('只能清理已归档会话')
+      const body: RecordBody = { version: 1, kind, id, seq: 1, previous: '', delta: null, deletedAt: Math.max(Date.now(), Number(this.entries.get(key)?.value?.updatedAt ?? 0)) }
+      const hash = digest(body)
+      const record = JSON.stringify({ ...body, hash })
+      await atomicWrite(path.join(this.root, key, 'purge.json'), record)
+      this.entries.set(key, { kind, id, seq: 1, hash, value: null, deletedAt: body.deletedAt })
+      await this.objects.revoke(key)
+      await clearSessionFiles(this.root, key, record)
     })
   }
 
@@ -165,6 +192,16 @@ export class SessionJournal {
   }
 
   has(kind: Kind, id: string): boolean { return this.entries.has(storageKey(kind, id)) }
+  isDeleted(kind: Kind, id: string): boolean { return this.entries.get(storageKey(kind, id))?.value === null }
+
+  lastThreadDeletion(baseId: string): number {
+    const prefix = `thread:${baseId.length}:${baseId}:`
+    let deletedAt = 0
+    for (const entry of this.entries.values()) {
+      if (entry.kind === 'agent' && (entry.id === baseId || entry.id.startsWith(prefix))) deletedAt = Math.max(deletedAt, entry.deletedAt ?? 0)
+    }
+    return deletedAt
+  }
 
   async flush(): Promise<void> {
     const pending = this.queue
@@ -174,6 +211,7 @@ export class SessionJournal {
     const entries = [...this.entries.entries()].filter(([, entry]) => entry.value).map(([key, entry]) => ({
       key, kind: entry.kind, id: entry.id, seq: entry.seq, title: entry.value?.task ?? entry.value?.title,
       createdAt: entry.value?.createdAt, updatedAt: entry.value?.updatedAt,
+      archivedAt: entry.value?.archivedAt,
       providerId: entry.value?.providerId, modelId: entry.value?.modelId
     }))
     await atomicWrite(path.join(this.root, 'index.json'), JSON.stringify({ version: 1, entries }))

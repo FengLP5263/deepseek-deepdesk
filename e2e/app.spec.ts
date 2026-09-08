@@ -315,7 +315,7 @@ test('opens sidebar feature pages and applies a skill template', async () => {
   await expect(page.locator('.titlebar-title')).toHaveCount(0)
   await expect(page.locator('.skill-section-head', { hasText: '精选技能' })).toBeVisible()
   const skillToolbarLayout = await page.evaluate(() => {
-    const controls = Array.from(document.querySelectorAll<HTMLElement>('.skill-top-tab, .skill-pill'))
+    const controls = Array.from(document.querySelectorAll<HTMLElement>('.skill-pill'))
     const avatar = document.querySelector<HTMLElement>('.skill-avatar')
     return {
       controls: controls.map(control => ({
@@ -897,7 +897,7 @@ test('provides polished message actions and code block download in a local conve
   expect(messageLayout!.actionsBottom).toBeLessThanOrEqual(messageLayout!.messageBottom)
 })
 
-test('manages recent task titles and deletion from the sidebar overflow menu', async () => {
+test('manages recent task titles and archival from the sidebar overflow menu', async () => {
   await closeDeepDesk(ctx)
   ctx = await launchDeepDesk(createMessageActionsUserData())
   app = ctx.app
@@ -919,8 +919,6 @@ test('manages recent task titles and deletion from the sidebar overflow menu', a
   const renamed = page.locator('.conv-item', { hasText: '侧栏菜单会话' })
   await renamed.hover()
   await renamed.getByRole('button', { name: /会话操作/ }).click()
-  await page.getByRole('menuitem', { name: '删除会话' }).click()
-  await expect(page.getByText('删除这个会话？')).toBeVisible()
-  await page.getByRole('button', { name: '确认删除' }).click()
+  await page.getByRole('menuitem', { name: '归档会话' }).click()
   await expect(page.locator('.conv-item', { hasText: '侧栏菜单会话' })).toHaveCount(0)
 })

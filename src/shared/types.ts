@@ -40,6 +40,7 @@ export interface ChatMessage {
 
 export interface Conversation {
   id: string
+  archivedAt?: number
   title: string
   createdAt: number
   updatedAt: number

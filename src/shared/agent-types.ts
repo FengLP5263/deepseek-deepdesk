@@ -132,6 +132,7 @@ export interface AgentStep {
 
 export interface AgentSession {
   id: string
+  archivedAt?: number
   task: string
   workdir: string
   providerId?: string

@@ -4,6 +4,7 @@ import { persistableAgentHistory } from '../shared/agent-context'
 import { compactToolResultForContext } from '../shared/context-manager'
 import type { AppStore } from './store'
 import { OBJECT_THRESHOLD, storageKey } from './session-objects'
+import type { SessionTarget } from '../shared/session-archive'
 
 export interface AgentPersistence {
   event(event: AgentEvent): void
@@ -20,6 +21,14 @@ function runOwnership(store: AppStore): Map<string, string> {
   return owners
 }
 export function flushRunCheckpoints(): void { for (const flush of pendingCheckpoints) flush() }
+export function detachSessionRun(store: AppStore, target: SessionTarget): string | undefined {
+  flushRunCheckpoints()
+  const owners = runOwnership(store)
+  const key = `${target.kind}:${target.id}`
+  const runId = owners.get(key)
+  owners.delete(key)
+  return runId
+}
 
 function checkpointScheduler(save: () => void): { schedule(): void; flush(): void } {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -40,7 +49,7 @@ export function createAgentPersistence(store: AppStore, req: AgentRunRequest): A
   if (!req.sessionId) return undefined
   const sessionId = req.sessionId
   const initial = store.getAgentSession(sessionId)
-  if (!initial) throw new Error('请先保存会话再启动任务')
+  if (!initial || initial.archivedAt) throw new Error('请先保存或恢复会话再启动任务')
   const owners = runOwnership(store)
   const ownerKey = `agent:${sessionId}`
   owners.set(ownerKey, req.runId)
@@ -52,7 +61,7 @@ export function createAgentPersistence(store: AppStore, req: AgentRunRequest): A
   const save = (): void => {
     if (owners.get(ownerKey) !== req.runId) return
     const current = store.getAgentSession(sessionId)
-    if (!current) return // Deleted while running: do not resurrect the session.
+    if (!current || current.archivedAt) return // Archived/deleted while running: freeze the session.
     store.upsertAgentSession({ ...current, steps, contextUsage, updatedAt: Date.now(), hasUnread: completed || current.hasUnread,
       history: pendingText ? [...history, { role: 'assistant', content: pendingText }] : history })
   }
@@ -117,6 +126,7 @@ export function createAgentPersistence(store: AppStore, req: AgentRunRequest): A
       else scheduler.flush()
     },
     async archive(content, tokenBudget) {
+      if (owners.get(ownerKey) !== req.runId || store.getAgentSession(sessionId)?.archivedAt) throw new Error('任务已停止')
       const compacted = compactToolResultForContext(content, tokenBudget)
       if (content.length <= OBJECT_THRESHOLD && compacted === content) return content
       const reference = await store.sessions.objects.put(key, content)
@@ -136,7 +146,7 @@ export function createAgentPersistence(store: AppStore, req: AgentRunRequest): A
 export function createChatPersistence(store: AppStore, req: ChatStartRequest): (event: ChatChunkPayload) => void {
   const initial = store.getConversation(req.conversationId)
   const assistant = initial?.messages.at(-1)
-  if (!initial || assistant?.role !== 'assistant' || !assistant.streaming) return () => {}
+  if (!initial || initial.archivedAt || assistant?.role !== 'assistant' || !assistant.streaming) return () => {}
   const owners = runOwnership(store)
   const ownerKey = `chat:${req.conversationId}`
   owners.set(ownerKey, req.runId)
@@ -144,7 +154,7 @@ export function createChatPersistence(store: AppStore, req: ChatStartRequest): (
   const scheduler = checkpointScheduler(() => {
     if (owners.get(ownerKey) !== req.runId) return
     const current = store.getConversation(req.conversationId)
-    if (!current) return
+    if (!current || current.archivedAt) return
     store.upsertConversation({ ...current, updatedAt: Date.now(), messages: current.messages.map(item => item.id === message.id ? message : item) })
   })
   return event => {

@@ -22,6 +22,8 @@ export async function atomicWrite(file: string, content: string): Promise<void> 
 /** Content-addressed objects are scoped to a session, never arbitrary filesystem paths. */
 export class SessionObjects {
   private verified = new Set<string>()
+  private revoked = new Set<string>()
+  private writes = new Map<string, Set<Promise<string>>>()
   constructor(private readonly root: string) {}
 
   private directory(key: string): string {
@@ -30,6 +32,21 @@ export class SessionObjects {
   }
 
   async put(key: string, content: string): Promise<string> {
+    if (this.revoked.has(key)) throw new Error('会话已永久删除')
+    const writes = this.writes.get(key) ?? new Set<Promise<string>>()
+    this.writes.set(key, writes)
+    const pending = this.writeObject(key, content)
+    writes.add(pending)
+    try { return await pending } finally { writes.delete(pending); if (!writes.size) this.writes.delete(key) }
+  }
+
+  async revoke(key: string): Promise<void> {
+    this.revoked.add(key)
+    await Promise.allSettled(this.writes.get(key) ?? [])
+    for (const item of this.verified) if (item.startsWith(key + ':')) this.verified.delete(item)
+  }
+
+  private async writeObject(key: string, content: string): Promise<string> {
     const id = createHash('sha256').update(content).digest('hex')
     const directory = this.directory(key)
     if (this.verified.has(`${key}:${id}`)) return id

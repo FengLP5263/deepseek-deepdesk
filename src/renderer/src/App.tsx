@@ -156,7 +156,7 @@ export default function App() {
         <main className={view === 'settings' ? 'app-main settings-main' : 'app-main'}>
           {view === 'chat' && <AgentView onOpenSettings={() => openSettings('providers')} />}
           {view === 'settings' && <Suspense fallback={<ViewLoader />}><SettingsView onBack={() => setView('chat')} tab={settingsTab} onTabChange={setSettingsTab} /></Suspense>}
-          {(view === 'connectors' || view === 'skills' || view === 'more') && <Suspense fallback={<ViewLoader />}><FeatureHub view={view} onNavigate={setView} onOpenChat={openChat} onOpenSettings={openSettings} /></Suspense>}
+          {(view === 'connectors' || view === 'skills' || view === 'more') && <Suspense fallback={<ViewLoader />}><FeatureHub view={view} onOpenChat={openChat} onOpenSettings={openSettings} /></Suspense>}
         </main>
       </div>
       <SessionSearch

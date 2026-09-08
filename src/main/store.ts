@@ -1,7 +1,9 @@
 import { app } from 'electron'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import type { AppState, AppSettings, ProviderConfig, Conversation, MemoryItem, MemorySearchRequest, MemoryCaptureRequest, ConnectorActivity, ConnectorActivityDirection, ConnectorActivityStatus, ConnectorConfig, ConnectorConfigPatch, ConnectorId, McpServerConfig } from '../shared/types'
 import type { AgentSession } from '../shared/agent-types'
+import type { SessionTarget } from '../shared/session-archive'
 import { BUILTIN_PROVIDERS } from '../shared/llm/providers'
 import { extractMemoryCandidates, relateMemory, searchMemories, type MemoryCandidate } from '../shared/memory'
 import { normalizeAppFontScale } from '../shared/font-scale'
@@ -304,6 +306,11 @@ export class AppStore {
     this.persist()
   }
 
+  addMcpServers(configs: McpServerConfig[]): void {
+    this.data.mcpServers.push(...structuredClone(configs))
+    this.persist()
+  }
+
   upsertConnectorConfig(patch: ConnectorConfigPatch): ConnectorConfig {
     const idx = this.data.connectors.findIndex(connector => connector.id === patch.id)
     const current = idx >= 0 ? this.data.connectors[idx] : createConnectorConfig(patch.id)
@@ -339,8 +346,10 @@ export class AppStore {
   private upsertConnectorSessionFromActivity(activity: ConnectorActivity): void {
     if (activity.connectorId === 'browser' || activity.direction !== 'inbound') return
     const externalThreadId = activity.threadId || activity.sourceId || activity.id
-    const id = `connector-${activity.connectorId}-${externalThreadId}`
-    const existing = this.data.agentSessions.find(session => session.id === id)
+    const baseId = `connector-${activity.connectorId}-${externalThreadId}`
+    if (activity.createdAt <= this.sessions.lastThreadDeletion(baseId)) return
+    const existing = this.data.agentSessions.find(session => session.source?.type === 'connector' && session.source.connectorId === activity.connectorId && session.source.externalThreadId === externalThreadId)
+    const id = existing?.id ?? (this.sessions.isDeleted('agent', baseId) ? `thread:${baseId.length}:${baseId}:${randomUUID()}` : baseId)
     const alreadyAdded = existing?.steps.some(step => step.sourceActivityId === activity.id) ?? false
     if (alreadyAdded) return
 
@@ -393,6 +402,8 @@ export class AppStore {
 
   upsertConversation(conversation: Conversation): void {
     const idx = this.data.conversations.findIndex(c => c.id === conversation.id)
+    if (this.data.conversations[idx]?.archivedAt || this.sessions.isDeleted('chat', conversation.id)) return
+    conversation = { ...conversation, archivedAt: undefined }
     if (idx >= 0) this.data.conversations[idx] = structuredClone(conversation)
     else this.data.conversations.push(structuredClone(conversation))
     this.sessions.upsert('chat', conversation)
@@ -495,6 +506,8 @@ export class AppStore {
 
   upsertAgentSession(session: AgentSession): void {
     const idx = this.data.agentSessions.findIndex(s => s.id === session.id)
+    if (this.data.agentSessions[idx]?.archivedAt || this.sessions.isDeleted('agent', session.id)) return
+    session = { ...session, archivedAt: undefined }
     if (idx >= 0) this.data.agentSessions[idx] = structuredClone(session)
     else this.data.agentSessions.push(structuredClone(session))
     this.sessions.upsert('agent', session)
@@ -522,6 +535,30 @@ export class AppStore {
   clearAgentSessions(): void {
     for (const session of this.data.agentSessions) this.sessions.delete('agent', session.id)
     this.data.agentSessions = []
+  }
+
+  setSessionArchived(target: SessionTarget, archived: boolean): void {
+    if (this.sessions.isDeleted(target.kind, target.id)) throw new Error('会话已永久删除')
+    const session = target.kind === 'agent'
+      ? this.data.agentSessions.find(item => item.id === target.id)
+      : this.data.conversations.find(item => item.id === target.id)
+    if (!session) throw new Error('未找到会话')
+    if (archived === Boolean(session.archivedAt)) return
+    session.archivedAt = archived ? Date.now() : undefined
+    if ('steps' in session) {
+      session.hasUnread = false
+      session.steps = session.steps.map(step => step.status === 'running' ? { ...step, status: 'cancelled' } : step)
+    } else session.messages = session.messages.map(message => ({ ...message, streaming: false }))
+    this.sessions.upsert(target.kind, session)
+  }
+
+  async purgeArchivedSession(target: SessionTarget): Promise<void> {
+    const session = target.kind === 'agent' ? this.getAgentSession(target.id) : this.getConversation(target.id)
+    if (!session?.archivedAt) throw new Error('只能永久删除已归档的会话')
+    this.sessions.purge(target.kind, target.id)
+    await this.sessions.flush()
+    if (target.kind === 'agent') this.data.agentSessions = this.data.agentSessions.filter(item => item.id !== target.id)
+    else this.data.conversations = this.data.conversations.filter(item => item.id !== target.id)
   }
 
   private persist(): void {

@@ -21,6 +21,36 @@ DeepDesk 在主进程中作为 MCP Host。服务器连接、工具发现和工�
 
 保存但未连接的服务器不会自动启动。连接成功后会记录启用意图，并在 DeepDesk 下次启动时尝试恢复连接。
 
+## 从 JSON 导入
+
+在“设置 → MCP → 导入 JSON”选择本地文件，或粘贴 JSON 内容。点击“检查配置”，确认预览中的服务器后点击“确认导入”。需要使用时再点击服务器卡片上的“连接”。
+
+支持两种顶层对象：`mcpServers` 或 `servers`，不能混用。例如：
+
+```json
+{
+  "mcpServers": {
+    "local-example": {
+      "command": "node",
+      "args": ["/absolute/path/to/server.js"],
+      "env": { "EXAMPLE_SETTING": "value" }
+    },
+    "remote-example": {
+      "type": "http",
+      "url": "https://example.com/mcp"
+    }
+  }
+}
+```
+
+示例地址和文件路径需替换为真实可信的服务。支持的字段为 `type` / `transport`（`stdio`、`http` 或 `streamable-http`）、`command`、字符串数组 `args`、字符串键值对象 `env` / `headers`、`cwd`、`url`、`token`。省略传输类型时，有 `command` 则按 stdio，否则按 HTTP。允许布尔值 `enabled` / `disabled`，但导入结果始终为未连接；不会因原文件中启用标记而执行命令。
+
+- 文件需为 UTF-8，允许 UTF-8 BOM；最多 256 KB，一次 1–50 个服务器。
+- 使用严格 JSON，不支持注释、尾随逗号、重复字段、未知字段、旧式 SSE、变量占位符（如 `${env:KEY}` / `${input:token}`）或 IDE 专属 `inputs`。请先填入实际值；此导入不是对所有 IDE 配置格式的完整兼容。
+- 校验名称、字段类型、本地/远程字段冲突、HTTP(S) URL 和请求头。不会执行命令、访问 URL 或验证远程服务是否可达；连接时再检查服务能力。
+- 整批配置均校验通过后才写入；同名服务器（忽略首尾空格和大小写）会拒绝导入，不覆盖已有配置。需要更新时使用现有卡片的“编辑服务器”。
+- 主进程通过系统文件选择器读取用户选中的文件，并在导入 IPC 中再次校验。导入的凭据沿用本地安全存储规则；输入内容不发送给模型或第三方。
+
 ## 从会话安装服务
 
 在会话中提供可直接连接的 Streamable HTTP MCP 端点，或可信来源明确给出的本地 stdio `command`、`args` 和可选工作目录，并要求“安装这个 MCP”。Agent 会按以下流程处理：
@@ -50,4 +80,5 @@ MCP 原始工具名会映射为稳定的 `mcp__*` 模型工具名，以避免与
 - `tests/mcp.test.ts` 覆盖连接生命周期、HTTP/stdio 会话检查与安装、工具发现、路由、错误状态和结果收敛。
 - `tests/agent.test.ts` 覆盖 MCP 动态工具注入、会话安装确认及审批策略。
 - `tests/appStore.test.ts` 覆盖配置迁移和持久化。
+- `tests/mcp-json.test.ts` 覆盖文件读取、语法/结构/大小/重名校验、批量保存与重启；`e2e/mcp-json.spec.ts` 覆盖文件选择和粘贴、错误提示、导入预览、不自动执行以及深浅主题和界面缩放。
 - `e2e/app.spec.ts` 覆盖设置页管理和 HTTP 会话安装；`e2e/mcp-stdio-install.spec.ts` 使用本地 fixture 验证 stdio 的检查、确认、进程启动、工具发现和持久化，不连接真实外部服务器。
