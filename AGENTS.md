@@ -43,6 +43,7 @@ pnpm test         # vitest 单元测试
 pnpm typecheck    # TypeScript 类型检查
 pnpm lint         # oxlint
 pnpm architecture # 文件规模与进程分层门禁
+pnpm gen:icon     # 从猫头鹰品牌图生成 Windows PNG 与 macOS ICNS
 pnpm build        # electron-vite 构建
 pnpm smoke        # 构建 + Electron 冒烟测试
 pnpm package:win  # 打 Windows NSIS 安装包

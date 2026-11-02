@@ -27,6 +27,7 @@ pnpm flow -- <command> [options]
 | 单元/集成测试 | `pnpm flow -- test --kind unit` | 等价于 `pnpm test` |
 | Electron 冒烟测试 | `pnpm flow -- test --kind smoke` | 构建并启动 Electron 验证 renderer 加载 |
 | UI Mock 会话 | `pnpm flow -- seed-ui-session` | 向本机 userData 写入 `UI会话`，用于人工检查复杂会话 UI |
+| 品牌图标 | `pnpm gen:icon` | 从 `src/renderer/src/assets/deepdesk-owl.png` 生成 `build/icon.png` 与多尺寸 `build/icon.icns` |
 | 生产构建 | `pnpm flow -- build` | 等价于 `pnpm build` |
 | Windows 打包 | `pnpm flow -- package --target win` | 输出 NSIS 安装包 |
 | macOS 打包 | `pnpm flow -- package --target mac` | 在 Apple Silicon Mac 输出 arm64 DMG |

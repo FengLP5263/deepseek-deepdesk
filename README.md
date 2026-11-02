@@ -1,6 +1,12 @@
-# DeepDesk
+<p align="center">
+  <img src="./build/icon.png" alt="DeepDesk 猫头鹰图标" width="88" />
+</p>
 
-DeepDesk 是一个基于 Electron、React 和 TypeScript 构建的开源桌面 AI 客户端。项目提供 OpenAI Responses、Anthropic Messages 与 OpenAI 兼容模型服务接入、本地多轮会话、编码 Agent、MCP、连接器、浏览器调试和本地记忆等能力，面向需要在桌面环境中完成对话、代码处理与工具调用的用户。
+<h1 align="center">DeepDesk</h1>
+
+<p align="center">开源桌面 AI 工作区，让对话、编码 Agent 和工具协作更顺手。</p>
+
+DeepDesk 是一个基于 Electron、React 和 TypeScript 的开源桌面客户端。你可以接入不同模型服务，管理本地会话，让 Agent 在工作目录中处理任务，并通过 MCP 和连接器扩展能力。
 
 [![CI](https://github.com/FengLP5263/deepseek-deepdesk/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/FengLP5263/deepseek-deepdesk/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-2f363d.svg)](./LICENSE)
@@ -9,7 +15,27 @@ DeepDesk 是一个基于 Electron、React 和 TypeScript 构建的开源桌面 A
 
 > DeepDesk 当前处于 `0.x` 预稳定阶段。功能、数据结构和配置接口在达到 `1.0.0` 前仍可能调整。
 
+[界面展示](#界面展示) · [核心能力](#核心能力) · [支持范围](#支持范围) · [快速开始](#快速开始) · [开发与贡献](#开发与贡献)
+
+## 适合用来做什么
+
+- **一个工作区，多种模型**：接入 OpenAI Responses、Anthropic Messages 和 OpenAI 兼容服务，在会话中切换已配置的模型。
+- **让 Agent 协助完成任务**：在工作目录中读写文件、搜索和执行命令，并通过规划模式与权限审批控制操作。
+- **连接你的工具**：使用 MCP、本地技能、浏览器调试和飞书／微信连接器扩展工作流。
+- **持续管理上下文**：本地保存会话、记忆和草稿，支持会话搜索、归档及上下文用量查看。
+
+## 界面展示
+
+深色模式下的 Agent 工作区：在同一界面查看任务、工具执行结果和回复，并管理侧边栏中的会话。
+
+![DeepDesk 深色模式主界面](./docs/images/readme/main-dark.png)
+
+> 截图来自隔离的 DeepDesk 客户端，使用示例会话，不包含真实账号或凭据。
+
 ## 核心能力
+
+<details>
+<summary>展开功能详情</summary>
 
 ### 模型与会话
 
@@ -64,6 +90,8 @@ DeepDesk 是一个基于 Electron、React 和 TypeScript 构建的开源桌面 A
 - 用户、项目和 Agent 记忆存储在本地；显式“记住”请求、高置信长期偏好和项目约定会自动捕获，近义表达自动合并，明确冲突以最新表达更新，并按当前请求检索后注入模型上下文。敏感凭据不会被自动记录。
 - 技能广场展示精选技能与推荐技能，支持搜索和分类筛选内置技能及可复用任务模板，不展示 SkillHub 或套件入口；连接器统一从侧边栏进入。
 - API Key、会话、记忆和连接器配置不会写入仓库。
+
+</details>
 
 ## 支持范围
 

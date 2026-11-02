@@ -27,6 +27,7 @@ pnpm flow -- <command> [options]
 
 Common commands:
 
+- Regenerate application icons from the owl branding asset: `pnpm gen:icon` (updates `build/icon.png` and `build/icon.icns`).
 - Diagnose environment: `pnpm flow -- doctor`
 - Fast quality gate: `pnpm flow -- check`
 - Full local gate: `pnpm flow -- check --include-build --include-smoke --include-e2e`

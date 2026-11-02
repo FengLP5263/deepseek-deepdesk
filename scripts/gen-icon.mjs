@@ -1,28 +1,29 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execFileSync } from 'node:child_process'
 import { Resvg } from '@resvg/resvg-js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const source = readFileSync(join(root, 'src/renderer/src/assets/deepdesk-owl.png')).toString('base64')
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><clipPath id="rounded"><rect width="1024" height="1024" rx="240"/></clipPath></defs><image width="1024" height="1024" clip-path="url(#rounded)" href="data:image/png;base64,${source}"/></svg>`
 
-const tsx = readFileSync(join(root, 'src/renderer/src/components/DeepSeekLogo.tsx'), 'utf8')
-const m = /d='([^']+)'/.exec(tsx)
-if (!m) throw new Error('whale path not found')
-const whale = m[1]
-
-function icon(size) {
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 50 50"><rect width="50" height="50" rx="11" fill="#ffffff"/><g transform="translate(7.5 7.5) scale(0.7)"><path d="' + whale + '" fill="#000000" fill-rule="nonzero"/></g></svg>'
-  const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: size } })
-  return resvg.render().asPng()
+function render(size) {
+  return new Resvg(svg, { fitTo: { mode: 'width', value: size } }).render().asPng()
 }
 
+function chunk(type, png) {
+  const header = Buffer.alloc(8)
+  header.write(type, 0, 4, 'ascii')
+  header.writeUInt32BE(png.length + 8, 4)
+  return Buffer.concat([header, png])
+}
+
+const parts = [['icp4', 16], ['icp5', 32], ['icp6', 64], ['ic07', 128], ['ic08', 256], ['ic09', 512], ['ic10', 1024]]
+  .map(([type, size]) => chunk(type, render(size)))
+const header = Buffer.alloc(8)
+header.write('icns', 0, 4, 'ascii')
+header.writeUInt32BE(8 + parts.reduce((total, part) => total + part.length, 0), 4)
 mkdirSync(join(root, 'build'), { recursive: true })
-writeFileSync(join(root, 'build', 'icon.png'), icon(512))
-
-if (process.platform === 'darwin') {
-  execFileSync('sips', ['-s', 'format', 'icns', join(root, 'build', 'icon.png'), '--out', join(root, 'build', 'icon.icns')])
-  console.log('icon.png and icon.icns written')
-} else {
-  console.log('icon.png written; icon.icns generation requires macOS')
-}
+writeFileSync(join(root, 'build', 'icon.png'), render(512))
+writeFileSync(join(root, 'build', 'icon.icns'), Buffer.concat([header, ...parts]))
+console.log('icon.png and icon.icns written')

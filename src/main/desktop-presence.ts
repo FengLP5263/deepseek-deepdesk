@@ -19,7 +19,6 @@ export interface DesktopPresenceActions {
 export function configureDesktopPresence(actions: DesktopPresenceActions): void {
   shutdownDesktopPresence()
   const icon = nativeImage.createFromPath(trayIconPath()).resize({ width: process.platform === 'darwin' ? 18 : 20, height: process.platform === 'darwin' ? 18 : 20 })
-  if (process.platform === 'darwin') icon.setTemplateImage(true)
   if (!icon.isEmpty()) {
     tray = new Tray(icon)
     tray.setToolTip('DeepDesk')

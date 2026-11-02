@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Blocks, ChevronDown, Link2, MoreHorizontal, Search, Settings, SquarePen, UserRound } from 'lucide-react'
-import DeepSeekLogo from '../DeepSeekLogo'
+import DeepDeskLogo from '../DeepDeskLogo'
 import { useAgentStore } from '../../stores/useAgentStore'
 import { formatTime } from '../../lib/format'
 import { orderSidebarSessions } from '../../lib/session-order'
@@ -169,7 +169,7 @@ export default function Sidebar({
         <>
           <div className='sidebar-header'>
             <div className='brand'>
-              <div className='brand-logo'><DeepSeekLogo width={22} height={22} /></div>
+              <div className='brand-logo'><DeepDeskLogo width={32} height={32} /></div>
               <span className='brand-copy'>
                 <span className='brand-name'>DeepDesk</span>
                 <span className='brand-version'>v{APP_VERSION}</span>
