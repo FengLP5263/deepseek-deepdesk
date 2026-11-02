@@ -54,6 +54,16 @@ describe('desktop presence', () => {
     expect(newTask).toHaveBeenCalledOnce()
   })
 
+  it('macOS 托盘保留彩色猫头鹰图标', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      configureDesktopPresence({ showWindow: vi.fn(), newTask: vi.fn() })
+      expect(mocks.setTemplateImage).not.toHaveBeenCalled()
+    } finally {
+      platform.mockRestore()
+    }
+  })
+
   it('退出时注销快捷键并销毁托盘', () => {
     configureDesktopPresence({ showWindow: vi.fn(), newTask: vi.fn() })
     shutdownDesktopPresence()
